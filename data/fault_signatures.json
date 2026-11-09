@@ -1,0 +1,95 @@
+{
+  "version": "1.0",
+  "updated_at": "2026-11-09",
+  "description": "Android Doctor Pro - Hardware & Kernel Fault Signatures Database",
+  "rules": [
+    {
+      "id": "KERNEL_PANIC_OOPS",
+      "category": "KERNEL_PANIC",
+      "severity": "CRITICAL",
+      "pattern": "Internal error: Oops|kernel BUG at|Kernel panic - not syncing",
+      "description_en": "Kernel panic crash detected. System halted due to kernel oops or fatal assertion.",
+      "description_ar": "انهيار حرج في كيرنل النظام (Kernel Oops). توقف المعالج لحماية العتاد.",
+      "suspect_components": ["SoC / CPU", "DRAM", "Corrupted Kernel Partition"],
+      "action_en": "Flash stock boot.img/kernel. If panic recurs, diagnose SoC or RAM solder joints.",
+      "action_ar": "تفليش كيرنل وروم رسمي (boot.img). إذا تكرر الانهيار، الفحص يشير لخلل في لحام المعالج أو الرام."
+    },
+    {
+      "id": "WATCHDOG_BITE",
+      "category": "WATCHDOG",
+      "severity": "CRITICAL",
+      "pattern": "Watchdog bark!|Watchdog bite!|qcom,wdt.*bark|mtk_wdt.*timeout",
+      "description_en": "Hardware Watchdog Timer triggered. CPU froze and failed to feed hardware watchdog.",
+      "description_ar": "تدخل رقاقة الحماية (Watchdog Reset) بسبب تعليق كامل في مسارات المعالج.",
+      "suspect_components": ["PMIC", "SoC Power Rail", "Mainboard Short"],
+      "action_en": "Check PMIC voltage rails and monitor standby current leakage.",
+      "action_ar": "فحص خطوط فولت آيسي الباور (PMIC) وفحص تسريب اللوحة الأم في وضع الاستعداد."
+    },
+    {
+      "id": "I2C_BUS_TIMEOUT",
+      "category": "HARDWARE_BUS",
+      "severity": "HIGH",
+      "pattern": "i2c.*error.*-110|i2c_geni.*timeout|i2c_designware.*timeout",
+      "description_en": "I2C peripheral bus communication timeout (-110). A sensor or IC failed to respond on bus.",
+      "description_ar": "فشل وتوقف ناقل العتاد I2C (-110 Timeout). أحد المستشعرات أو الآيسيات لا يستجيب للناقل.",
+      "suspect_components": ["Touch IC", "Fingerprint Sensor", "Audio Codec", "Camera Flex"],
+      "action_en": "Disconnect camera/fingerprint flex cables one by one to find shorted I2C line.",
+      "action_ar": "فصل فلاتات الكاميرات والبصمة والشاشة بالتوالي لعزل الخط الشورت في ناقل I2C."
+    },
+    {
+      "id": "I2C_IO_ERROR",
+      "category": "HARDWARE_BUS",
+      "severity": "HIGH",
+      "pattern": "i2c.*error.*-5|i2c.*transfer failed|i2c_geni.*NACK",
+      "description_en": "I2C peripheral bus I/O error (-5 EIO / NACK). Target IC address not acknowledged.",
+      "description_ar": "خطأ إدخال/إخراج على ناقل العتاد I2C (-5 EIO). آيسي مستهدف غير متصل أو تالف.",
+      "suspect_components": ["Power IC", "Sensors Flex Cable", "Charging Board Sub-PBA"],
+      "action_en": "Inspect flex cable pins, FPC connectors, and solder integrity of target sensor IC.",
+      "action_ar": "معاينة أرجل كونكترات الفلاتات والتأكد من وصول الفولت لآيسي الحساس أو البصمة."
+    },
+    {
+      "id": "STORAGE_IO_ERROR",
+      "category": "STORAGE",
+      "severity": "CRITICAL",
+      "pattern": "mmcblk0.*error.*-110|mmcblk0.*I/O error|ufs.*gear switch failure|ufs.*abort.*host reset",
+      "description_en": "NAND Flash storage controller I/O error. Internal eMMC/UFS memory chip failing.",
+      "description_ar": "خطأ قراءة/كتابة في شريحة التخزين الداخلية (eMMC/UFS). مؤشر على تلف رقاقة الذاكرة.",
+      "suspect_components": ["eMMC / UFS NAND Flash", "Storage VCC / VCCQ Power Rail"],
+      "action_en": "Perform urgent user data backup! Chip is degrading and may enter permanent read-only mode.",
+      "action_ar": "إجراء نسخ احتياطي فوري لبيانات العميل! خلايا الذاكرة تحتضر وقاربت على التلف التام."
+    },
+    {
+      "id": "THERMAL_SHUTDOWN",
+      "category": "THERMAL",
+      "severity": "CRITICAL",
+      "pattern": "thermal:.*critical temperature|tsens.*critical.*shutdown|ThermalShutdown",
+      "description_en": "Emergency thermal shutdown triggered. Motherboard exceeded safety thermal thresholds (>85°C).",
+      "description_ar": "إطفاء طوارئ بسبب ارتفاع درجات الحرارة متجاوزة الحد الآمن (>85°C).",
+      "suspect_components": ["Thermal Paste / Pad", "Short in RF Power Amp", "Faulty PMIC"],
+      "action_en": "Check for hot spots using thermal imager or alcohol spray. Verify thermal dissipation shielding.",
+      "action_ar": "فحص اللوحة بكاميرا حرارية أو بالروزين لتحديد الآيسي الذي يسخن فور التشغيل."
+    },
+    {
+      "id": "UVLO_BROWNOUT",
+      "category": "POWER",
+      "severity": "HIGH",
+      "pattern": "uvlo_detected|vph_pwr.*collapse|battery.*voltage.*critically.*low",
+      "description_en": "Under-Voltage Lockout (UVLO). System voltage sagged below hardware operating minimum.",
+      "description_ar": "هبوط حاد في جهد التغذية (UVLO). الجهد انحدر لأقل من الحد الأدنى لتشغيل المعالج.",
+      "suspect_components": ["Degraded Battery Cell", "Battery Connector Pins", "Main PMIC"],
+      "action_en": "Replace battery or test with bench power supply. Check battery contact resistance.",
+      "action_ar": "استبدال بطارية الهاتف أو تجربة باور سبلاي للتأكد من عدم وجود هبوط مفاجئ في الجهد."
+    },
+    {
+      "id": "MODEM_RIL_CRASH",
+      "category": "BASEBAND",
+      "severity": "HIGH",
+      "pattern": "qmi_wwan.*crash|rild.*died|ModemSSR|esoc.*modem crash",
+      "description_en": "Baseband modem subsystem crash (RIL death). Cellular RF processor restarting.",
+      "description_ar": "انهيار معالج الشبكة والمودم (Baseband Processor Crash). إعادة تشغيل متكررة للراديو.",
+      "suspect_components": ["Baseband RF IC", "Modem Firmware", "EFS / NVRAM Partition"],
+      "action_en": "Check baseband version in specs. Restore EFS/NVRAM partition backup if IMEI is null.",
+      "action_ar": "التأكد من قراءة إصدار البيسباند. استعادة نسخة EFS الاحتياطية في حال فقدان السيريال/IMEI."
+    }
+  ]
+}

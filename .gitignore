@@ -1,0 +1,26 @@
+# Database files
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Reports generated at runtime
+reports/*
+!reports/.gitkeep
+
+# Logs
+logs/*
+!logs/.gitkeep
+*.log
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Binary executables and libraries in bin/
+bin/*.exe
+bin/*.dll
+bin/*.zip
+bin/*.so
+*.rar
