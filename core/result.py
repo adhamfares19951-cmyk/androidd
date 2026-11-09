@@ -77,42 +77,50 @@ class CheckResult:
         }
 
 
+PERMISSION_PATTERNS = ("permission denied", "avc: denied", "operation not permitted")
+
+
 def status_from_read(
     stdout: Optional[str] = None,
     stderr: Optional[str] = None,
     exit_code: Optional[int] = None,
-    path_exists: bool = True
+    path_exists: bool = True,
+    log_content: bool = False
 ) -> Status:
     """
-    Derives initial status from raw stdout, stderr, exit code, and path existence:
-    - "Permission denied" / "avc: denied" / "Operation not permitted" in stdout OR stderr -> NEEDS_ROOT
-    - Path not existing -> UNKNOWN
-    - Both stdout and stderr empty, or missing data -> UNKNOWN
-    - exit_code != 0 and no valid stdout -> UNKNOWN
-    - Otherwise returns UNKNOWN (a caller MUST parse a real verified value to yield PASS or FAIL).
+    Derive the status of a raw read BEFORE parsing:
+    - "Permission denied" / "avc: denied" / "Operation not permitted" in stderr or stdout -> NEEDS_ROOT
+    - Path missing -> UNKNOWN
+    - Anything else -> UNKNOWN (the caller must parse a real value to return PASS or FAIL)
+
+    log_content=True is for commands whose stdout is itself a log (dmesg, logcat, ramoops).
+    Such logs legitimately contain "avc: denied" audit lines about other processes, so for
+    stdout only the plain permission errors are checked; stderr is always fully checked.
     """
-    if not path_exists:
-        return Status.UNKNOWN
-
-    combined = f"{stdout or ''}\n{stderr or ''}".lower()
-    if (
-        "permission denied" in combined
-        or "avc: denied" in combined
-        or "operation not permitted" in combined
-        or "requires root" in combined
-    ):
+    err = (stderr or "").lower()
+    out = (stdout or "").lower()
+    if any(p in err for p in PERMISSION_PATTERNS):
         return Status.NEEDS_ROOT
-
-    clean_out = (stdout or "").strip()
-    clean_err = (stderr or "").strip()
-
-    if not clean_out and not clean_err:
+    if log_content:
+        # A real log has many lines; only a short output can be the command's own error message.
+        if len(out.strip().splitlines()) <= 2 and any(p in out for p in ("permission denied", "operation not permitted")):
+            return Status.NEEDS_ROOT
         return Status.UNKNOWN
-
-    if not clean_out and clean_err:
-        return Status.UNKNOWN
-
-    if exit_code is not None and exit_code != 0 and not clean_out:
-        return Status.UNKNOWN
-
+    if any(p in out for p in PERMISSION_PATTERNS):
+        return Status.NEEDS_ROOT
     return Status.UNKNOWN
+
+
+def aggregate_status(statuses: List[Any]) -> Status:
+    """
+    Overall status of several key checks:
+    FAIL if any FAIL, else UNKNOWN if any check is UNKNOWN/NEEDS_ROOT (or there are none), else PASS.
+    """
+    values = [Status(str(s)) for s in statuses]
+    if not values:
+        return Status.UNKNOWN
+    if Status.FAIL in values:
+        return Status.FAIL
+    if any(v in (Status.UNKNOWN, Status.NEEDS_ROOT) for v in values):
+        return Status.UNKNOWN
+    return Status.PASS

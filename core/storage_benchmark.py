@@ -2,43 +2,66 @@ import re
 import time
 import logging
 from dataclasses import dataclass, field, asdict
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
+
 from core.adb_bridge import ADBBridge
-from core.result import Evidence, Status, CheckResult, status_from_read
+from core.result import Evidence, Status
+from core.readers import ReadResult, run_read, read_node, failure_status, parse_int
+from core import jedec
 
 logger = logging.getLogger("StorageBenchmark")
 
 
+def parse_dd_speed_mb_s(dd_output: str) -> Optional[float]:
+    """
+    Parse dd's summary line. Prefers "<bytes> bytes ... copied, <secs> s" (toybox and GNU),
+    falls back to a printed rate ("97.1 MB/s", "128 M/s"). Returns MiB/s or None.
+    """
+    text = dd_output or ""
+    m = re.search(r"(\d+)\s+bytes.*?copied,\s*([\d.]+)\s*s", text)
+    if m:
+        nbytes, secs = int(m.group(1)), float(m.group(2))
+        if nbytes > 0 and secs > 0:
+            return round(nbytes / secs / (1024 * 1024), 1)
+    m = re.search(r"([\d.]+)\s*([kKMG])i?B?/s", text)
+    if m:
+        val = float(m.group(1))
+        factor = {"k": 1 / 1024, "K": 1 / 1024, "M": 1.0, "G": 1024.0}[m.group(2)]
+        return round(val * factor, 1)
+    return None
+
+
 @dataclass
 class StorageHealthReport:
-    storage_type: str = "Unknown"  # eMMC, UFS, NVMe
-    storage_name: str = "Unknown"
-    storage_capacity_gb: float = 0.0
-    
-    # Wear Level & Life Time
-    life_time_type_a: str = "Unknown"  # SLC wear (e.g. 0-10%, 10-20%)
-    life_time_type_b: str = "Unknown"  # MLC/TLC wear
-    pre_eol_status: str = "Normal"     # Normal, Warning (80%+ consumed), Urgent (90%+)
-    estimated_wear_pct: int = 0
+    check_id: str = "storage.health"
+    storage_type: str = "UNKNOWN"
+    storage_name: str = "UNKNOWN"
+    storage_capacity_gb: Optional[float] = None
+
+    # JEDEC wear registers
+    life_time_type_a: str = "UNKNOWN"
+    life_time_type_b: str = "UNKNOWN"
+    pre_eol_status: str = "UNKNOWN"
+    estimated_wear_pct: Optional[int] = None  # upper bound of the worst JEDEC range, None if not read
     is_failing_or_degraded: bool = False
     status: str = "UNKNOWN"            # "PASS" | "FAIL" | "UNKNOWN" | "NEEDS_ROOT"
-    
-    # Speed Benchmark (MB/s)
-    read_speed_mbps: float = 0.0
-    write_speed_mbps: float = 0.0
-    benchmark_duration_sec: float = 0.0
-    benchmark_status: str = "Not Run"
-    
-    diagnosis: str = "Storage memory health not evaluated."
+
+    # Speed benchmark (MB/s); None = not measured
+    read_speed_mbps: Optional[float] = None
+    write_speed_mbps: Optional[float] = None
+    benchmark_duration_sec: Optional[float] = None
+    benchmark_status: str = "Not run"
+
+    diagnosis: str = ""
     raw_logs: List[str] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
 
     @property
-    def write_speed_mb_s(self) -> float:
+    def write_speed_mb_s(self) -> Optional[float]:
         return self.write_speed_mbps
 
     @property
-    def read_speed_mb_s(self) -> float:
+    def read_speed_mb_s(self) -> Optional[float]:
         return self.read_speed_mbps
 
     @property
@@ -65,251 +88,125 @@ class StorageHealthReport:
 
 
 class StorageBenchmark:
-    """
-    Evaluates eMMC and UFS NAND flash health, life-time wear indicators,
-    and runs sequential Read/Write I/O benchmarks on Android devices.
-    """
+    """eMMC / UFS JEDEC wear registers and a sequential dd read/write benchmark."""
+
+    UFS_DESC_DIRS = [
+        "/sys/devices/platform/soc/*.ufshc/health_descriptor",
+        "/sys/devices/soc/*.ufshc/health_descriptor",
+        "/sys/bus/platform/devices/*.ufshc/health_descriptor",
+        "/sys/devices/platform/*.ufs/health_descriptor",
+    ]
+
     def __init__(self, bridge: Optional[ADBBridge] = None):
         self.bridge = bridge or ADBBridge()
 
-    def _parse_life_time(self, raw_hex: str) -> Tuple[str, int]:
-        """
-        Parses JEDEC eMMC/UFS life_time indicators:
-        0x01: 0% - 10% device life time used
-        0x02: 10% - 20% device life time used
-        ...
-        0x0A: 90% - 100% device life time used
-        0x0B: Exceeded its maximum estimated device life time
-        """
-        val_str = raw_hex.strip().lower()
-        mapping = {
-            "0x01": ("0% - 10% (Excellent)", 5),
-            "0x02": ("10% - 20% (Normal)", 15),
-            "0x03": ("20% - 30% (Normal)", 25),
-            "0x04": ("30% - 40% (Good)", 35),
-            "0x05": ("40% - 50% (Good)", 45),
-            "0x06": ("50% - 60% (Moderate Wear)", 55),
-            "0x07": ("60% - 70% (Significant Wear)", 65),
-            "0x08": ("70% - 80% (High Wear)", 75),
-            "0x09": ("80% - 90% (CRITICAL: Near EOL)", 85),
-            "0x0a": ("90% - 100% (URGENT: Replacement Needed)", 95),
-            "0x0b": ("EXCEEDED MAX LIFE TIME (Failing)", 100),
-        }
-        for k, v in mapping.items():
-            if k in val_str or val_str.endswith(k.replace("0x", "")):
-                return v
-        return (f"Raw {val_str}", 0)
-
-    def _parse_pre_eol(self, raw_hex: str) -> Tuple[str, bool]:
-        """
-        JEDEC Pre-EOL Info:
-        0x01: Normal
-        0x02: Warning (consumed 80% of reserved blocks)
-        0x03: Urgent (consumed 90%+ of reserved blocks)
-        """
-        val = raw_hex.strip().lower()
-        if "0x01" in val or val.endswith("1"):
-            return ("Normal (Healthy reserved blocks)", False)
-        elif "0x02" in val or val.endswith("2"):
-            return ("WARNING: 80% of reserved blocks consumed", True)
-        elif "0x03" in val or val.endswith("3"):
-            return ("CRITICAL URGENT: 90%+ reserved blocks consumed (Immediate Failure Imminent)", True)
-        return ("Unknown / Not Reported", False)
-
     def diagnose_storage_health(self, serial: str) -> StorageHealthReport:
-        logger.info(f"Auditing NAND flash memory health for {serial}...")
+        logger.info(f"Reading storage health registers for {serial}...")
         report = StorageHealthReport()
-        logs = []
 
-        # 1. Detect Storage Type (UFS vs eMMC)
-        code_ufs, out_ufs, _ = self.bridge.shell("ls -d /sys/bus/scsi/devices/host* /sys/class/scsi_host/host* 2>/dev/null", serial=serial, timeout=4)
-        code_emmc, out_emmc, _ = self.bridge.shell("ls -d /sys/block/mmcblk0 2>/dev/null", serial=serial, timeout=4)
+        # 1. Storage type / name / size (informational)
+        emmc_dir = run_read(self.bridge, "ls -d /sys/block/mmcblk0", serial=serial, timeout=4)
+        ufs_dir = run_read(self.bridge, "ls -d /sys/class/ufs_device* /sys/bus/platform/drivers/ufshcd*", serial=serial, timeout=4)
+        if ufs_dir.ok:
+            report.storage_type = "UFS"
+        elif emmc_dir.ok:
+            report.storage_type = "eMMC"
 
-        if code_ufs == 0 and out_ufs.strip():
-            report.storage_type = "UFS (Universal Flash Storage)"
-        elif code_emmc == 0 and out_emmc.strip():
-            report.storage_type = "eMMC (Embedded MultiMediaCard)"
+        name = read_node(self.bridge, ["/sys/block/mmcblk0/device/name", "/sys/block/sda/device/model"], serial=serial, timeout=4)
+        if name.ok:
+            report.storage_name = name.text.splitlines()[0].strip()
+            report.evidence.append(name.evidence(f"name={report.storage_name}"))
+        size = read_node(self.bridge, ["/sys/block/mmcblk0/size", "/sys/block/sda/size"], serial=serial, timeout=4)
+        sectors = parse_int(size.text) if size.ok else None
+        if sectors is not None and sectors > 0:
+            report.storage_capacity_gb = round(sectors * 512 / (1024 ** 3), 2)
+            report.evidence.append(size.evidence(f"{sectors} sectors x 512 B = {report.storage_capacity_gb} GiB"))
+
+        # 2. JEDEC wear registers (eMMC first, then UFS health descriptor)
+        life = read_node(self.bridge, ["/sys/block/mmcblk0/device/life_time"], serial=serial, timeout=4)
+        eol = read_node(self.bridge, ["/sys/block/mmcblk0/device/pre_eol_info"], serial=serial, timeout=4)
+        ufs_a = read_node(self.bridge, [f"{d}/life_time_estimation_a" for d in self.UFS_DESC_DIRS], serial=serial, timeout=4)
+        ufs_b = read_node(self.bridge, [f"{d}/life_time_estimation_b" for d in self.UFS_DESC_DIRS], serial=serial, timeout=4)
+        ufs_eol = read_node(self.bridge, [f"{d}/eol_info" for d in self.UFS_DESC_DIRS], serial=serial, timeout=4)
+        reads: List[ReadResult] = [life, eol, ufs_a, ufs_b, ufs_eol]
+
+        life_values: List[int] = []
+        pre_eol: Optional[int] = None
+        a_vals: List[int] = []
+        b_vals: List[int] = []
+        if life.ok and jedec.parse_life_time(life.text):
+            tokens = life.text.split()
+            a_vals = jedec.parse_life_time(tokens[0]) if tokens else []
+            b_vals = jedec.parse_life_time(tokens[1]) if len(tokens) > 1 else []
+            life_values = a_vals + b_vals
+            pre_eol = jedec.parse_pre_eol(eol.text) if eol.ok else None
         else:
-            report.storage_type = "NAND Flash / UFS"
+            a_vals = jedec.parse_life_time(ufs_a.text) if ufs_a.ok else []
+            b_vals = jedec.parse_life_time(ufs_b.text) if ufs_b.ok else []
+            life_values = a_vals + b_vals
+            pre_eol = jedec.parse_pre_eol(ufs_eol.text) if ufs_eol.ok else None
 
-        # 2. Storage Chip Name & Capacity
-        code_name, out_name, _ = self.bridge.shell(
-            "cat /sys/block/mmcblk0/device/name /sys/block/sda/device/model 2>/dev/null",
-            serial=serial,
-            timeout=4
-        )
-        if code_name == 0 and out_name.strip():
-            report.storage_name = out_name.strip().splitlines()[0]
+        if a_vals:
+            report.life_time_type_a = jedec.life_time_label(a_vals[0])
+        if b_vals:
+            report.life_time_type_b = jedec.life_time_label(b_vals[0])
+        if pre_eol is not None:
+            report.pre_eol_status = jedec.pre_eol_label(pre_eol)
+        report.estimated_wear_pct = jedec.wear_upper_bound_pct(life_values)
 
-        code_size, out_size, _ = self.bridge.shell(
-            "cat /sys/block/mmcblk0/size /sys/block/sda/size 2>/dev/null",
-            serial=serial,
-            timeout=4
-        )
-        if code_size == 0 and out_size.strip():
-            try:
-                sectors = int(out_size.strip().splitlines()[0])
-                report.storage_capacity_gb = round((sectors * 512) / (1024**3), 2)
-            except ValueError:
-                pass
+        for r in reads:
+            if r.ok or r.status == Status.NEEDS_ROOT or r.path_exists:
+                note = ""
+                if r.ok and not (jedec.parse_life_time(r.text) or jedec.parse_pre_eol(r.text)):
+                    note = "malformed register value"
+                report.evidence.append(r.evidence(note))
+        if not report.evidence:
+            report.evidence.append(life.evidence("no JEDEC health node found"))
 
-        # 3. Read eMMC Wear Out indicators (life_time & pre_eol_info)
-        code_life, out_life, err_life = self.bridge.shell(
-            "cat /sys/block/mmcblk0/device/life_time",
-            serial=serial,
-            timeout=4
-        )
-        life_st = status_from_read(out_life, err_life, code_life)
-        if code_life == 0 and out_life.strip():
-            parts = out_life.strip().split()
-            if len(parts) >= 2:
-                desc_a, pct_a = self._parse_life_time(parts[0])
-                desc_b, pct_b = self._parse_life_time(parts[1])
-                report.life_time_type_a = desc_a
-                report.life_time_type_b = desc_b
-                report.estimated_wear_pct = max(pct_a, pct_b)
-                logs.append(f"eMMC Life Time Raw: {out_life.strip()} -> TypeA: {desc_a}, TypeB: {desc_b}")
-            elif len(parts) == 1:
-                desc_a, pct_a = self._parse_life_time(parts[0])
-                report.life_time_type_a = desc_a
-                report.estimated_wear_pct = pct_a
+        status = jedec.evaluate(life_values, pre_eol)
+        if status == Status.UNKNOWN:
+            status = failure_status(reads)
+        report.status = str(status)
 
-        code_eol, out_eol, err_eol = self.bridge.shell(
-            "cat /sys/block/mmcblk0/device/pre_eol_info",
-            serial=serial,
-            timeout=4
-        )
-        eol_st = status_from_read(out_eol, err_eol, code_eol)
-        if code_eol == 0 and out_eol.strip():
-            eol_desc, is_failing = self._parse_pre_eol(out_eol)
-            report.pre_eol_status = eol_desc
-            if is_failing:
-                report.is_failing_or_degraded = True
-            logs.append(f"Pre-EOL Info: {out_eol.strip()} -> {eol_desc}")
-
-        # 4. Read UFS Health Descriptors if available
-        code_ufs_h, out_ufs_h, err_ufs = self.bridge.shell(
-            "cat /sys/kernel/debug/ufshcd*/dump_device_desc /sys/class/scsi_device/*/device/dump_device_desc",
-            serial=serial,
-            timeout=4
-        )
-        ufs_st = status_from_read(out_ufs_h, err_ufs, code_ufs_h)
-        if code_ufs_h == 0 and out_ufs_h.strip():
-            logs.append("UFS Device Descriptor retrieved.")
-            # Search for bDeviceLifeTimeEstA and B in UFS
-            m_a = re.search(r"bDeviceLifeTimeEstA\s*=\s*(0x[0-9a-fA-F]+)", out_ufs_h)
-            m_b = re.search(r"bDeviceLifeTimeEstB\s*=\s*(0x[0-9a-fA-F]+)", out_ufs_h)
-            if m_a and m_b:
-                desc_a, pct_a = self._parse_life_time(m_a.group(1))
-                desc_b, pct_b = self._parse_life_time(m_b.group(1))
-                report.life_time_type_a = desc_a
-                report.life_time_type_b = desc_b
-                report.estimated_wear_pct = max(pct_a, pct_b)
-
-        # 5. Formulate Diagnostic Verdict based on actual reads
-        if report.estimated_wear_pct >= 85 or report.is_failing_or_degraded:
+        if status == Status.FAIL:
             report.is_failing_or_degraded = True
-            report.status = "FAIL"
-            report.diagnosis = f"FAIL: Flash memory heavily degraded ({report.estimated_wear_pct}% wear, EOL: {report.pre_eol_status}). High risk of unrecoverable bootloop or storage I/O collapse!"
-        elif report.estimated_wear_pct >= 60:
-            report.status = "PASS"
-            report.diagnosis = f"PASS (Warning): Flash memory exhibits moderate wear ({report.estimated_wear_pct}% consumed). Normal aging, but avoid aggressive flashing."
-        elif report.estimated_wear_pct > 0:
-            report.status = "PASS"
-            report.diagnosis = f"PASS: Flash memory is healthy and in good operating condition ({report.estimated_wear_pct}% wear level, EOL: {report.pre_eol_status})."
+            report.diagnosis = (f"Wear registers report high wear (up to {report.estimated_wear_pct}% of rated life, "
+                                f"pre-EOL: {report.pre_eol_status}). Possible cause: flash near end of endurance; back up data.")
+        elif status == Status.PASS:
+            report.diagnosis = f"Wear registers read: up to {report.estimated_wear_pct}% of rated life used, pre-EOL: {report.pre_eol_status}."
+        elif status == Status.NEEDS_ROOT:
+            report.diagnosis = f"Wear registers for {report.storage_type} are blocked without root."
         else:
-            if life_st == Status.NEEDS_ROOT or eol_st == Status.NEEDS_ROOT or ufs_st == Status.NEEDS_ROOT:
-                report.status = "NEEDS_ROOT"
-                report.diagnosis = f"NEEDS_ROOT: JEDEC wear descriptors restricted by SELinux on {report.storage_type}. Root required to read raw block descriptor."
-            else:
-                report.status = "UNKNOWN"
-                report.diagnosis = f"UNKNOWN: JEDEC wear descriptors unexposed by OEM driver for {report.storage_type} ({report.storage_name})."
-
-        report.raw_logs = logs
-        report.evidence.append(Evidence(
-            source="NAND Storage Controller",
-            raw_excerpt=f"type={report.storage_type}, name={report.storage_name}, capacity={report.storage_capacity_gb}GB, wear_pct={report.estimated_wear_pct}, EOL={report.pre_eol_status}",
-            exit_code=0
-        ))
-        for log in logs:
-            report.evidence.append(Evidence(source="JEDEC Life Time Log", raw_excerpt=log, exit_code=0))
-        if life_st == Status.NEEDS_ROOT:
-            report.evidence.append(Evidence(source="/sys/block/mmcblk0/device/life_time", raw_excerpt=(err_life or out_life or "Permission denied").strip(), exit_code=code_life))
-        return report
+            report.diagnosis = f"Wear registers are not exposed (or unreadable) on this {report.storage_type} device."
         return report
 
     def run_speed_benchmark(self, serial: str, test_size_mb: int = 40) -> StorageHealthReport:
-        """
-        Executes sequential Read & Write speed benchmark via ADB shell using 'dd'.
-        Creates a temporary test file in /data/local/tmp/ and measures true throughput in MB/s.
-        """
-        logger.info(f"Running true I/O speed benchmark on {serial} (Size: {test_size_mb}MB)...")
+        """Sequential write (fsync) then read of a temp file in /data/local/tmp, measured by dd."""
+        logger.info(f"Running storage speed benchmark on {serial} ({test_size_mb} MB)...")
         report = self.diagnose_storage_health(serial)
         start_time = time.time()
-        
-        tmp_file = "/data/local/tmp/speed_benchmark.dat"
+        tmp_file = "/data/local/tmp/ad_speed_benchmark.dat"
 
-        # Step 1: Write Speed Test
-        # Write test_size_mb from /dev/zero to tmp_file with fdatasync
-        write_cmd = f"dd if=/dev/zero of={tmp_file} bs=1M count={test_size_mb} conv=fdatasync 2>&1"
-        code_w, out_w, _ = self.bridge.shell(write_cmd, serial=serial, timeout=25)
-        
-        write_speed = 0.0
-        if code_w == 0 and out_w:
-            # Match e.g. "41943040 bytes (40 MB, 38 MiB) copied, 0.432 s, 97.1 MB/s" or "97.1 MB/s"
-            m = re.search(r"([\d\.]+)\s*(MB/s|GB/s|kB/s|bytes/sec)", out_w)
-            if m:
-                val = float(m.group(1))
-                unit = m.group(2)
-                if unit == "GB/s":
-                    write_speed = val * 1024
-                elif unit == "MB/s":
-                    write_speed = val
-                elif unit in ["kB/s", "KB/s"]:
-                    write_speed = val / 1024
-                else:
-                    write_speed = val / (1024 * 1024)
-
-        # Step 2: Read Speed Test
-        # Read from tmp_file to /dev/null
-        read_cmd = f"dd if={tmp_file} of=/dev/null bs=1M count={test_size_mb} 2>&1"
-        code_r, out_r, _ = self.bridge.shell(read_cmd, serial=serial, timeout=25)
-
-        read_speed = 0.0
-        if code_r == 0 and out_r:
-            m = re.search(r"([\d\.]+)\s*(MB/s|GB/s|kB/s|bytes/sec)", out_r)
-            if m:
-                val = float(m.group(1))
-                unit = m.group(2)
-                if unit == "GB/s":
-                    read_speed = val * 1024
-                elif unit == "MB/s":
-                    read_speed = val
-                elif unit in ["kB/s", "KB/s"]:
-                    read_speed = val / 1024
-                else:
-                    read_speed = val / (1024 * 1024)
-
-        # Step 3: Clean up temporary benchmark file
+        w = run_read(self.bridge, f"dd if=/dev/zero of={tmp_file} bs=1048576 count={test_size_mb} conv=fsync",
+                     serial=serial, timeout=60)
+        r = run_read(self.bridge, f"dd if={tmp_file} of=/dev/null bs=1048576", serial=serial, timeout=60)
         self.bridge.shell(f"rm -f {tmp_file}", serial=serial, timeout=5)
 
-        total_duration = round(time.time() - start_time, 2)
-        report.read_speed_mbps = round(read_speed, 2)
-        report.write_speed_mbps = round(write_speed, 2)
-        report.benchmark_duration_sec = total_duration
-        report.benchmark_status = "Completed"
+        report.write_speed_mbps = parse_dd_speed_mb_s(f"{w.stdout}\n{w.stderr}") if w.exit_code in (0, None) else None
+        report.read_speed_mbps = parse_dd_speed_mb_s(f"{r.stdout}\n{r.stderr}") if r.exit_code in (0, None) else None
+        report.benchmark_duration_sec = round(time.time() - start_time, 2)
+        report.evidence.append(w.evidence(f"write={report.write_speed_mbps} MB/s"))
+        report.evidence.append(r.evidence(f"read={report.read_speed_mbps} MB/s (may be served from page cache)"))
 
-        # Evaluate performance tiers
-        if read_speed > 350:
-            tier = "Ultra Fast (High-End UFS 3.0 / 3.1)"
-        elif read_speed > 180:
-            tier = "Fast (Standard UFS 2.1 / 2.2)"
-        elif read_speed > 80:
-            tier = "Normal (Standard eMMC 5.1)"
-        elif read_speed > 0:
-            tier = "Slow / Degraded I/O (Bottleneck or Worn Flash)"
+        if report.write_speed_mbps is None and report.read_speed_mbps is None:
+            report.benchmark_status = "UNKNOWN"
+            report.diagnosis += " | Benchmark: dd output could not be parsed."
         else:
-            tier = "Benchmark Inconclusive"
-
-        report.diagnosis += f" | Benchmark: Read {report.read_speed_mbps} MB/s, Write {report.write_speed_mbps} MB/s [{tier}]"
+            report.benchmark_status = "Completed"
+            report.diagnosis += (f" | Benchmark: write {report.write_speed_mbps} MB/s, read {report.read_speed_mbps} MB/s "
+                                 f"(read may be served from page cache).")
         return report
+
+    # Name used by the UI
+    def run_full_storage_test(self, serial: str) -> StorageHealthReport:
+        return self.run_speed_benchmark(serial)

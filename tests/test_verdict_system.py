@@ -33,13 +33,13 @@ from core.hardware_tester import (
     PeripheralChipsDiagnostics,
     DisplayBacklightDiagnostics,
     AudioCodecReport,
-    DisplayPanelInfo,
-    DisplayPanelAuthenticity
+    DisplayPanelInfo
 )
 from core.storage_benchmark import StorageBenchmark, StorageHealthReport
 from database.db_manager import DatabaseManager
 from ui.report_exporter import DiagnosticReportExporter
 from ui.i18n import STRINGS
+from tests.fakes import FakeBridge
 
 
 class TestVerdictSystemAndNoFakeResults(unittest.TestCase):
@@ -282,63 +282,59 @@ class TestVerdictSystemAndNoFakeResults(unittest.TestCase):
 
     def test_getevent_shell_access_and_errors(self):
         """3. getevent works without root. General failure -> UNKNOWN with evidence. Stderr permission denied -> NEEDS_ROOT."""
-        # Case A: Normal live key events without root -> PASS
-        self.mock_bridge.shell.side_effect = [
-            (0, "dumpsys input ok", ""),  # dumpsys input
-            (0, "/dev/input/event1: EV_KEY KEY_POWER DOWN\n/dev/input/event1: EV_KEY KEY_POWER UP\n", "")  # getevent -l
-        ]
-        btn_pass = self.hw_tester.diagnose_physical_buttons("serial_1")
+        # Case A: all three keys pressed and released during capture, without root -> PASS
+        all_keys = "\n".join(
+            f"/dev/input/event1: EV_KEY {k} {s}"
+            for k in ("KEY_VOLUMEUP", "KEY_VOLUMEDOWN", "KEY_POWER") for s in ("DOWN", "UP")
+        )
+        btn_pass = HardwareTester(FakeBridge({"getevent": (124, all_keys, "")})).diagnose_physical_buttons("serial_1")
         self.assertEqual(btn_pass.status, "PASS")
 
+        # Case A2: only Power pressed -> Power key PASS, the untested volume keys keep the overall result UNKNOWN
+        only_power = "/dev/input/event1: EV_KEY KEY_POWER DOWN\n/dev/input/event1: EV_KEY KEY_POWER UP\n"
+        btn_power = HardwareTester(FakeBridge({"getevent": (0, only_power, "")})).diagnose_physical_buttons("serial_1")
+        self.assertEqual(btn_power.power_status, "PASS")
+        self.assertEqual(btn_power.status, "UNKNOWN")
+
         # Case B: getevent timeout / empty without permission error -> UNKNOWN (NOT NEEDS_ROOT!)
-        self.mock_bridge.shell.side_effect = [
-            (1, "", "Service input unavailable"),  # dumpsys input fails
-            (124, "", "")                          # getevent times out without events
-        ]
-        btn_unknown = self.hw_tester.diagnose_physical_buttons("serial_1")
+        btn_unknown = HardwareTester(FakeBridge({"getevent": (124, "", "")})).diagnose_physical_buttons("serial_1")
         self.assertEqual(btn_unknown.status, "UNKNOWN", "Non-permission getevent failure must return UNKNOWN, not NEEDS_ROOT")
         self.assertTrue(len(btn_unknown.evidence) > 0)
 
         # Case C: Actual permission error in stderr -> NEEDS_ROOT
-        self.mock_bridge.shell.side_effect = [
-            (1, "", "Permission denied: dumpsys input"),
-            (1, "", "getevent: could not open /dev/input/event0: Permission denied")
-        ]
-        btn_root = self.hw_tester.diagnose_physical_buttons("serial_1")
+        btn_root = HardwareTester(FakeBridge({
+            "getevent": (1, "", "getevent: could not open /dev/input/event0: Permission denied")
+        })).diagnose_physical_buttons("serial_1")
         self.assertEqual(btn_root.status, "NEEDS_ROOT", "Permission error in stderr must return NEEDS_ROOT")
 
     def test_display_panel_info_status_derivation(self):
         """4. DisplayPanelInfo: no fake original claim. If dmesg is blocked by permissions -> NEEDS_ROOT."""
+        props = {"verifiedbootstate": (0, "green", ""), "vbmeta.device_state": (0, "locked", "")}
+
         # Case A: dmesg blocked by SELinux / permission denied in stderr -> NEEDS_ROOT
-        self.mock_bridge.shell.side_effect = [
-            (1, "", "dmesg: klogctl: Permission denied"),
-            (1, "", "No such file or directory"),  # sysfs
-            (0, "green", ""),                     # verifiedbootstate
-            (0, "locked", "")                     # vbmeta
-        ]
-        panel_root = self.hw_tester.inspect_display_panel_info("serial_1")
+        panel_root = HardwareTester(FakeBridge({
+            **props,
+            "dmesg": (1, "", "dmesg: klogctl: Permission denied"),
+            "msm_fb_panel_info": (1, "", "No such file or directory"),
+        })).inspect_display_panel_info("serial_1")
         self.assertEqual(panel_root.check_id, "display.panel_info")
         self.assertEqual(panel_root.status, "NEEDS_ROOT", "Permission denied on dmesg must return NEEDS_ROOT")
         self.assertNotIn("OEM Verified", panel_root.diagnosis, "Must not claim OEM authenticity")
 
         # Case B: Panel controller identified from dmesg -> PASS
-        self.mock_bridge.shell.side_effect = [
-            (0, "[ 1.234] dsi_panel: probe novatek nt36672 active", ""),
-            (0, "green", ""),
-            (0, "locked", "")
-        ]
-        panel_pass = self.hw_tester.inspect_display_panel_info("serial_1")
+        panel_pass = HardwareTester(FakeBridge({
+            **props,
+            "dmesg": (0, "[ 1.234] dsi_panel: probe novatek nt36672 active", ""),
+        })).inspect_display_panel_info("serial_1")
         self.assertEqual(panel_pass.status, "PASS")
         self.assertEqual(panel_pass.panel_controller_name, "nt36672")
 
         # Case C: Unexposed panel controller without permission error -> UNKNOWN
-        self.mock_bridge.shell.side_effect = [
-            (0, "normal boot logs without panel tags", ""),
-            (1, "", "No such file"),
-            (0, "green", ""),
-            (0, "locked", "")
-        ]
-        panel_unk = self.hw_tester.inspect_display_panel_info("serial_1")
+        panel_unk = HardwareTester(FakeBridge({
+            **props,
+            "dmesg": (0, "normal boot logs without panel tags", ""),
+            "msm_fb_panel_info": (1, "", "No such file"),
+        })).inspect_display_panel_info("serial_1")
         self.assertEqual(panel_unk.status, "UNKNOWN", "Unexposed panel info must return UNKNOWN")
 
     def test_storage_health_unreadable_is_not_pass(self):
@@ -355,58 +351,36 @@ class TestVerdictSystemAndNoFakeResults(unittest.TestCase):
 
     def test_status_from_read_coverage_matrix(self):
         """Step 3: Test checks covering normal output, empty output, permission denied (stderr), missing path, malformed."""
+        base = {
+            "ls -d /sys/block/mmcblk0": (0, "/sys/block/mmcblk0", ""),
+            "mmcblk0/device/name": (0, "KLMBG4GE", ""),
+            "mmcblk0/size": (0, "61071360", ""),
+        }
+
+        def storage(life, eol, ufs):
+            bridge = FakeBridge({**base, "device/life_time": life, "pre_eol_info": eol, "health_descriptor": ufs})
+            return StorageBenchmark(bridge).diagnose_storage_health("serial_x")
+
         # 1. Storage health with Permission Denied in stderr -> NEEDS_ROOT
-        self.mock_bridge.shell.side_effect = [
-            (0, "", ""),                                                               # ls host
-            (0, "/sys/block/mmcblk0", ""),                                             # ls mmcblk0
-            (0, "KLMBG4GE", ""),                                                       # name
-            (0, "61071360", ""),                                                       # size
-            (1, "", "cat: /sys/block/mmcblk0/device/life_time: Permission denied"),    # life_time
-            (1, "", "cat: /sys/block/mmcblk0/device/pre_eol_info: Permission denied"), # pre_eol
-            (1, "", "dump_device_desc: Permission denied")                             # ufs
-        ]
-        rep_root = self.storage_bench.diagnose_storage_health("serial_x")
+        rep_root = storage((1, "", "cat: /sys/block/mmcblk0/device/life_time: Permission denied"),
+                           (1, "", "cat: /sys/block/mmcblk0/device/pre_eol_info: Permission denied"),
+                           (1, "", "dump_device_desc: Permission denied"))
         self.assertEqual(rep_root.status, "NEEDS_ROOT", "Permission denied in stderr must yield NEEDS_ROOT")
 
         # 2. Storage health with normal wear output -> PASS
-        self.mock_bridge.shell.side_effect = [
-            (0, "", ""),
-            (0, "/sys/block/mmcblk0", ""),
-            (0, "KLMBG4GE", ""),
-            (0, "61071360", ""),
-            (0, "0x01 0x01", ""),       # life_time normal (0-10% wear)
-            (0, "0x01", ""),            # pre_eol normal
-            (1, "", "No such file")     # ufs
-        ]
-        rep_pass = self.storage_bench.diagnose_storage_health("serial_x")
+        rep_pass = storage((0, "0x01 0x01", ""), (0, "0x01", ""), (1, "", "No such file"))
         self.assertEqual(rep_pass.status, "PASS", "Valid parsed wear data must yield PASS")
         self.assertTrue(rep_pass.has_real_data)
 
         # 3. Storage health with missing nodes without permission error -> UNKNOWN
-        self.mock_bridge.shell.side_effect = [
-            (0, "", ""),
-            (0, "/sys/block/mmcblk0", ""),
-            (0, "KLMBG4GE", ""),
-            (0, "61071360", ""),
-            (1, "", "cat: /sys/block/mmcblk0/device/life_time: No such file or directory"),
-            (1, "", "cat: /sys/block/mmcblk0/device/pre_eol_info: No such file or directory"),
-            (1, "", "dump_device_desc: No such file or directory")
-        ]
-        rep_unk = self.storage_bench.diagnose_storage_health("serial_x")
+        rep_unk = storage((1, "", "cat: /sys/block/mmcblk0/device/life_time: No such file or directory"),
+                          (1, "", "cat: /sys/block/mmcblk0/device/pre_eol_info: No such file or directory"),
+                          (1, "", "dump_device_desc: No such file or directory"))
         self.assertEqual(rep_unk.status, "UNKNOWN", "Missing wear nodes without permission error must yield UNKNOWN")
         self.assertFalse(rep_unk.has_real_data)
 
         # 4. Storage health with malformed wear output -> UNKNOWN
-        self.mock_bridge.shell.side_effect = [
-            (0, "", ""),
-            (0, "/sys/block/mmcblk0", ""),
-            (0, "KLMBG4GE", ""),
-            (0, "61071360", ""),
-            (0, "invalid_gibberish_hex", ""),
-            (0, "corrupt_data", ""),
-            (1, "", "No such file")
-        ]
-        rep_mal = self.storage_bench.diagnose_storage_health("serial_x")
+        rep_mal = storage((0, "invalid_gibberish_hex", ""), (0, "corrupt_data", ""), (1, "", "No such file"))
         self.assertEqual(rep_mal.status, "UNKNOWN", "Malformed wear data must yield UNKNOWN")
 
     def test_report_exporter_renamed_terms_and_evidence(self):
@@ -467,7 +441,7 @@ class TestVerdictSystemAndNoFakeResults(unittest.TestCase):
             storage_life_report={},
             stress_report={},
             audio_codec={"status": "PASS", "evidence": [Evidence(source="/proc/asound/cards", raw_excerpt="0 [sm8450]", exit_code=0)]},
-            disp_auth={"status": "PASS", "evidence": [Evidence(source="getprop ro.boot.verifiedbootstate", raw_excerpt="green", exit_code=0)]},
+            panel_info={"status": "PASS", "evidence": [Evidence(source="getprop ro.boot.verifiedbootstate", raw_excerpt="green", exit_code=0)]},
             root_forensics={},
             technician_name="Senior Engineer",
             ticket_id="TCK-999888",

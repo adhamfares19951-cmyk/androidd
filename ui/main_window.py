@@ -36,8 +36,7 @@ from core.hardware_tester import (
     BluetoothDiagnostics,
     PeripheralChipsDiagnostics,
     AudioCodecReport,
-    DisplayPanelInfo,
-    DisplayPanelAuthenticity
+    DisplayPanelInfo
 )
 from core.storage_benchmark import StorageBenchmark, StorageHealthReport
 from core.partition_backup import PartitionBackupManager, PartitionInfo, BackupResult
@@ -57,12 +56,19 @@ ctk.set_default_color_theme("blue")
 ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"
 
 
+def _fmt(value: Any, unit: str = "") -> str:
+    """Format a reading; None is shown as UNKNOWN (never as 0 or a guess)."""
+    if value is None:
+        return "UNKNOWN"
+    return f"{value} {unit}".strip()
+
+
 def format_evidence_for_display(evidence_items: Any, is_ar: bool = True) -> str:
     """Renders a list of Evidence objects with source and excerpt formatted separately for UI display."""
     if not evidence_items:
         return ""
     if isinstance(evidence_items, str):
-        evidence_list = [{"source": "Raw Data", "raw_excerpt": evidence_items.strip(), "exit_code": 0}]
+        evidence_list = [{"source": "Raw Data", "raw_excerpt": evidence_items.strip(), "exit_code": None}]
     elif isinstance(evidence_items, list):
         evidence_list = evidence_items
     else:
@@ -124,7 +130,7 @@ class AndroidDoctorApp(ctk.CTk):
         self.last_storage_life: Optional[StorageLifeReport] = None
         self.last_stress_report: Optional[StressTestReport] = None
         self.last_audio_codec: Optional[AudioCodecReport] = None
-        self.last_disp_auth: Optional[DisplayPanelInfo] = None
+        self.last_panel_info: Optional[DisplayPanelInfo] = None
         self.last_blackbox: Optional[Dict[str, Any]] = None
         self.last_bloat_scan: Optional[List[Dict[str, Any]]] = None
         self.last_root_forensics: Optional[RootForensicsReport] = None
@@ -882,14 +888,14 @@ class AndroidDoctorApp(ctk.CTk):
         self.audio_codec_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
         self.audio_codec_text.insert("end", "فحص بطاقة الصوت ALSA ومتحكم الصوت الداخلي (WCD/ALC/MTK) وحالة AudioFlinger...\n" if self.current_lang == "ar" else "Inspects ALSA soundcards, Audio Codec IC chip, and AudioFlinger HAL state...\n")
 
-        # Display Controller Model & Bootloader Authenticity Card
-        self.disp_auth_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
-        self.disp_auth_card.grid(row=5, column=1, padx=(8, 0), pady=(15, 0), sticky="nsew")
-        ctk.CTkLabel(self.disp_auth_card, text=self._tr("card_display_auth"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#fbbf24").pack(anchor="w", padx=15, pady=(10, 5))
+        # Display panel info & verified boot state card
+        self.panel_info_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
+        self.panel_info_card.grid(row=5, column=1, padx=(8, 0), pady=(15, 0), sticky="nsew")
+        ctk.CTkLabel(self.panel_info_card, text=self._tr("card_panel_info"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#fbbf24").pack(anchor="w", padx=15, pady=(10, 5))
 
-        self.disp_auth_text = ctk.CTkTextbox(self.disp_auth_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.disp_auth_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        self.disp_auth_text.insert("end", "استخراج اسم شريحة تعريف شاشة العرض (DSI Controller) وحالة حماية البوت لودر (VerifiedBootState)...\n" if self.current_lang == "ar" else "Extracts DSI Panel controller model and VerifiedBootState/vbmeta authenticity flags...\n")
+        self.panel_info_text = ctk.CTkTextbox(self.panel_info_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
+        self.panel_info_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        self.panel_info_text.insert("end", "استخراج اسم شريحة تعريف شاشة العرض (DSI Controller) وحالة حماية البوت لودر (VerifiedBootState)...\n" if self.current_lang == "ar" else "Reads the kernel-reported display controller name and VerifiedBootState / vbmeta state...\n")
 
     # =========================================================================
     # TAB 4: MALWARE HUNTER & SPYWARE AUDITOR
@@ -1593,8 +1599,10 @@ class AndroidDoctorApp(ctk.CTk):
                 out_lines.append("\n⚠️ مؤشرات أعطال محتملة تم رصدها:" if is_ar else "\n⚠️ POTENTIAL FAULT INDICATORS:")
                 for f in pmic.fault_flags:
                     out_lines.append(f"  [!] {f}")
+            elif pmic.voltage_status == "PASS":
+                out_lines.append("\nلا توجد مؤشرات أعطال في القيم التي تمت قراءتها." if is_ar else "\nNo fault indicators in the values that were read.")
             else:
-                out_lines.append("\n✓ قراءات جهد البطارية ومقياس الوقود طبيعية." if is_ar else "\n✓ Battery fuel gauge & voltage readings within normal ranges.")
+                out_lines.append(f"\n[{pmic.voltage_status}]")
 
             if pmic.evidence:
                 out_lines.append(format_evidence_for_display(pmic.evidence, is_ar=is_ar))
@@ -1683,11 +1691,12 @@ class AndroidDoctorApp(ctk.CTk):
             return
 
         def task():
-            zones = self.board_diag.scan_thermal_map(serial)
+            thermal = self.board_diag.read_thermal(serial)
+            zones = thermal.zones
             is_ar = self.current_lang == "ar"
-            out = [f"=== خريطة حرارة الآيسيات والمعالج ({len(zones)} مستشعر) ===" if is_ar else f"=== THERMAL ZONES MAP ({len(zones)} Sensors Discovered) ==="]
+            out = [f"=== خريطة الحرارة ({len(zones)} منطقة) [{thermal.status}] ===" if is_ar else f"=== THERMAL ZONES ({len(zones)} zones) [{thermal.status}] ==="]
             for z in zones:
-                status = ("مرتفعة (>45°C) ⚠️" if is_ar else "HOT (>45°C) ⚠️") if z.is_overheated else ("آمنة وطبيعية ✓" if is_ar else "SAFE ✓")
+                status = ("مرتفعة (>45°C) ⚠️" if is_ar else "HOT (>45°C) ⚠️") if z.is_overheated else ("أقل من 45°C" if is_ar else "below 45°C")
                 out.append(f"منطقة {z.zone_id:02d} [{z.zone_type}]: {z.temp_c:.1f}°C — {status}")
             
             def upd():
@@ -1707,7 +1716,8 @@ class AndroidDoctorApp(ctk.CTk):
             is_ar = self.current_lang == "ar"
             out = [
                 "=== فحص سجلات انهيار النظام والذاكرة ===" if is_ar else "=== STORAGE & KERNEL PANIC AUDIT ===",
-                f"التقييم: {panics.summary_verdict}",
+                f"[{panics.status}] {panics.summary_verdict}",
+                f"dmesg: {panics.dmesg_status} | pstore: {panics.blackbox.kernel_ramoops_status} | boot reason: {panics.blackbox.boot_reason}",
                 f"أخطاء قراءة وكتابة ذاكرة UFS/eMMC: {len(panics.emmc_ufs_errors)}",
                 f"إعادة تشغيل الحماية (Watchdog):     {len(panics.watchdog_resets)}",
                 f"انهيارات الكيرنل (Kernel Panic):     {len(panics.kernel_panics)}",
@@ -1744,12 +1754,12 @@ class AndroidDoctorApp(ctk.CTk):
             result = self.board_diag.run_blackbox_forensics(serial)
             self.last_blackbox = result
 
-            cat = result.get("category", "NORMAL")
-            reason = result.get("boot_reason", "unknown")
-            history = result.get("boot_reason_history", [])
-            ramoops = result.get("ramoops_status", "UNKNOWN")
-            diag = result.get("diagnosis", "")
-            events = result.get("dropbox_critical_events", [])
+            cat = result.shutdown_category
+            reason = result.boot_reason
+            history = [h for h in result.boot_reason_history.split(",") if h.strip()] if result.boot_reason_history != "UNKNOWN" else []
+            ramoops = result.kernel_ramoops_status
+            diag = f"[{result.status}] {result.diagnosis}"
+            events = result.dropbox_events
 
             lines = [
                 "=== تحليل الصندوق الأسود وأسباب الانطفاء المفاجئ ===" if is_ar else "=== BLACKBOX FORENSICS & REBOOT ANALYSIS ===",
@@ -1769,12 +1779,13 @@ class AndroidDoctorApp(ctk.CTk):
             if events:
                 lines.append(f"أحداث DropBox الحرجة المسجلة ({len(events)} حدث):" if is_ar else f"DropBox Critical Crash Events ({len(events)} logged):")
                 for ev in events:
-                    lines.append(f"  • [{ev.get('tag')}] {ev.get('timestamp')}")
-                    snippet = ev.get("snippet", "")
-                    if snippet:
-                        lines.append(f"    {snippet[:100]}...")
+                    lines.append(f"  • {ev}")
             else:
-                lines.append("✓ لا توجد سجلات انهيار DropBox حرجة مسجلة مؤخراً." if is_ar else "✓ No recent DropBox panic crash records found.")
+                lines.append("لا توجد إدخالات DropBox ذات صلة في القائمة المقروءة." if is_ar else "No relevant DropBox entries in the list that was read.")
+            for cause in result.possible_causes:
+                lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
+            if result.evidence:
+                lines.append(format_evidence_for_display(result.evidence, is_ar=is_ar))
 
             def upd():
                 self.blackbox_text.delete("1.0", "end")
@@ -1842,27 +1853,32 @@ class AndroidDoctorApp(ctk.CTk):
             # Sensors
             s_lines = [f"=== المستشعرات المسجلة (حسب نظام Sensor HAL) ({len(report.sensors)} مستشعر) ===" if is_ar else f"=== REPORTED SENSORS ({len(report.sensors)} Registered) ==="]
             for s in report.sensors:
-                s_lines.append(f"• {s.name} ({s.vendor}) | النوع: {s.sensor_type} | السحب: {s.power_ma}mA")
+                power_txt = f" | {s.power_ma} mA" if s.power_ma is not None else ""
+                s_lines.append(f"• {s.name} ({s.vendor}) | {s.sensor_type}{power_txt}")
+            if not report.sensors:
+                s_lines.append(f"[{report.sensors_status}]")
             if report.missing_critical_sensors:
-                s_lines.append(f"\n⚠️ حساسات أساسية لم تستجب: {', '.join(report.missing_critical_sensors)}")
+                s_lines.append(("\nحساسات شائعة غير مسجلة في هذا الجهاز (ليس عطلاً بالضرورة): " if is_ar else "\nCommon sensors not reported (not necessarily a fault): ") + ", ".join(report.missing_critical_sensors))
 
             # Cameras & Audio
             c_lines = [f"=== كاميرات الهاتف ({len(report.cameras)} عدسة) ===" if is_ar else f"=== CAMERA MODULES ({len(report.cameras)} Detected) ==="]
             for c in report.cameras:
-                c_lines.append(f"• كاميرا {c.camera_id}: عدسة {c.facing} (فلاش: {'متوفر' if c.flash_available else 'غير متوفر'})")
+                flash_txt = "UNKNOWN" if c.flash_available is None else (("متوفر" if is_ar else "yes") if c.flash_available else ("غير متوفر" if is_ar else "no"))
+                c_lines.append(f"• Camera {c.camera_id}: {c.facing} (flash: {flash_txt})")
+            if not report.cameras:
+                c_lines.append(f"[{report.cameras_status}]")
 
             c_lines.append("\n=== نظام الصوت ومكبر السماعة ===" if is_ar else "\n=== AUDIO SUBSYSTEM ===")
             c_lines.append(f"الوضع: {report.audio.mode} | الرنين: {report.audio.ringer_mode}")
-            c_lines.append(f"مكبر الصوت (Speaker): {'مفعل' if report.audio.speaker_on else 'مغلق'}")
 
             # Fingerprint
             fp_lines = [
                 f"الحالة المعتمدة: [{report.fingerprint.status}]" if is_ar else f"Verified Status: [{report.fingerprint.status}]",
                 f"الشركة المصنعة لآيسي البصمة: {report.fingerprint.vendor}",
-                f"الحالة التشغيلية: {'سليم ويعمل' if report.fingerprint.is_functional else 'معطل / عطل عتادي'}",
-                f"فلاتة التوصيل: {'⚠️ فلاتة مقطوعة أو مفصولة' if report.fingerprint.is_flex_disconnected else 'متصلة باللوحة'}",
                 f"التشخيص الفني: {report.fingerprint.diagnosis}"
             ]
+            for cause in report.fingerprint.possible_causes:
+                fp_lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
             if report.fingerprint.evidence:
                 fp_lines.append(format_evidence_for_display(report.fingerprint.evidence, is_ar=is_ar))
 
@@ -1872,7 +1888,6 @@ class AndroidDoctorApp(ctk.CTk):
                 f"زر خفض الصوت (Vol-): {report.buttons.vol_down_status}",
                 f"زر رفع الصوت (Vol+): {report.buttons.vol_up_status}",
                 f"زر التشغيل (Power):  {report.buttons.power_status}",
-                f"كشف تعليق الأزرار: {'⚠️ يوجد شورت/تعليق!' if report.buttons.is_any_key_stuck else '✓ سليم (محرر)'}",
                 f"التشخيص: {report.buttons.diagnosis}"
             ]
             if report.buttons.evidence:
@@ -1887,9 +1902,10 @@ class AndroidDoctorApp(ctk.CTk):
                 f"نوع شبكة البيانات (Network): {report.sim_baseband.network_type}" if is_ar else f"Network Type: {report.sim_baseband.network_type}",
                 f"قوة الإشارة (Signal): {report.sim_baseband.signal_strength}" if is_ar else f"Signal Strength: {report.sim_baseband.signal_strength}",
                 f"إصدار معالج المودم (Baseband): {report.sim_baseband.baseband_version}" if is_ar else f"Baseband Version: {report.sim_baseband.baseband_version}",
-                f"عطل آيسي الشبكة (RF Baseband): {'⚠️ تالف (No RIL)' if report.sim_baseband.is_rf_baseband_faulty else 'سليم'}" if is_ar else f"RF Baseband IC: {'FAULT' if report.sim_baseband.is_rf_baseband_faulty else 'PASS'}",
                 f"التشخيص: {report.sim_baseband.diagnosis}" if is_ar else f"Diagnosis: {report.sim_baseband.diagnosis}"
             ]
+            for cause in report.sim_baseband.possible_causes:
+                sim_lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
             if report.sim_baseband.evidence:
                 sim_lines.append(format_evidence_for_display(report.sim_baseband.evidence, is_ar=is_ar))
 
@@ -1897,9 +1913,10 @@ class AndroidDoctorApp(ctk.CTk):
             disp_lines = [
                 f"الحالة المعتمدة: [{report.display_backlight.status}]" if is_ar else f"Verified Status: [{report.display_backlight.status}]",
                 f"مستوى إضاءة الشاشة الخلفية: {report.display_backlight.brightness_now} / {report.display_backlight.max_brightness}" if is_ar else f"Backlight Level: {report.display_backlight.brightness_now} / {report.display_backlight.max_brightness}",
-                f"كشف شاشة العرض (DSI Panel): {'تم التعرف على الشاشة' if report.display_backlight.panel_detected else '⚠️ الشاشة غير متصلة/معطوبة'}" if is_ar else f"DSI Panel: {'Detected' if report.display_backlight.panel_detected else 'DISCONNECTED'}",
                 f"التشخيص: {report.display_backlight.diagnosis}" if is_ar else f"Diagnosis: {report.display_backlight.diagnosis}"
             ]
+            for cause in report.display_backlight.possible_causes:
+                disp_lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
             if report.display_backlight.evidence:
                 disp_lines.append(format_evidence_for_display(report.display_backlight.evidence, is_ar=is_ar))
 
@@ -1923,19 +1940,20 @@ class AndroidDoctorApp(ctk.CTk):
                 f"حالة البلوتوث (Bluetooth): {report.bluetooth.state}" if is_ar else f"Bluetooth State: {report.bluetooth.state}",
                 f"عنوان المحول (MAC Address): {report.bluetooth.mac_address}" if is_ar else f"MAC Address: {report.bluetooth.mac_address}",
                 f"اسم الجهاز الظاهر: {report.bluetooth.name}" if is_ar else f"Device Name: {report.bluetooth.name}",
-                f"دعم تقنية BLE: {'مدعوم (Bluetooth Low Energy)' if report.bluetooth.ble_supported else 'غير مدعوم'}" if is_ar else f"BLE Support: {report.bluetooth.ble_supported}",
-                f"حالة العتاد: {'⚠️ عطل عتادي!' if report.bluetooth.is_hardware_faulty else 'سليم ويعمل'}" if is_ar else f"Hardware State: {'FAULT' if report.bluetooth.is_hardware_faulty else 'OK'}",
+                f"BLE: {'UNKNOWN' if report.bluetooth.ble_supported is None else report.bluetooth.ble_supported}",
                 f"التشخيص: {report.bluetooth.diagnosis}" if is_ar else f"Diagnosis: {report.bluetooth.diagnosis}"
             ]
+            for cause in report.bluetooth.possible_causes:
+                bt_lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
             if report.bluetooth.evidence:
                 bt_lines.append(format_evidence_for_display(report.bluetooth.evidence, is_ar=is_ar))
 
             # Peripheral Chips (GPS, NFC, OTG)
             chip_lines = [
                 f"الحالة المعتمدة: [{report.peripherals.status}]" if is_ar else f"Verified Status: [{report.peripherals.status}]",
-                f"شريحة الملاحة والموقع (GPS / GNSS): {report.peripherals.gps_status}" if is_ar else f"GPS / Location Chip: {report.peripherals.gps_status}",
-                f"حساس الاتصال قريب المدى (NFC): {report.peripherals.nfc_status}" if is_ar else f"NFC Hardware: {report.peripherals.nfc_status}",
-                f"منفذ USB OTG (توصيل فلاشة وماوس): {'مدعوم عتادياً' if report.peripherals.usb_otg_supported else 'غير مدعوم'}" if is_ar else f"USB OTG (Host Mode): {'Supported' if report.peripherals.usb_otg_supported else 'Not Supported'}",
+                f"GPS: {report.peripherals.gps_status}",
+                f"NFC: {report.peripherals.nfc_status}",
+                f"USB host / OTG: {'UNKNOWN' if report.peripherals.usb_otg_supported is None else ('Declared' if report.peripherals.usb_otg_supported else 'Not declared')}",
                 f"التشخيص: {report.peripherals.diagnosis}" if is_ar else f"Diagnosis: {report.peripherals.diagnosis}"
             ]
             if report.peripherals.evidence:
@@ -1947,15 +1965,16 @@ class AndroidDoctorApp(ctk.CTk):
                 f"شريحة معالج الصوت (Codec IC): {report.audio_codec.codec_chip_name}" if is_ar else f"Audio Codec IC: {report.audio_codec.codec_chip_name}",
                 f"بطاقات الصوت ALSA المكتشفة ({len(report.audio_codec.cards_detected)}): {', '.join(report.audio_codec.cards_detected) if report.audio_codec.cards_detected else ('لا توجد بطاقات!' if is_ar else 'None')}",
                 f"قنوات الصوت المسجلة (PCM): {len(report.audio_codec.pcm_devices)} قناة" if is_ar else f"ALSA PCM Channels: {len(report.audio_codec.pcm_devices)}",
-                f"حالة خادم الصوت (AudioFlinger): {'يعمل بنشاط' if report.audio_codec.audio_flinger_alive else '⚠️ متوقف/منهار'}" if is_ar else f"AudioFlinger Status: {'Alive' if report.audio_codec.audio_flinger_alive else 'DEAD'}",
-                f"حالة العتاد: {'⚠️ عطل عتادي في آيسي الصوت!' if report.audio_codec.is_codec_faulty else 'سليم ويعمل ✓'}" if is_ar else f"Hardware State: {'FAULT' if report.audio_codec.is_codec_faulty else 'PASS'}",
+                f"AudioFlinger: {'UNKNOWN' if report.audio_codec.audio_flinger_alive is None else ('running' if report.audio_codec.audio_flinger_alive else 'NOT running')} | output threads: {report.audio_codec.output_threads}",
                 f"التشخيص: {report.audio_codec.diagnosis}" if is_ar else f"Diagnosis: {report.audio_codec.diagnosis}"
             ]
+            for cause in report.audio_codec.possible_causes:
+                codec_lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
             if report.audio_codec.evidence:
                 codec_lines.append(format_evidence_for_display(report.audio_codec.evidence, is_ar=is_ar))
 
             # Display Controller & Panel Info
-            auth_lines = [
+            panel_lines = [
                 f"الحالة المعتمدة: [{report.display_panel_info.status}]" if is_ar else f"Verified Status: [{report.display_panel_info.status}]",
                 f"شريحة تعريف الشاشة (DSI Controller): {report.display_panel_info.panel_controller_name}" if is_ar else f"DSI Panel Controller: {report.display_panel_info.panel_controller_name}",
                 f"مصدر التعريف (Source): {report.display_panel_info.driver_source}" if is_ar else f"Driver Source: {report.display_panel_info.driver_source}",
@@ -1964,10 +1983,10 @@ class AndroidDoctorApp(ctk.CTk):
                 f"التشخيص: {report.display_panel_info.diagnosis}" if is_ar else f"Diagnosis: {report.display_panel_info.diagnosis}"
             ]
             if report.display_panel_info.evidence:
-                auth_lines.append(format_evidence_for_display(report.display_panel_info.evidence, is_ar=is_ar))
+                panel_lines.append(format_evidence_for_display(report.display_panel_info.evidence, is_ar=is_ar))
 
             self.last_audio_codec = report.audio_codec
-            self.last_disp_auth = report.display_panel_info
+            self.last_panel_info = report.display_panel_info
 
             def upd():
                 self.sensors_text.delete("1.0", "end")
@@ -1994,9 +2013,9 @@ class AndroidDoctorApp(ctk.CTk):
                 if hasattr(self, "audio_codec_text"):
                     self.audio_codec_text.delete("1.0", "end")
                     self.audio_codec_text.insert("end", "\n".join(codec_lines))
-                if hasattr(self, "disp_auth_text"):
-                    self.disp_auth_text.delete("1.0", "end")
-                    self.disp_auth_text.insert("end", "\n".join(auth_lines))
+                if hasattr(self, "panel_info_text"):
+                    self.panel_info_text.delete("1.0", "end")
+                    self.panel_info_text.insert("end", "\n".join(panel_lines))
                 self.pointer_location_var.set(report.pointer_location_active)
 
             self.after(0, upd)
@@ -2732,8 +2751,8 @@ class AndroidDoctorApp(ctk.CTk):
             w_speed, r_speed, verdict, diag = self.board_diag.benchmark_storage_speed(serial, test_size_mb=64)
             lines = [
                 "=== نتيجة اختبار سرعة الذاكرة التخزينية (64MB Benchmark) ===" if is_ar else "=== STORAGE SEQUENTIAL READ / WRITE BENCHMARK (64MB) ===",
-                f"سرعة الكتابة المتتابعة (Write): {w_speed} MB/s" if is_ar else f"Sequential Write Speed: {w_speed} MB/s",
-                f"سرعة القراءة المتتابعة (Read):  {r_speed} MB/s" if is_ar else f"Sequential Read Speed:  {r_speed} MB/s",
+                f"سرعة الكتابة المتتابعة (Write): {_fmt(w_speed, 'MB/s')}" if is_ar else f"Sequential Write Speed: {_fmt(w_speed, 'MB/s')}",
+                f"سرعة القراءة المتتابعة (Read):  {_fmt(r_speed, 'MB/s')}" if is_ar else f"Sequential Read Speed:  {_fmt(r_speed, 'MB/s')}",
                 f"تقييم سرعة الناقل:              {verdict}" if is_ar else f"Throughput Verdict:     {verdict}",
                 f"التشخيص الفني:                 {diag}" if is_ar else f"Technical Diagnosis:    {diag}"
             ]
@@ -2769,13 +2788,11 @@ class AndroidDoctorApp(ctk.CTk):
             lines = [
                 "\n=== التقرير النهائي لاختبار ضغط المعالج والباور (30 ثانية) ===" if is_ar else "\n=== CPU & PMIC 30-SECOND STRESS TEST REPORT ===",
                 f"التقييم العام:               {rep.verdict}" if is_ar else f"Overall Verdict:           {rep.verdict}",
-                f"فولت البداية (Initial):      {rep.initial_voltage_mv} mV" if is_ar else f"Initial Battery Voltage:   {rep.initial_voltage_mv} mV",
-                f"أدنى فولت أثناء الضغط (Min): {rep.min_voltage_mv} mV" if is_ar else f"Minimum Voltage Under Load:{rep.min_voltage_mv} mV",
-                f"هبوط الجهد (Voltage Sag):    {rep.voltage_sag_mv} mV ({'⚠️ هبوط شديد!' if rep.severe_sag_detected else 'طبيعي'})" if is_ar else f"Voltage Sag:               {rep.voltage_sag_mv} mV ({'SEVERE SAG' if rep.severe_sag_detected else 'Normal'})",
-                f"ارتفاع الحرارة (Temp Rise):  +{rep.temp_rise_c}°C ({rep.initial_temp_c}°C &rarr; {rep.max_temp_c}°C)" if is_ar else f"Thermal Rise:              +{rep.temp_rise_c}°C ({rep.initial_temp_c}°C -> {rep.max_temp_c}°C)",
-                f"خنق تردد المعالج (Throttling): {'⚠️ حدث خنق حراري للتردد!' if rep.throttling_detected else 'مستقر بدون خنق'}" if is_ar else f"Thermal Throttling:        {'YES (Active)' if rep.throttling_detected else 'None (Stable)'}",
-                f"أقصى تردد تم تسجيله:        {rep.max_freq_mhz} MHz" if is_ar else f"Peak CPU Frequency:        {rep.max_freq_mhz} MHz",
-                f"أدنى تردد أثناء الحمل:       {rep.min_freq_mhz} MHz" if is_ar else f"Minimum Throttled Clocks:  {rep.min_freq_mhz} MHz",
+                f"Initial battery voltage:   {_fmt(rep.initial_voltage_mv, 'mV')}",
+                f"Minimum voltage under load: {_fmt(rep.min_voltage_mv, 'mV')}",
+                f"Voltage drop:              {_fmt(rep.voltage_sag_mv, 'mV')}",
+                f"Temperature ({rep.temp_source}): {_fmt(rep.initial_temp_c, '°C')} -> {_fmt(rep.max_temp_c, '°C')}",
+                f"CPU frequency range:       {_fmt(rep.min_freq_mhz, 'MHz')} - {_fmt(rep.max_freq_mhz, 'MHz')}",
                 f"التشخيص النهائي:             {rep.diagnosis}" if is_ar else f"Final Diagnosis:           {rep.diagnosis}"
             ]
 
@@ -2942,11 +2959,13 @@ class AndroidDoctorApp(ctk.CTk):
                 "=== تقرير بروتوكول الشحن السريع والقدرة الحقيقية ===" if is_ar else "=== FAST CHARGE PROTOCOL & POWER NEGOTIATION ===",
                 f"البروتوكول المكتشف: {diag.protocol_name}" if is_ar else f"Protocol: {diag.protocol_name}",
                 f"نوع المنفذ / الشاحن: {diag.charger_type}" if is_ar else f"Charger Type: {diag.charger_type}",
-                f"الجهد الحقيقي (Voltage): {diag.voltage_v} V ({diag.voltage_mv} mV)" if is_ar else f"Voltage: {diag.voltage_v} V ({diag.voltage_mv} mV)",
-                f"التيار المسحوب (Current): {diag.current_a} A ({diag.current_ma} mA)" if is_ar else f"Current: {diag.current_a} A ({diag.current_ma} mA)",
-                f"قدرة الشحن الفعلية (Power): {diag.wattage_w} W (واط)" if is_ar else f"Actual Power Draw: {diag.wattage_w} W",
-                f"حالة الشحن السريع: {'✓ نشط (Fast Charging)' if diag.is_fast_charging else 'شحن عادي / بطيء'}" if is_ar else f"Fast Charging: {'ACTIVE' if diag.is_fast_charging else 'Standard / Slow'}",
-                f"نسبة البطارية: {diag.battery_level}% ({diag.charge_status})" if is_ar else f"Battery: {diag.battery_level}% ({diag.charge_status})",
+                f"[{diag.status}]",
+                f"USB input voltage (measured): {_fmt(diag.voltage_mv, 'mV')}",
+                f"USB input current (measured): {_fmt(diag.current_ma, 'mA')}",
+                f"Input power (measured V x I): {_fmt(diag.wattage_w, 'W')}",
+                f"Reported max current / voltage (not measured): {_fmt(diag.max_charging_current_ma, 'mA')} / {_fmt(diag.max_charging_voltage_mv, 'mV')}",
+                f"Fast charging: {'UNKNOWN' if diag.is_fast_charging is None else ('yes' if diag.is_fast_charging else 'no')}",
+                f"Battery: {_fmt(diag.battery_level, '%')} ({diag.charge_status})",
                 f"التشخيص: {diag.diagnosis}" if is_ar else f"Diagnosis: {diag.diagnosis}"
             ]
             def upd():
@@ -3270,7 +3289,7 @@ class AndroidDoctorApp(ctk.CTk):
         slife_dict = self.last_storage_life.to_dict() if self.last_storage_life else {}
         stress_dict = self.last_stress_report.to_dict() if self.last_stress_report else {}
         audio_codec_dict = self.last_audio_codec.to_dict() if self.last_audio_codec else {}
-        disp_auth_dict = self.last_disp_auth.to_dict() if self.last_disp_auth else {}
+        panel_info_dict = self.last_panel_info.to_dict() if self.last_panel_info else {}
         root_forensics_dict = self.last_root_forensics.to_dict() if self.last_root_forensics else {}
 
         report_path = DiagnosticReportExporter.generate_html_report(
@@ -3284,7 +3303,7 @@ class AndroidDoctorApp(ctk.CTk):
             storage_life_report=slife_dict,
             stress_report=stress_dict,
             audio_codec=audio_codec_dict,
-            disp_auth=disp_auth_dict,
+            panel_info=panel_info_dict,
             root_forensics=root_forensics_dict,
             technician_name=tech,
             ticket_id=ticket_id,

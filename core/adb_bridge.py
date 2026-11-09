@@ -11,6 +11,76 @@ from setup_bins import get_adb_path, get_fastboot_path, get_scrcpy_path, CREATE_
 logger = logging.getLogger("ADBBridge")
 
 
+ADB_SERVER_PORT = int(os.environ.get("ANDROID_ADB_SERVER_PORT", "5037"))
+
+# shell v2 packet ids (see adb shell_protocol.h)
+_SHELL_V2_STDOUT = 1
+_SHELL_V2_STDERR = 2
+_SHELL_V2_EXIT = 3
+
+
+def _recv_exact(sock, n: int) -> bytes:
+    buf = b""
+    while len(buf) < n:
+        part = sock.recv(n - len(buf))
+        if not part:
+            raise ConnectionError("adb socket closed")
+        buf += part
+    return buf
+
+
+def _adb_send(sock, service: str) -> None:
+    payload = service.encode("utf-8")
+    sock.sendall(f"{len(payload):04x}".encode("ascii") + payload)
+
+
+def _adb_read_okay(sock) -> bool:
+    status = _recv_exact(sock, 4)
+    if status == b"OKAY":
+        return True
+    if status == b"FAIL":
+        try:
+            length = int(_recv_exact(sock, 4).decode("ascii"), 16)
+            msg = _recv_exact(sock, length).decode("utf-8", errors="replace")
+            logger.debug(f"adb server FAIL: {msg}")
+        except Exception:
+            pass
+    return False
+
+
+def _normalize_output(data: bytes) -> str:
+    text = data.decode("utf-8", errors="replace")
+    return text.replace("\r\r\n", "\n").replace("\r\n", "\n").strip()
+
+
+def _iter_shell_v2_packets(data: bytes):
+    pos = 0
+    while pos + 5 <= len(data):
+        pkt_id = data[pos]
+        length = int.from_bytes(data[pos + 1:pos + 5], "little")
+        if pos + 5 + length > len(data):
+            break
+        yield pkt_id, data[pos + 5:pos + 5 + length]
+        pos += 5 + length
+
+
+def _shell_v2_has_exit(data: bytes) -> bool:
+    return any(pkt_id == _SHELL_V2_EXIT for pkt_id, _ in _iter_shell_v2_packets(data))
+
+
+def parse_shell_v2_stream(data: bytes) -> Tuple[bytes, bytes, Optional[int]]:
+    """Split a shell v2 byte stream into (stdout, stderr, exit_code). exit_code is None if no exit packet arrived."""
+    out, err, code = b"", b"", None
+    for pkt_id, payload in _iter_shell_v2_packets(data):
+        if pkt_id == _SHELL_V2_STDOUT:
+            out += payload
+        elif pkt_id == _SHELL_V2_STDERR:
+            err += payload
+        elif pkt_id == _SHELL_V2_EXIT and payload:
+            code = payload[0]
+    return out, err, code
+
+
 class ADBBridge:
     _instance = None
     _lock = threading.Lock()
@@ -51,66 +121,98 @@ class ADBBridge:
         else:
             self._capability_cache.clear()
 
-    def _direct_socket_shell(self, command: str, serial: Optional[str] = None, timeout: int = 15) -> Optional[Tuple[int, str, str]]:
-        """
-        High-Speed Direct ADB Server Socket Client (127.0.0.1:5037).
-        Bypasses subprocess spawning overhead for 10x faster telemetry polling.
-        Returns (code, stdout, stderr) or None if socket connection/handshake failed.
-        """
+    # ------------------------------------------------------------------
+    # Direct ADB server socket client
+    # ------------------------------------------------------------------
+    def _socket_open_transport(self, serial: Optional[str], timeout: float):
+        """Open a socket to the local adb server and switch it to the device transport."""
+        import socket
+        sock = socket.create_connection(("127.0.0.1", ADB_SERVER_PORT), timeout=timeout)
+        sock.settimeout(timeout)
+        _adb_send(sock, f"host:transport:{serial}" if serial else "host:transport-any")
+        if not _adb_read_okay(sock):
+            sock.close()
+            return None
+        return sock
+
+    def _device_supports_shell_v2(self, serial: Optional[str], timeout: float = 5.0) -> Optional[bool]:
+        """Ask the adb server for the device feature list (cached per serial)."""
+        cache_key = serial or "__any__"
+        cached = self._capability_cache.get(cache_key, {}).get("shell_v2")
+        if cached is not None:
+            return cached
         import socket
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock = socket.create_connection(("127.0.0.1", ADB_SERVER_PORT), timeout=timeout)
             sock.settimeout(timeout)
-            sock.connect(("127.0.0.1", 5037))
+            _adb_send(sock, f"host-serial:{serial}:features" if serial else "host:features")
+            if not _adb_read_okay(sock):
+                sock.close()
+                return None
+            length = int(_recv_exact(sock, 4).decode("ascii"), 16)
+            features = _recv_exact(sock, length).decode("utf-8", errors="replace")
+            sock.close()
+        except Exception as e:
+            logger.debug(f"adb features query failed: {e}")
+            return None
+        supported = "shell_v2" in features.split(",")
+        self._capability_cache.setdefault(cache_key, {})["shell_v2"] = supported
+        return supported
 
-            def send_msg(service: str):
-                payload = f"{len(service):04x}{service}".encode("utf-8")
-                sock.sendall(payload)
+    def _direct_socket_shell(self, command: str, serial: Optional[str] = None, timeout: int = 15) -> Optional[Tuple[Optional[int], str, str]]:
+        """
+        Run a shell command through the local adb server socket.
 
-            def read_reply() -> str:
-                rep = sock.recv(4)
-                if not rep or len(rep) < 4:
-                    return ""
-                return rep.decode("utf-8", errors="replace")
+        Uses the shell v2 protocol when the device supports it, which keeps stdout and
+        stderr separate and reports the real remote exit code. Devices without shell v2
+        (Android 6 and older) use the legacy protocol: stderr is merged into stdout and
+        the exit code is unknown, so it is returned as None (never a fake 0).
 
-            # 1. Transport to target device
-            if serial:
-                send_msg(f"host:transport:{serial}")
-            else:
-                send_msg("host:transport-any")
-
-            rep = read_reply()
-            if rep != "OKAY":
+        Returns None when the adb server or device transport could not be reached.
+        On timeout returns exit code -1 with the partial output and a timeout note in stderr.
+        """
+        import socket
+        v2 = self._device_supports_shell_v2(serial)
+        if v2 is None:
+            return None
+        try:
+            sock = self._socket_open_transport(serial, timeout)
+            if sock is None:
+                return None
+            _adb_send(sock, f"shell,v2,raw:{command}" if v2 else f"shell:{command}")
+            if not _adb_read_okay(sock):
                 sock.close()
                 return None
 
-            # 2. Send shell command
-            send_msg(f"shell:{command}")
-            rep = read_reply()
-            if rep != "OKAY":
-                sock.close()
-                return None
-
-            # 3. Stream response until socket close
             chunks = []
+            timed_out = False
             while True:
                 try:
-                    data = sock.recv(4096)
-                    if not data:
-                        break
-                    chunks.append(data)
+                    data = sock.recv(65536)
                 except socket.timeout:
+                    timed_out = True
                     break
-                except Exception:
+                if not data:
                     break
-
+                chunks.append(data)
+                if v2 and _shell_v2_has_exit(b"".join(chunks)):
+                    break
             sock.close()
-            full_out = b"".join(chunks).decode("utf-8", errors="replace")
-            full_out = full_out.replace("\r\r\n", "\n").replace("\r\n", "\n").strip()
-            return 0, full_out, ""
         except Exception as e:
             logger.debug(f"Direct ADB socket exception: {e}")
             return None
+
+        raw = b"".join(chunks)
+        if v2:
+            out_b, err_b, code = parse_shell_v2_stream(raw)
+        else:
+            out_b, err_b, code = raw, b"", None
+        out = _normalize_output(out_b)
+        err = _normalize_output(err_b)
+        if timed_out:
+            err = (err + "\n" if err else "") + f"Command timed out after {timeout} seconds"
+            code = -1
+        return code, out, err
 
     def refresh_paths(self):
         self.adb_path = get_adb_path()
@@ -146,25 +248,26 @@ class ADBBridge:
                 logger.error(f"Unexpected error running ADB: {e}")
                 return -3, "", str(e)
 
-    def shell(self, command: str, serial: Optional[str] = None, timeout: int = 30, root: bool = False, use_socket: bool = True) -> Tuple[int, str, str]:
+    def shell(self, command: str, serial: Optional[str] = None, timeout: int = 30, root: bool = False, use_socket: bool = True) -> Tuple[Optional[int], str, str]:
+        """
+        Run a shell command on the device. Returns (exit_code, stdout, stderr).
+        exit_code is the real remote exit code, or None when the device cannot report it.
+        With root=True the command is wrapped in `su -c`; if that fails the command is
+        re-run without root so the caller sees the real (usually permission) error.
+        """
         if root:
             escaped_cmd = command.replace('"', '\\"')
-            wrapped_cmd = f"su -c \"{escaped_cmd}\""
-            if use_socket:
-                sock_res = self._direct_socket_shell(wrapped_cmd, serial=serial, timeout=timeout)
-                if sock_res is not None:
-                    code, out, err = sock_res
-                    if code == 0 and "not found" not in err and "Permission denied" not in err:
-                        return code, out, err
-            code, out, err = self.run_adb(["shell", wrapped_cmd], serial=serial, timeout=timeout)
-            if code == 0 and "not found" not in err and "Permission denied" not in err:
-                return code, out, err
+            wrapped_cmd = f'su -c "{escaped_cmd}"'
+            res = self._shell_once(wrapped_cmd, serial, timeout, use_socket)
+            if res[0] == 0:
+                return res
+        return self._shell_once(command, serial, timeout, use_socket)
 
-        if use_socket and not root:
+    def _shell_once(self, command: str, serial: Optional[str], timeout: int, use_socket: bool) -> Tuple[Optional[int], str, str]:
+        if use_socket:
             sock_res = self._direct_socket_shell(command, serial=serial, timeout=timeout)
             if sock_res is not None:
                 return sock_res
-
         return self.run_adb(["shell", command], serial=serial, timeout=timeout)
 
     def shell_stream(
@@ -414,7 +517,8 @@ class ADBBridge:
 
     def read_sysfs(self, paths_list: List[str], serial: Optional[str] = None) -> Optional[str]:
         for path in paths_list:
-            code, out, err = self.shell(f"cat '{path}' 2>/dev/null", serial=serial, timeout=5)
+            target = path if "*" in path else f"'{path}'"
+            code, out, err = self.shell(f"cat {target}", serial=serial, timeout=5)
             clean_out = out.strip()
             if code == 0 and clean_out and "No such file" not in clean_out and "Permission denied" not in clean_out:
                 return clean_out

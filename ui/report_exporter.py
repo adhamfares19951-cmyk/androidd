@@ -29,7 +29,7 @@ class DiagnosticReportExporter:
         storage_life_report: Optional[Dict[str, Any]] = None,
         stress_report: Optional[Dict[str, Any]] = None,
         audio_codec: Optional[Dict[str, Any]] = None,
-        disp_auth: Optional[Dict[str, Any]] = None,
+        panel_info: Optional[Dict[str, Any]] = None,
         root_forensics: Optional[Dict[str, Any]] = None,
         technician_name: str = "Chief Hardware Technician",
         ticket_id: str = "",
@@ -52,7 +52,7 @@ class DiagnosticReportExporter:
         slife = storage_life_report or {}
         stress = stress_report or {}
         acodec = audio_codec or haudit.get("audio_codec", {})
-        dauth = disp_auth or haudit.get("display_panel_info", haudit.get("display_authenticity", {}))
+        dauth = panel_info or haudit.get("display_panel_info", {})
         rforensics = root_forensics or {}
 
         serial = dev.get("serial", "UNKNOWN_SERIAL")
@@ -67,7 +67,7 @@ class DiagnosticReportExporter:
         pmic = bdiag.get("pmic", {})
         thermals = bdiag.get("thermal_zones", [])
         panics = bdiag.get("panic_analysis", {})
-        overall_health = bdiag.get("overall_health", "PASS")
+        overall_health = bdiag.get("overall_health", "UNKNOWN")
         findings = bdiag.get("critical_findings", [])
 
         sensors = haudit.get("sensors", [])
@@ -103,7 +103,7 @@ class DiagnosticReportExporter:
             health_badge_text = pmic.get("health_verdict", "NEEDS_ROOT")
 
         risk_color = "#10b981" if overall_risk == "CLEAN" else ("#f59e0b" if overall_risk in ["LOW", "MEDIUM"] else "#ef4444")
-        diag_color = "#10b981" if overall_health == "PASS" else ("#f59e0b" if overall_health == "WARNING" else "#ef4444")
+        diag_color = "#10b981" if overall_health == "PASS" else ("#ef4444" if overall_health == "FAIL" else "#f59e0b")
 
         # Cryptographic HMAC-SHA256 Digital Signature
         sign_payload = f"{report_id}|{serial}|{dev.get('model','')}|{true_health}|{overall_health}|{ticket_id}|{timestamp_str}".encode("utf-8")
@@ -552,7 +552,7 @@ class DiagnosticReportExporter:
                         <tr><th>{'المنطقة' if is_ar else 'Zone'}</th><th>{'نوع الحساس' if is_ar else 'Sensor Type'}</th><th>{'الحرارة' if is_ar else 'Temperature'}</th><th>{'الحالة' if is_ar else 'Status'}</th></tr>
                     </thead>
                     <tbody>
-                        {"".join([f'<tr><td>Zone {tz.get("zone_id", 0)}</td><td>{tz.get("zone_type", "CPU")}</td><td>{tz.get("temp_c", 0)}°C</td><td><span class="badge {"badge-fail" if tz.get("is_overheated") else "badge-pass"}">{"مرتفعة" if (tz.get("is_overheated") and is_ar) else ("آمنة" if is_ar else ("HOT" if tz.get("is_overheated") else "SAFE"))}</span></td></tr>' for tz in thermals[:6]]) if thermals else f'<tr><td colspan="4">{"حرارة جميع الآيسيات ضمن المعدل الآمن" if is_ar else "Normal operating temperatures across all motherboard IC zones."}</td></tr>'}
+                        {"".join([f'<tr><td>Zone {tz.get("zone_id", 0)}</td><td>{tz.get("zone_type", "CPU")}</td><td>{tz.get("temp_c", "UNKNOWN")}°C</td><td><span class="badge {"badge-fail" if tz.get("is_overheated") else "badge-pass"}">{"مرتفعة" if (tz.get("is_overheated") and is_ar) else ("آمنة" if is_ar else ("HOT" if tz.get("is_overheated") else "SAFE"))}</span></td></tr>' for tz in thermals[:6]]) if thermals else f'<tr><td colspan="4">{"حرارة جميع الآيسيات ضمن المعدل الآمن" if is_ar else "Normal operating temperatures across all motherboard IC zones."}</td></tr>'}
                     </tbody>
                 </table>
             </div>
@@ -560,14 +560,14 @@ class DiagnosticReportExporter:
             <div class="card">
                 <div class="card-header">
                     <span>{panic_card_title}</span>
-                    <span class="badge" style="background: {diag_color}; color: #fff;">{panics.get("summary_verdict", "Clean")[:18]}</span>
+                    <span class="badge" style="background: {diag_color}; color: #fff;">{panics.get("status", "UNKNOWN")[:18]}</span>
                 </div>
                 <div class="prop-row"><span class="prop-name">{'أخطاء ذاكرة UFS/eMMC:' if is_ar else 'eMMC/UFS I/O Errors:'}</span><span class="prop-val">{len(panics.get("emmc_ufs_errors", []))}</span></div>
                 <div class="prop-row"><span class="prop-name">{'إعادة تشغيل الحماية (Watchdog):' if is_ar else 'Watchdog Timeout Resets:'}</span><span class="prop-val">{len(panics.get("watchdog_resets", []))}</span></div>
                 <div class="prop-row"><span class="prop-name">{'انهيارات الكيرنل (Kernel Panic):' if is_ar else 'Kernel Panics (Oops):'}</span><span class="prop-val">{len(panics.get("kernel_panics", []))}</span></div>
                 <div class="prop-row"><span class="prop-name">{'إطفاء أمان الحرارة المفرطة:' if is_ar else 'Thermal Shutdown Trips:'}</span><span class="prop-val">{len(panics.get("thermal_shutdowns", []))}</span></div>
                 <div style="margin-top: 10px; font-size: 12px; color: #8b949e; background: #010409; padding: 8px; border-radius: 4px;">
-                    {panics.get("summary_verdict", "No kernel errors found.")}
+                    {panics.get("summary_verdict", "UNKNOWN")}
                 </div>
                 {make_evidence_box(panics.get("blackbox", {}).get("evidence", []))}
             </div>
@@ -634,8 +634,8 @@ class DiagnosticReportExporter:
                     </div>
                     <div style="font-size: 12px;">
                         <div><strong>{'اختبار الإجهاد (30 ثانية):' if is_ar else '30s Stress Test:'}</strong> <span style="color: {'#ef4444' if (stress.get('severe_sag_detected') or stress.get('throttling_detected')) else '#10b981'};">{stress.get('verdict', 'Normal')}: {stress.get('diagnosis', 'Stable')}</span></div>
-                        <div style="margin-top: 4px;"><strong>{'هبوط الجهد (Voltage Sag):' if is_ar else 'Voltage Sag:'}</strong> <span style="color: #f59e0b;">{stress.get('voltage_sag_mv', 0)} mV ({stress.get('initial_voltage_mv', 0)} mV &rarr; {stress.get('min_voltage_mv', 0)} mV)</span></div>
-                        <div style="margin-top: 4px;"><strong>{'ارتفاع حرارة المعالج:' if is_ar else 'Thermal Rise:'}</strong> <span style="color: #ef4444;">+{stress.get('temp_rise_c', 0)} °C (Max: {stress.get('max_temp_c', 0)} °C)</span></div>
+                        <div style="margin-top: 4px;"><strong>{'هبوط الجهد (Voltage Sag):' if is_ar else 'Voltage Sag:'}</strong> <span style="color: #f59e0b;">{stress.get('voltage_sag_mv') if stress.get('voltage_sag_mv') is not None else 'UNKNOWN'} mV ({stress.get('initial_voltage_mv', 0)} mV &rarr; {stress.get('min_voltage_mv', 0)} mV)</span></div>
+                        <div style="margin-top: 4px;"><strong>{'ارتفاع حرارة المعالج:' if is_ar else 'Thermal Rise:'}</strong> <span style="color: #ef4444;">+{stress.get('temp_rise_c') if stress.get('temp_rise_c') is not None else 'UNKNOWN'} °C (Max: {stress.get('max_temp_c', 0)} °C)</span></div>
                     </div>
                 </div>
             </div>
