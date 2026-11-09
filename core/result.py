@@ -25,10 +25,11 @@ class Evidence:
     """
     Carries the exact evidentiary audit trail for any hardware, kernel or sysfs check.
     Max excerpt length capped at ~2 KB to prevent report bloat.
+    exit_code defaults to None (an unknown exit code must never look like success).
     """
     source: str = ""
     raw_excerpt: str = ""
-    exit_code: Optional[int] = 0
+    exit_code: Optional[int] = None
 
     def __post_init__(self):
         if self.raw_excerpt and len(self.raw_excerpt) > MAX_EXCERPT_CHARS:
@@ -59,7 +60,7 @@ class CheckResult:
     def has_real_data(self) -> bool:
         return self.status in (Status.PASS, Status.FAIL)
 
-    def add_evidence(self, source: str, raw_excerpt: str, exit_code: Optional[int] = 0) -> "CheckResult":
+    def add_evidence(self, source: str, raw_excerpt: str, exit_code: Optional[int] = None) -> "CheckResult":
         self.evidence.append(Evidence(source=source, raw_excerpt=raw_excerpt, exit_code=exit_code))
         return self
 
@@ -77,29 +78,41 @@ class CheckResult:
 
 
 def status_from_read(
-    output: Optional[str],
-    exit_code: Optional[int] = 0,
+    stdout: Optional[str] = None,
+    stderr: Optional[str] = None,
+    exit_code: Optional[int] = None,
     path_exists: bool = True
 ) -> Status:
     """
-    Derives initial status from raw output and exit code:
-    - "Permission denied" / "avc: denied" / "Operation not permitted" -> NEEDS_ROOT
-    - Path not existing, empty output, or exit_code != 0 without valid output -> UNKNOWN
+    Derives initial status from raw stdout, stderr, exit code, and path existence:
+    - "Permission denied" / "avc: denied" / "Operation not permitted" in stdout OR stderr -> NEEDS_ROOT
+    - Path not existing -> UNKNOWN
+    - Both stdout and stderr empty, or missing data -> UNKNOWN
+    - exit_code != 0 and no valid stdout -> UNKNOWN
     - Otherwise returns UNKNOWN (a caller MUST parse a real verified value to yield PASS or FAIL).
     """
-    if not path_exists or output is None:
+    if not path_exists:
         return Status.UNKNOWN
 
-    out_lower = output.lower()
+    combined = f"{stdout or ''}\n{stderr or ''}".lower()
     if (
-        "permission denied" in out_lower
-        or "avc: denied" in out_lower
-        or "operation not permitted" in out_lower
-        or "requires root" in out_lower
+        "permission denied" in combined
+        or "avc: denied" in combined
+        or "operation not permitted" in combined
+        or "requires root" in combined
     ):
         return Status.NEEDS_ROOT
 
-    if not output.strip() or (exit_code is not None and exit_code != 0 and not output.strip()):
+    clean_out = (stdout or "").strip()
+    clean_err = (stderr or "").strip()
+
+    if not clean_out and not clean_err:
+        return Status.UNKNOWN
+
+    if not clean_out and clean_err:
+        return Status.UNKNOWN
+
+    if exit_code is not None and exit_code != 0 and not clean_out:
         return Status.UNKNOWN
 
     return Status.UNKNOWN

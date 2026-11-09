@@ -36,6 +36,7 @@ from core.hardware_tester import (
     BluetoothDiagnostics,
     PeripheralChipsDiagnostics,
     AudioCodecReport,
+    DisplayPanelInfo,
     DisplayPanelAuthenticity
 )
 from core.storage_benchmark import StorageBenchmark, StorageHealthReport
@@ -123,7 +124,7 @@ class AndroidDoctorApp(ctk.CTk):
         self.last_storage_life: Optional[StorageLifeReport] = None
         self.last_stress_report: Optional[StressTestReport] = None
         self.last_audio_codec: Optional[AudioCodecReport] = None
-        self.last_disp_auth: Optional[DisplayPanelAuthenticity] = None
+        self.last_disp_auth: Optional[DisplayPanelInfo] = None
         self.last_blackbox: Optional[Dict[str, Any]] = None
         self.last_bloat_scan: Optional[List[Dict[str, Any]]] = None
         self.last_root_forensics: Optional[RootForensicsReport] = None
@@ -1953,21 +1954,20 @@ class AndroidDoctorApp(ctk.CTk):
             if report.audio_codec.evidence:
                 codec_lines.append(format_evidence_for_display(report.audio_codec.evidence, is_ar=is_ar))
 
-            # Display Controller & Authenticity
+            # Display Controller & Panel Info
             auth_lines = [
-                f"الحالة المعتمدة: [{report.display_authenticity.status}]" if is_ar else f"Verified Status: [{report.display_authenticity.status}]",
-                f"شريحة تعريف الشاشة (DSI Controller): {report.display_authenticity.panel_controller_name}" if is_ar else f"DSI Panel Controller: {report.display_authenticity.panel_controller_name}",
-                f"مصدر التعريف (Source): {report.display_authenticity.driver_source}" if is_ar else f"Driver Source: {report.display_authenticity.driver_source}",
-                f"حالة حماية الإقلاع (VerifiedBootState): {report.display_authenticity.verified_boot_state}" if is_ar else f"Verified Boot State: {report.display_authenticity.verified_boot_state}",
-                f"حالة أمان VBMeta: {report.display_authenticity.vbmeta_device_state}" if is_ar else f"VBMeta Device State: {report.display_authenticity.vbmeta_device_state}",
-                f"توثيق العتاد الأصلي (OEM Original): {'✓ معتمد ورسمي' if report.display_authenticity.is_oem_verified else 'معدل / غير موثق'}" if is_ar else f"OEM Verified: {'YES' if report.display_authenticity.is_oem_verified else 'Modified/Unlocked'}",
-                f"التشخيص: {report.display_authenticity.diagnosis}" if is_ar else f"Diagnosis: {report.display_authenticity.diagnosis}"
+                f"الحالة المعتمدة: [{report.display_panel_info.status}]" if is_ar else f"Verified Status: [{report.display_panel_info.status}]",
+                f"شريحة تعريف الشاشة (DSI Controller): {report.display_panel_info.panel_controller_name}" if is_ar else f"DSI Panel Controller: {report.display_panel_info.panel_controller_name}",
+                f"مصدر التعريف (Source): {report.display_panel_info.driver_source}" if is_ar else f"Driver Source: {report.display_panel_info.driver_source}",
+                f"حالة حماية الإقلاع (VerifiedBootState): {report.display_panel_info.verified_boot_state}" if is_ar else f"Verified Boot State: {report.display_panel_info.verified_boot_state}",
+                f"حالة أمان VBMeta: {report.display_panel_info.vbmeta_device_state}" if is_ar else f"VBMeta Device State: {report.display_panel_info.vbmeta_device_state}",
+                f"التشخيص: {report.display_panel_info.diagnosis}" if is_ar else f"Diagnosis: {report.display_panel_info.diagnosis}"
             ]
-            if report.display_authenticity.evidence:
-                auth_lines.append(format_evidence_for_display(report.display_authenticity.evidence, is_ar=is_ar))
+            if report.display_panel_info.evidence:
+                auth_lines.append(format_evidence_for_display(report.display_panel_info.evidence, is_ar=is_ar))
 
             self.last_audio_codec = report.audio_codec
-            self.last_disp_auth = report.display_authenticity
+            self.last_disp_auth = report.display_panel_info
 
             def upd():
                 self.sensors_text.delete("1.0", "end")

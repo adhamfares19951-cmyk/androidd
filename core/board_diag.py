@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Any, Callable
 from core.adb_bridge import ADBBridge
-from core.result import Evidence, Status, CheckResult
+from core.result import Evidence, Status, CheckResult, status_from_read
 from database.db_manager import DatabaseManager
 
 logger = logging.getLogger("BoardDiag")
@@ -431,10 +431,19 @@ class MotherboardDiagnostics:
             pmic.health_verdict = "PASS" if pmic.true_health_pct >= 80.0 else "FAIL"
             evidence_items.append(Evidence(source="BMS Fuel Gauge Health Calc", raw_excerpt=f"{pmic.charge_full_uah} / {pmic.charge_full_design_uah} = {pmic.true_health_pct}%", exit_code=0))
         else:
-            # When design capacity registers are blocked by SELinux / OEM
+            code_cap, out_cap, err_cap = self.bridge.shell(
+                "cat /sys/class/power_supply/battery/charge_full /sys/class/power_supply/battery/charge_full_design",
+                serial=serial,
+                timeout=4
+            )
+            cap_status = status_from_read(out_cap, err_cap, code_cap)
             pmic.true_health_pct = None
-            pmic.health_verdict = "NEEDS_ROOT" if not self.bridge.is_root_available(serial) else "UNKNOWN"
-            evidence_items.append(Evidence(source="BMS Fuel Gauge Capacity", raw_excerpt="charge_full / charge_full_design inaccessible (Protected by SELinux or unexposed by OEM BMS driver)", exit_code=1))
+            pmic.health_verdict = str(cap_status)
+            evidence_items.append(Evidence(
+                source="BMS Fuel Gauge Capacity",
+                raw_excerpt=(err_cap or out_cap or "charge_full / charge_full_design inaccessible (Protected by SELinux or unexposed by OEM BMS driver)").strip()[:1000],
+                exit_code=code_cap
+            ))
 
         if pmic.is_charging and pmic.voltage_mv is not None and 0 < pmic.voltage_mv < 3500.0:
             pmic.fault_flags.append(
@@ -608,21 +617,24 @@ class MotherboardDiagnostics:
             bb.evidence.append(Evidence(source="dumpsys dropbox", raw_excerpt=out_drop or "No dropbox crash events logged", exit_code=code_drop))
 
         # 3. Kernel RAMOOPS and DMESG (Root vs Non-Root handling)
-        is_root = self.bridge.is_root_available(serial)
-        if is_root:
-            code_k, out_k, _ = self.bridge.shell("cat /sys/fs/pstore/console-ramoops* 2>/dev/null | tail -n 80", serial=serial, timeout=8, root=True)
-            if code_k == 0 and out_k.strip():
-                bb.kernel_ramoops_status = "CRITICAL_LOG_FOUND"
-                bb.evidence.append(Evidence(source="/sys/fs/pstore/console-ramoops", raw_excerpt=out_k.strip()[:1000], exit_code=code_k))
-                for l in out_k.splitlines():
-                    if re.search(r"(?i)(panic|oops|fatal|reset|watchdog)", l):
-                        bb.kernel_log_snippets.append(l.strip()[:100])
-            else:
-                bb.kernel_ramoops_status = "PASS"
-                bb.evidence.append(Evidence(source="/sys/fs/pstore/console-ramoops", raw_excerpt="No panic or crash logs in ramoops", exit_code=code_k))
-        else:
+        code_k, out_k, err_k = self.bridge.shell("cat /sys/fs/pstore/console-ramoops* | tail -n 80", serial=serial, timeout=8)
+        k_status = status_from_read(out_k, err_k, code_k)
+        if k_status == Status.NEEDS_ROOT and self.bridge.is_root_available(serial):
+            code_k, out_k, err_k = self.bridge.shell("cat /sys/fs/pstore/console-ramoops* | tail -n 80", serial=serial, timeout=8, root=True)
+            k_status = status_from_read(out_k, err_k, code_k)
+
+        if k_status == Status.NEEDS_ROOT:
             bb.kernel_ramoops_status = "NEEDS_ROOT"
-            bb.evidence.append(Evidence(source="/sys/fs/pstore/console-ramoops", raw_excerpt="Protected by SELinux (Requires Root for raw kernel buffer)", exit_code=1))
+            bb.evidence.append(Evidence(source="/sys/fs/pstore/console-ramoops", raw_excerpt=(err_k or out_k or "Protected by SELinux / permissions").strip(), exit_code=code_k))
+        elif code_k == 0 and out_k.strip():
+            bb.kernel_ramoops_status = "CRITICAL_LOG_FOUND"
+            bb.evidence.append(Evidence(source="/sys/fs/pstore/console-ramoops", raw_excerpt=out_k.strip()[:1000], exit_code=code_k))
+            for l in out_k.splitlines():
+                if re.search(r"(?i)(panic|oops|fatal|reset|watchdog)", l):
+                    bb.kernel_log_snippets.append(l.strip()[:100])
+        else:
+            bb.kernel_ramoops_status = "PASS" if (code_k == 0 and out_k is not None) else "UNKNOWN"
+            bb.evidence.append(Evidence(source="/sys/fs/pstore/console-ramoops", raw_excerpt=(out_k or err_k or "No panic or crash logs in ramoops").strip(), exit_code=code_k))
 
         # 4. Categorize Shutdown Reason
         reason_combined = f"{b_reason} {b_history} {' '.join(bb.dropbox_events)}".lower()
@@ -1040,26 +1052,27 @@ class MotherboardDiagnostics:
             if ufs_pre_eol:
                 report.raw_pre_eol = ufs_pre_eol.strip().lower()
         else:
-            # Check if root is available
-            is_root = self.bridge.is_root_available(serial)
-            if is_root:
-                # Query with root
-                code_r, out_r, _ = self.bridge.shell("cat /sys/block/mmcblk0/device/life_time 2>/dev/null", serial=serial, root=True)
-                if code_r == 0 and out_r.strip():
-                    report.status = "PASS"
-                    report.storage_type = "eMMC / eMCP (via Root)"
-                    report.evidence.append(Evidence(source="root life_time", raw_excerpt=out_r.strip(), exit_code=0))
-                    parts = out_r.strip().split()
-                    report.raw_hex_a = parts[0].lower() if parts else "0x01"
-                    report.raw_hex_b = parts[1].lower() if len(parts) > 1 else report.raw_hex_a
-                else:
-                    report.status = "UNKNOWN"
-                    report.storage_type = "Internal Flash (NAND)"
-                    report.evidence.append(Evidence(source="sysfs NAND health descriptor", raw_excerpt="NAND health descriptor not exposed by OEM storage driver.", exit_code=code_r))
-            else:
+            code_r, out_r, err_r = self.bridge.shell("cat /sys/block/mmcblk0/device/life_time", serial=serial, timeout=5)
+            r_status = status_from_read(out_r, err_r, code_r)
+            if r_status == Status.NEEDS_ROOT and self.bridge.is_root_available(serial):
+                code_r, out_r, err_r = self.bridge.shell("cat /sys/block/mmcblk0/device/life_time", serial=serial, timeout=5, root=True)
+                r_status = status_from_read(out_r, err_r, code_r)
+
+            if r_status == Status.NEEDS_ROOT:
                 report.status = "NEEDS_ROOT"
                 report.storage_type = "Internal Flash (NAND)"
-                report.evidence.append(Evidence(source="/sys/block/mmcblk0/device/life_time", raw_excerpt="Permission denied: /sys/block/mmcblk0/device/life_time (SELinux Enforced). Root required for raw JEDEC health descriptor.", exit_code=1))
+                report.evidence.append(Evidence(source="/sys/block/mmcblk0/device/life_time", raw_excerpt=(err_r or out_r or "Permission denied: /sys/block/mmcblk0/device/life_time").strip(), exit_code=code_r))
+            elif code_r == 0 and out_r.strip():
+                report.status = "PASS"
+                report.storage_type = "eMMC / eMCP"
+                report.evidence.append(Evidence(source="life_time", raw_excerpt=out_r.strip(), exit_code=code_r))
+                parts = out_r.strip().split()
+                report.raw_hex_a = parts[0].lower() if parts else "0x01"
+                report.raw_hex_b = parts[1].lower() if len(parts) > 1 else report.raw_hex_a
+            else:
+                report.status = "UNKNOWN"
+                report.storage_type = "Internal Flash (NAND)"
+                report.evidence.append(Evidence(source="sysfs NAND health descriptor", raw_excerpt=(err_r or out_r or "NAND health descriptor not exposed by OEM storage driver.").strip(), exit_code=code_r))
 
         def norm_hex(h: str) -> str:
             if not h:

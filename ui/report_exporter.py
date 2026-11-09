@@ -52,7 +52,7 @@ class DiagnosticReportExporter:
         slife = storage_life_report or {}
         stress = stress_report or {}
         acodec = audio_codec or haudit.get("audio_codec", {})
-        dauth = disp_auth or haudit.get("display_authenticity", {})
+        dauth = disp_auth or haudit.get("display_panel_info", haudit.get("display_authenticity", {}))
         rforensics = root_forensics or {}
 
         serial = dev.get("serial", "UNKNOWN_SERIAL")
@@ -619,7 +619,7 @@ class DiagnosticReportExporter:
                     </div>
                     <div style="font-size: 12px;">
                         <div><strong>{'آيسي الصوت (Audio Codec):' if is_ar else 'Audio Codec IC:'}</strong> <span style="color: {'#ef4444' if acodec.get('is_codec_faulty') else '#10b981'};">{acodec.get('diagnosis', 'Normal')} ({acodec.get('codec_chip_name', 'ALSA Soundcard')})</span></div>
-                        <div style="margin-top: 4px;"><strong>{'أصالة وحدة الشاشة (DSI/VBMeta):' if is_ar else 'Display Controller & Boot Integrity:'}</strong> <span style="color: {'#10b981' if dauth.get('is_oem_verified', True) else '#ef4444'};">{dauth.get('panel_controller_name', 'OEM DSI')} | {dauth.get('verified_boot_state', 'green')}</span></div>
+                        <div style="margin-top: 4px;"><strong>{'معلومات وحدة الشاشة (DSI/VBMeta):' if is_ar else 'Display Controller & Boot Integrity:'}</strong> <span style="color: {'#10b981' if dauth.get('status') == 'PASS' else ('#ef4444' if dauth.get('status') == 'FAIL' else '#f59e0b')};">{dauth.get('panel_controller_name', 'OEM DSI')} | {dauth.get('verified_boot_state', 'green')}</span></div>
                     </div>
                 </div>
             </div>

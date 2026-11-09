@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, Optional, List, Tuple
 from core.adb_bridge import ADBBridge
-from core.result import Evidence, Status, CheckResult
+from core.result import Evidence, Status, CheckResult, status_from_read
 
 logger = logging.getLogger("StorageBenchmark")
 
@@ -154,11 +154,12 @@ class StorageBenchmark:
                 pass
 
         # 3. Read eMMC Wear Out indicators (life_time & pre_eol_info)
-        code_life, out_life, _ = self.bridge.shell(
-            "cat /sys/block/mmcblk0/device/life_time 2>/dev/null",
+        code_life, out_life, err_life = self.bridge.shell(
+            "cat /sys/block/mmcblk0/device/life_time",
             serial=serial,
             timeout=4
         )
+        life_st = status_from_read(out_life, err_life, code_life)
         if code_life == 0 and out_life.strip():
             parts = out_life.strip().split()
             if len(parts) >= 2:
@@ -173,11 +174,12 @@ class StorageBenchmark:
                 report.life_time_type_a = desc_a
                 report.estimated_wear_pct = pct_a
 
-        code_eol, out_eol, _ = self.bridge.shell(
-            "cat /sys/block/mmcblk0/device/pre_eol_info 2>/dev/null",
+        code_eol, out_eol, err_eol = self.bridge.shell(
+            "cat /sys/block/mmcblk0/device/pre_eol_info",
             serial=serial,
             timeout=4
         )
+        eol_st = status_from_read(out_eol, err_eol, code_eol)
         if code_eol == 0 and out_eol.strip():
             eol_desc, is_failing = self._parse_pre_eol(out_eol)
             report.pre_eol_status = eol_desc
@@ -186,11 +188,12 @@ class StorageBenchmark:
             logs.append(f"Pre-EOL Info: {out_eol.strip()} -> {eol_desc}")
 
         # 4. Read UFS Health Descriptors if available
-        code_ufs_h, out_ufs_h, _ = self.bridge.shell(
-            "cat /sys/kernel/debug/ufshcd*/dump_device_desc /sys/class/scsi_device/*/device/dump_device_desc 2>/dev/null",
+        code_ufs_h, out_ufs_h, err_ufs = self.bridge.shell(
+            "cat /sys/kernel/debug/ufshcd*/dump_device_desc /sys/class/scsi_device/*/device/dump_device_desc",
             serial=serial,
             timeout=4
         )
+        ufs_st = status_from_read(out_ufs_h, err_ufs, code_ufs_h)
         if code_ufs_h == 0 and out_ufs_h.strip():
             logs.append("UFS Device Descriptor retrieved.")
             # Search for bDeviceLifeTimeEstA and B in UFS
@@ -203,8 +206,7 @@ class StorageBenchmark:
                 report.life_time_type_b = desc_b
                 report.estimated_wear_pct = max(pct_a, pct_b)
 
-        # 5. Formulate Diagnostic Verdict
-        is_root = self.bridge.is_root_available(serial)
+        # 5. Formulate Diagnostic Verdict based on actual reads
         if report.estimated_wear_pct >= 85 or report.is_failing_or_degraded:
             report.is_failing_or_degraded = True
             report.status = "FAIL"
@@ -216,7 +218,7 @@ class StorageBenchmark:
             report.status = "PASS"
             report.diagnosis = f"PASS: Flash memory is healthy and in good operating condition ({report.estimated_wear_pct}% wear level, EOL: {report.pre_eol_status})."
         else:
-            if not is_root:
+            if life_st == Status.NEEDS_ROOT or eol_st == Status.NEEDS_ROOT or ufs_st == Status.NEEDS_ROOT:
                 report.status = "NEEDS_ROOT"
                 report.diagnosis = f"NEEDS_ROOT: JEDEC wear descriptors restricted by SELinux on {report.storage_type}. Root required to read raw block descriptor."
             else:
@@ -231,6 +233,9 @@ class StorageBenchmark:
         ))
         for log in logs:
             report.evidence.append(Evidence(source="JEDEC Life Time Log", raw_excerpt=log, exit_code=0))
+        if life_st == Status.NEEDS_ROOT:
+            report.evidence.append(Evidence(source="/sys/block/mmcblk0/device/life_time", raw_excerpt=(err_life or out_life or "Permission denied").strip(), exit_code=code_life))
+        return report
         return report
 
     def run_speed_benchmark(self, serial: str, test_size_mb: int = 40) -> StorageHealthReport:

@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Any
 from core.adb_bridge import ADBBridge
-from core.result import Evidence, Status, CheckResult
+from core.result import Evidence, Status, CheckResult, status_from_read
 
 logger = logging.getLogger("HardwareTester")
 
@@ -202,20 +202,24 @@ class AudioCodecReport:
 
 
 @dataclass
-class DisplayPanelAuthenticity:
-    panel_controller_name: str = "Standard OEM DSI Panel"
-    driver_source: str = "Kernel Framebuffer / DRM"
-    verified_boot_state: str = "green"
-    vbmeta_device_state: str = "locked"
-    is_oem_verified: bool = True
+class DisplayPanelInfo:
+    check_id: str = "display.panel_info"
+    panel_controller_name: str = "Unknown Panel"
+    driver_source: str = "Unresolved"
+    verified_boot_state: str = "unknown"
+    vbmeta_device_state: str = "unknown"
     status: str = "UNKNOWN"
-    diagnosis: str = "OEM Display Controller & Verified Bootstate OK"
+    diagnosis: str = "Display panel controller info unread."
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
         return d
+
+
+# Backwards compatibility alias
+DisplayPanelAuthenticity = DisplayPanelInfo
 
 
 @dataclass
@@ -230,7 +234,7 @@ class HardwareAuditReport:
     buttons: PhysicalButtonsDiagnostics = field(default_factory=PhysicalButtonsDiagnostics)
     sim_baseband: SIMBasebandDiagnostics = field(default_factory=SIMBasebandDiagnostics)
     display_backlight: DisplayBacklightDiagnostics = field(default_factory=DisplayBacklightDiagnostics)
-    display_authenticity: DisplayPanelAuthenticity = field(default_factory=DisplayPanelAuthenticity)
+    display_panel_info: DisplayPanelInfo = field(default_factory=DisplayPanelInfo)
     wifi: WiFiDiagnostics = field(default_factory=WiFiDiagnostics)
     bluetooth: BluetoothDiagnostics = field(default_factory=BluetoothDiagnostics)
     peripherals: PeripheralChipsDiagnostics = field(default_factory=PeripheralChipsDiagnostics)
@@ -239,6 +243,14 @@ class HardwareAuditReport:
     summary: str = "PASS"
     status: str = "UNKNOWN"
     evidence: List[Evidence] = field(default_factory=list)
+
+    @property
+    def display_authenticity(self) -> DisplayPanelInfo:
+        return self.display_panel_info
+
+    @display_authenticity.setter
+    def display_authenticity(self, val: DisplayPanelInfo):
+        self.display_panel_info = val
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -252,7 +264,8 @@ class HardwareAuditReport:
             "buttons": self.buttons.to_dict(),
             "sim_baseband": self.sim_baseband.to_dict(),
             "display_backlight": self.display_backlight.to_dict(),
-            "display_authenticity": self.display_authenticity.to_dict(),
+            "display_panel_info": self.display_panel_info.to_dict(),
+            "display_authenticity": self.display_panel_info.to_dict(),
             "wifi": self.wifi.to_dict(),
             "bluetooth": self.bluetooth.to_dict(),
             "peripherals": self.peripherals.to_dict(),
@@ -460,9 +473,9 @@ class HardwareTester:
 
     def diagnose_fingerprint(self, serial: str) -> FingerprintDiagnostics:
         fp = FingerprintDiagnostics()
-        code_fp, out_fp, _ = self.bridge.shell("dumpsys fingerprint", serial=serial, timeout=8)
-        code_bio, out_bio, _ = self.bridge.shell("dumpsys biometric", serial=serial, timeout=8)
-        code_k, out_k, _ = self.bridge.shell("dmesg | grep -i -E 'fpc|goodix|silead|fingerprint|biometric|fpsensor' | tail -n 25", serial=serial, timeout=8)
+        code_fp, out_fp, err_fp = self.bridge.shell("dumpsys fingerprint", serial=serial, timeout=8)
+        code_bio, out_bio, err_bio = self.bridge.shell("dumpsys biometric", serial=serial, timeout=8)
+        code_k, out_k, err_k = self.bridge.shell("dmesg | grep -i -E 'fpc|goodix|silead|fingerprint|biometric|fpsensor' | tail -n 25", serial=serial, timeout=8)
 
         combined = f"{out_fp}\n{out_bio}\n{out_k}"
         fp.raw_details = combined
@@ -484,13 +497,17 @@ class HardwareTester:
             fp.vendor = "Synaptics"
             fp.is_detected = True
         else:
-            code_hw, out_hw, _ = self.bridge.shell("getprop ro.hardware.fingerprint", serial=serial, timeout=5)
+            code_hw, out_hw, err_hw = self.bridge.shell("getprop ro.hardware.fingerprint", serial=serial, timeout=5)
             if code_hw == 0 and out_hw.strip():
                 fp.vendor = out_hw.strip()
                 fp.is_detected = True
 
+        status_read = status_from_read(f"{out_fp}\n{out_bio}", f"{err_fp}\n{err_bio}", code_fp)
+        if status_read == Status.NEEDS_ROOT:
+            fp.status = "NEEDS_ROOT"
+            fp.diagnosis = "NEEDS_ROOT: Biometric service dumpsys restricted by SELinux / permissions."
         # Check fault conditions
-        if re.search(r"(?i)(hw_unavailable|hardware not available|error_hw_unavailable)", combined):
+        elif re.search(r"(?i)(hw_unavailable|hardware not available|error_hw_unavailable)", combined):
             fp.status = "FAIL"
             fp.is_functional = False
             fp.is_flex_disconnected = True
@@ -516,19 +533,19 @@ class HardwareTester:
             fp.status = "UNKNOWN"
             fp.diagnosis = "UNKNOWN: No biometric/fingerprint sensor detected on this model."
 
-        if out_fp.strip():
-            fp.evidence.append(Evidence(source="dumpsys fingerprint", raw_excerpt=out_fp.strip()[:1000], exit_code=code_fp))
-        if out_bio.strip():
-            fp.evidence.append(Evidence(source="dumpsys biometric", raw_excerpt=out_bio.strip()[:1000], exit_code=code_bio))
-        if out_k.strip():
-            fp.evidence.append(Evidence(source="dmesg biometric traces", raw_excerpt=out_k.strip()[:1000], exit_code=code_k))
+        if out_fp.strip() or err_fp.strip():
+            fp.evidence.append(Evidence(source="dumpsys fingerprint", raw_excerpt=(out_fp or err_fp).strip()[:1000], exit_code=code_fp))
+        if out_bio.strip() or err_bio.strip():
+            fp.evidence.append(Evidence(source="dumpsys biometric", raw_excerpt=(out_bio or err_bio).strip()[:1000], exit_code=code_bio))
+        if out_k.strip() or err_k.strip():
+            fp.evidence.append(Evidence(source="dmesg biometric traces", raw_excerpt=(out_k or err_k).strip()[:1000], exit_code=code_k))
         if not fp.evidence:
             fp.evidence.append(Evidence(source="dumpsys fingerprint/biometric", raw_excerpt=combined.strip() or "No biometric data", exit_code=code_fp))
         return fp
 
     def diagnose_physical_buttons(self, serial: str) -> PhysicalButtonsDiagnostics:
         diag = PhysicalButtonsDiagnostics()
-        code_input, out_input, _ = self.bridge.shell("dumpsys input", serial=serial, timeout=8)
+        code_input, out_input, err_input = self.bridge.shell("dumpsys input", serial=serial, timeout=8)
 
         # Look for active held keys in dumpsys input
         stuck = []
@@ -543,8 +560,11 @@ class HardwareTester:
                 stuck.append("Power Button (KEY_POWER)")
                 diag.power_status = "STUCK_PRESSED"
 
-        # Stream getevent for 8 seconds to sample live physical key events
-        code_ev, out_ev, _ = self.bridge.shell("timeout 8 getevent -l 2>/dev/null", serial=serial, timeout=10)
+        # Stream getevent for 8 seconds to sample live physical key events (shell user has access)
+        code_ev, out_ev, err_ev = self.bridge.shell("timeout 8 getevent -l", serial=serial, timeout=10)
+        ev_status = status_from_read(out_ev, err_ev, code_ev)
+        input_status = status_from_read(out_input, err_input, code_input)
+
         if code_ev == 0 and out_ev:
             lines = out_ev.strip().splitlines()
             diag.captured_events = lines[:20]
@@ -556,21 +576,26 @@ class HardwareTester:
                 elif "KEY_POWER" in l:
                     diag.power_status = "Pressed (Active)" if "DOWN" in l else "Released"
 
-        if code_input != 0 and code_ev != 0:
-            diag.status = "UNKNOWN"
-            diag.diagnosis = "UNKNOWN: Input subsystem unreadable via ADB (Permission denied or driver inactive)."
+        # Check for actual permission error (NEEDS_ROOT) vs general missing data (UNKNOWN)
+        if ev_status == Status.NEEDS_ROOT or input_status == Status.NEEDS_ROOT:
+            diag.status = "NEEDS_ROOT"
+            diag.diagnosis = "NEEDS_ROOT: Input subsystem access restricted by SELinux / permissions."
         elif stuck:
             diag.status = "FAIL"
             diag.is_any_key_stuck = True
             diag.stuck_keys = stuck
             diag.diagnosis = f"FAIL: Stuck / shorted physical buttons detected: {', '.join(stuck)}. High risk of recovery bootloops or sudden rebooting!"
-        else:
+        elif code_input == 0 and out_input:
             diag.status = "PASS"
             diag.diagnosis = "PASS: Volume Up/Down and Power keys are normal and not shorted."
+        else:
+            diag.status = "UNKNOWN"
+            real_err = (err_ev or err_input or "Input subsystem unreadable via ADB").strip()
+            diag.diagnosis = f"UNKNOWN: {real_err}"
 
-        diag.evidence.append(Evidence(source="dumpsys input", raw_excerpt=out_input.strip()[:1000] if out_input else "No input subsystem output", exit_code=code_input))
-        if out_ev:
-            diag.evidence.append(Evidence(source="timeout 8 getevent -l", raw_excerpt="\n".join(lines[:20]), exit_code=code_ev))
+        diag.evidence.append(Evidence(source="dumpsys input", raw_excerpt=(out_input or err_input or "No input subsystem output").strip()[:1000], exit_code=code_input))
+        if out_ev or err_ev:
+            diag.evidence.append(Evidence(source="timeout 8 getevent -l", raw_excerpt=(out_ev or err_ev).strip()[:1000], exit_code=code_ev))
         return diag
 
     def diagnose_sim_and_baseband(self, serial: str) -> SIMBasebandDiagnostics:
@@ -851,7 +876,7 @@ class HardwareTester:
         report = AudioCodecReport()
 
         # 1. Non-root dumpsys media.audio_flinger
-        code_af, out_af, _ = self.bridge.shell("dumpsys media.audio_flinger 2>/dev/null", serial=serial, timeout=6)
+        code_af, out_af, err_af = self.bridge.shell("dumpsys media.audio_flinger", serial=serial, timeout=6)
         if code_af == 0 and out_af:
             report.audio_flinger_alive = "AudioFlinger" in out_af or "Hardware status" in out_af or "Standby" in out_af
             m_hal = re.search(r"HAL module:\s*([a-zA-Z0-9_\.]+)", out_af)
@@ -861,14 +886,14 @@ class HardwareTester:
             report.audio_flinger_alive = False
 
         # 2. Non-root dumpsys audio (check active output sinks)
-        code_aud, out_aud, _ = self.bridge.shell("dumpsys audio 2>/dev/null", serial=serial, timeout=6)
+        code_aud, out_aud, err_aud = self.bridge.shell("dumpsys audio", serial=serial, timeout=6)
         has_audio_hal = False
         if code_aud == 0 and out_aud:
             if "AudioRoutesInfo" in out_aud or "speaker" in out_aud.lower():
                 has_audio_hal = True
 
         # 3. Read /proc/asound/cards as secondary fallback
-        code_c, out_c, _ = self.bridge.shell("cat /proc/asound/cards 2>/dev/null", serial=serial, timeout=5)
+        code_c, out_c, err_c = self.bridge.shell("cat /proc/asound/cards", serial=serial, timeout=5)
         if code_c == 0 and out_c:
             for line in out_c.splitlines():
                 line = line.strip()
@@ -880,15 +905,21 @@ class HardwareTester:
                         report.cards_detected.append(line)
 
         # 4. Read /proc/asound/pcm
-        code_p, out_p, _ = self.bridge.shell("cat /proc/asound/pcm 2>/dev/null | head -n 10", serial=serial, timeout=5)
+        code_p, out_p, err_p = self.bridge.shell("cat /proc/asound/pcm | head -n 10", serial=serial, timeout=5)
         if code_p == 0 and out_p:
             for line in out_p.splitlines():
                 line = line.strip()
                 if line:
                     report.pcm_devices.append(line)
 
-        # 5. Fault evaluation
-        if not report.audio_flinger_alive and not has_audio_hal and (not report.cards_detected or (out_c and "no soundcards" in out_c.lower())):
+        # 5. Fault evaluation with status_from_read
+        af_status = status_from_read(out_af, err_af, code_af)
+        c_status = status_from_read(out_c, err_c, code_c)
+
+        if af_status == Status.NEEDS_ROOT and c_status == Status.NEEDS_ROOT:
+            report.status = "NEEDS_ROOT"
+            report.diagnosis = "NEEDS_ROOT: Audio HAL telemetry and /proc/asound restricted by SELinux / permissions."
+        elif not report.audio_flinger_alive and not has_audio_hal and (not report.cards_detected or (out_c and "no soundcards" in out_c.lower())):
             report.is_codec_faulty = True
             report.status = "FAIL"
             report.diagnosis = "FAIL: No ALSA soundcards or Audio HAL registered! Audio Codec IC is disconnected, unpowered, or dead."
@@ -907,69 +938,76 @@ class HardwareTester:
             report.status = "UNKNOWN"
             report.diagnosis = "UNKNOWN: Audio subsystem telemetry unavailable"
 
-        report.evidence.append(Evidence(source="dumpsys media.audio_flinger", raw_excerpt=out_af.strip()[:1000] if out_af else f"alive={report.audio_flinger_alive}, HAL={report.codec_chip_name}", exit_code=code_af))
-        if out_c:
-            report.evidence.append(Evidence(source="/proc/asound/cards", raw_excerpt=out_c.strip()[:1000], exit_code=code_c))
-        if out_p:
-            report.evidence.append(Evidence(source="/proc/asound/pcm", raw_excerpt=out_p.strip()[:1000], exit_code=code_p))
+        report.evidence.append(Evidence(source="dumpsys media.audio_flinger", raw_excerpt=(out_af or err_af or f"alive={report.audio_flinger_alive}, HAL={report.codec_chip_name}").strip()[:1000], exit_code=code_af))
+        if out_c or err_c:
+            report.evidence.append(Evidence(source="/proc/asound/cards", raw_excerpt=(out_c or err_c).strip()[:1000], exit_code=code_c))
+        if out_p or err_p:
+            report.evidence.append(Evidence(source="/proc/asound/pcm", raw_excerpt=(out_p or err_p).strip()[:1000], exit_code=code_p))
         return report
 
-    def inspect_display_authenticity(self, serial: str) -> DisplayPanelAuthenticity:
+    def inspect_display_panel_info(self, serial: str) -> DisplayPanelInfo:
         """
-        Extract exact DSI Display Panel hardware controller name from kernel logs
-        and verify OEM bootloader integrity flags (VerifiedBootState, VBMeta state).
+        Extract exact DSI Display Panel hardware controller parameters from kernel logs/sysfs
+        and bootloader integrity flags (VerifiedBootState, VBMeta state).
+        Software cannot prove a screen is original; this check reports kernel-reported panel info.
         """
-        report = DisplayPanelAuthenticity()
+        report = DisplayPanelInfo()
 
-        # 1. Search dmesg for panel controller string
-        code_d, out_d, _ = self.bridge.shell(
+        # 1. Search dmesg for panel controller string without suppressing stderr
+        code_d, out_d, err_d = self.bridge.shell(
             "dmesg | grep -i -E 'panel|dsi|mdss|sde|drm' | grep -i -E 'novatek|tianma|ili|hx|td4|ft|s6e|boe|csot|nt36' | tail -n 5",
             serial=serial,
             timeout=6
         )
+        dmesg_status = status_from_read(out_d, err_d, code_d)
+
+        found_panel = False
         if code_d == 0 and out_d:
             m = re.search(r"(nt\d+|td\d+|ili\d+|hx\d+|ft\d+|s6e\w+|tianma\w*|boe\w*)", out_d, re.IGNORECASE)
             if m:
                 report.panel_controller_name = m.group(1).lower()
                 report.driver_source = "Kernel DSI Bus (dmesg)"
+                found_panel = True
 
-        if report.panel_controller_name == "Standard OEM DSI Panel":
-            p_name = self.bridge.read_sysfs([
-                "/sys/class/graphics/fb0/msm_fb_panel_info",
-                "/sys/class/drm/card0/device/driver_override"
-            ], serial=serial)
-            if p_name and p_name.strip():
-                report.panel_controller_name = p_name.strip().splitlines()[0][:40]
+        if not found_panel:
+            code_sys, out_sys, err_sys = self.bridge.shell(
+                "cat /sys/class/graphics/fb0/msm_fb_panel_info /sys/class/drm/card0/device/driver_override",
+                serial=serial,
+                timeout=4
+            )
+            if code_sys == 0 and out_sys.strip() and "no such file" not in out_sys.lower():
+                report.panel_controller_name = out_sys.strip().splitlines()[0][:40]
+                report.driver_source = "Sysfs Framebuffer / DRM"
+                found_panel = True
 
         # 2. Bootloader Verified Boot flags
-        code_vbs, out_vbs, _ = self.bridge.shell("getprop ro.boot.verifiedbootstate", serial=serial, timeout=4)
+        code_vbs, out_vbs, err_vbs = self.bridge.shell("getprop ro.boot.verifiedbootstate", serial=serial, timeout=4)
         if code_vbs == 0 and out_vbs.strip():
             report.verified_boot_state = out_vbs.strip().lower()
 
-        code_vbm, out_vbm, _ = self.bridge.shell("getprop ro.boot.vbmeta.device_state", serial=serial, timeout=4)
+        code_vbm, out_vbm, err_vbm = self.bridge.shell("getprop ro.boot.vbmeta.device_state", serial=serial, timeout=4)
         if code_vbm == 0 and out_vbm.strip():
             report.vbmeta_device_state = out_vbm.strip().lower()
 
-        # 3. Authenticity Verdict
-        report.is_oem_verified = (report.verified_boot_state in ["green", "yellow"]) and (report.vbmeta_device_state == "locked")
-        report.status = "PASS" if report.is_oem_verified else "FAIL"
+        # 3. Determine status: If dmesg is blocked by permissions -> NEEDS_ROOT (not UNKNOWN)
+        if dmesg_status == Status.NEEDS_ROOT:
+            report.status = "NEEDS_ROOT"
+            report.diagnosis = "NEEDS_ROOT: Kernel dmesg logs restricted by SELinux / permissions."
+        elif found_panel:
+            report.status = "PASS"
+            report.diagnosis = f"PASS: Display Controller: {report.panel_controller_name} (Source: {report.driver_source})"
+        else:
+            report.status = "UNKNOWN"
+            report.diagnosis = "UNKNOWN: Display controller identifier unexposed in standard sysfs/kernel logs."
 
-        vbs_label = {
-            "green": "Official OEM Locked",
-            "yellow": "Self-Signed / Custom Key",
-            "orange": "Bootloader Unlocked (Modified)",
-            "red": "Device Corrupted / Tampered"
-        }.get(report.verified_boot_state, report.verified_boot_state)
-
-        report.diagnosis = (
-            f"{report.status}: Display Controller: {report.panel_controller_name} | "
-            f"Boot Integrity: {vbs_label} (vbmeta: {report.vbmeta_device_state})"
-        )
-        if out_d:
-            report.evidence.append(Evidence(source="dmesg DSI panel", raw_excerpt=out_d.strip()[:1000], exit_code=code_d))
+        if out_d or err_d:
+            report.evidence.append(Evidence(source="dmesg DSI panel", raw_excerpt=(out_d or err_d).strip()[:1000], exit_code=code_d))
         report.evidence.append(Evidence(source="ro.boot.verifiedbootstate", raw_excerpt=report.verified_boot_state, exit_code=code_vbs))
         report.evidence.append(Evidence(source="ro.boot.vbmeta.device_state", raw_excerpt=report.vbmeta_device_state, exit_code=code_vbm))
         return report
+
+    # Backwards compatibility alias
+    inspect_display_authenticity = inspect_display_panel_info
 
     COMPANION_PKG = "com.androiddoctor.companion"
 
@@ -1136,7 +1174,7 @@ function nextColor() {
         btn = self.diagnose_physical_buttons(serial)
         sim = self.diagnose_sim_and_baseband(serial)
         disp = self.diagnose_display_backlight(serial)
-        disp_auth = self.inspect_display_authenticity(serial)
+        disp_info = self.inspect_display_panel_info(serial)
         wifi = self.diagnose_wifi(serial)
         bt = self.diagnose_bluetooth(serial)
         periph = self.diagnose_peripherals_chips(serial)
@@ -1150,7 +1188,7 @@ function nextColor() {
             bt.status == "FAIL" or
             disp.status == "FAIL" or
             audio_codec.status == "FAIL" or
-            disp_auth.status == "FAIL" or
+            disp_info.status == "FAIL" or
             len(missing) > 0
         )
         all_unknown = (
@@ -1174,7 +1212,7 @@ function nextColor() {
             summary = "PASS: All Tested Components Normal"
 
         all_ev: List[Evidence] = []
-        for item in [fp, btn, sim, disp, disp_auth, wifi, bt, periph, audio_codec]:
+        for item in [fp, btn, sim, disp, disp_info, wifi, bt, periph, audio_codec]:
             if hasattr(item, "evidence") and item.evidence:
                 all_ev.extend(item.evidence)
 
@@ -1189,7 +1227,7 @@ function nextColor() {
             buttons=btn,
             sim_baseband=sim,
             display_backlight=disp,
-            display_authenticity=disp_auth,
+            display_panel_info=disp_info,
             wifi=wifi,
             bluetooth=bt,
             peripherals=periph,

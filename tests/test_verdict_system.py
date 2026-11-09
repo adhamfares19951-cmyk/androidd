@@ -1,12 +1,15 @@
 """
-Unit and Integration Tests for Android Doctor Pro - Section 0
+Unit and Integration Tests for Android Doctor Pro - Section 0 & Step 3
 Verifying:
 1. Strict 4-State Verdict System (PASS, FAIL, UNKNOWN, NEEDS_ROOT)
-2. Evidence Tracking with Evidence dataclass in all modules (no raw_evidence str)
-3. Accurate Renaming (Fuel gauge, Battery current + note, Reported sensors, Reset battery statistics, Diagnostic Report)
-4. Hypotheses explicitly marked as hypotheses for EDL/BROM/Odin/Cycling
-5. No fake defaults (no turning missing data into PASS or 100%)
-6. Isolated DB and Report directories (tests never touch real data/ or reports/)
+2. Evidence Tracking with Evidence dataclass in all modules (exit_code default None)
+3. status_from_read(stdout, stderr, exit_code, path_exists) checking both stdout and stderr
+4. Getevent shell user access without root (general failures return UNKNOWN with evidence, not NEEDS_ROOT)
+5. DisplayPanelInfo (check_id: display.panel_info, dmesg permission denied -> NEEDS_ROOT)
+6. Full matrix tests covering: normal output, empty output, permission denied (stderr), missing path, malformed output
+7. Accurate Renaming (Fuel gauge, Battery current + note, Reported sensors, Reset battery statistics, Diagnostic Report)
+8. Hypotheses explicitly marked as hypotheses for EDL/BROM/Odin/Cycling
+9. Isolated DB and Report directories (tests never touch real data/ or reports/)
 """
 
 import os
@@ -30,6 +33,7 @@ from core.hardware_tester import (
     PeripheralChipsDiagnostics,
     DisplayBacklightDiagnostics,
     AudioCodecReport,
+    DisplayPanelInfo,
     DisplayPanelAuthenticity
 )
 from core.storage_benchmark import StorageBenchmark, StorageHealthReport
@@ -75,6 +79,10 @@ class TestVerdictSystemAndNoFakeResults(unittest.TestCase):
         self.assertEqual(Status.UNKNOWN.value, "UNKNOWN")
         self.assertEqual(Status.NEEDS_ROOT.value, "NEEDS_ROOT")
 
+        # 1. Evidence.exit_code default must be None, not 0
+        ev_def = Evidence(source="test_source", raw_excerpt="output text")
+        self.assertIsNone(ev_def.exit_code, "Evidence.exit_code default must be None so unknown exit code never looks like success")
+
         # Evidence truncation at MAX_EXCERPT_CHARS
         huge_text = "A" * (MAX_EXCERPT_CHARS + 500)
         ev = Evidence(source="test_source", raw_excerpt=huge_text, exit_code=0)
@@ -110,13 +118,51 @@ class TestVerdictSystemAndNoFakeResults(unittest.TestCase):
         self.assertEqual(len(serialized["evidence"]), 1)
         self.assertEqual(serialized["evidence"][0]["source"], "sysfs")
 
-        # status_from_read contract
-        self.assertEqual(status_from_read(None), Status.UNKNOWN)
-        self.assertEqual(status_from_read("", exit_code=1, path_exists=False), Status.UNKNOWN)
-        self.assertEqual(status_from_read("Permission denied"), Status.NEEDS_ROOT)
-        self.assertEqual(status_from_read("type=1400 audit: avc: denied { read }"), Status.NEEDS_ROOT)
-        self.assertEqual(status_from_read("Operation not permitted"), Status.NEEDS_ROOT)
-        self.assertEqual(status_from_read("4120000"), Status.UNKNOWN)  # Must be parsed into PASS/FAIL by caller
+    def test_status_from_read_stdout_and_stderr(self):
+        """2. status_from_read receives stdout AND stderr; permission errors in stderr must return NEEDS_ROOT."""
+        # Permission denied in stderr alone
+        self.assertEqual(
+            status_from_read(stdout="", stderr="cat: /sys/block/mmcblk0/device/life_time: Permission denied", exit_code=1),
+            Status.NEEDS_ROOT,
+            "Permission denied in stderr must yield NEEDS_ROOT"
+        )
+
+        # avc: denied in stderr
+        self.assertEqual(
+            status_from_read(stdout="", stderr="type=1400 audit: avc: denied { read } for comm=\"cat\"", exit_code=1),
+            Status.NEEDS_ROOT,
+            "SELinux avc: denied in stderr must yield NEEDS_ROOT"
+        )
+
+        # Operation not permitted in stderr
+        self.assertEqual(
+            status_from_read(stdout="", stderr="Operation not permitted", exit_code=1),
+            Status.NEEDS_ROOT
+        )
+
+        # Permission denied in stdout
+        self.assertEqual(
+            status_from_read(stdout="Permission denied", stderr="", exit_code=1),
+            Status.NEEDS_ROOT
+        )
+
+        # Path not existing
+        self.assertEqual(status_from_read(path_exists=False), Status.UNKNOWN)
+
+        # Empty stdout and empty stderr
+        self.assertEqual(status_from_read(stdout="", stderr="", exit_code=0), Status.UNKNOWN)
+
+        # None values
+        self.assertEqual(status_from_read(stdout=None, stderr=None), Status.UNKNOWN)
+
+        # Normal valid output returns UNKNOWN until parsed by caller
+        self.assertEqual(status_from_read(stdout="4120000", stderr="", exit_code=0), Status.UNKNOWN)
+
+        # Non-zero exit code without permission error (e.g. file not found)
+        self.assertEqual(
+            status_from_read(stdout="", stderr="cat: /sys/fake/node: No such file or directory", exit_code=1),
+            Status.UNKNOWN
+        )
 
     def test_pmic_missing_data_never_fakes_pass_or_values(self):
         """Verify that when sysfs is unreadable, physical values are None/UNKNOWN and health is UNKNOWN or NEEDS_ROOT, never PASS."""
@@ -227,11 +273,73 @@ class TestVerdictSystemAndNoFakeResults(unittest.TestCase):
         self.assertTrue(len(codec.evidence) > 0, "Audio codec evidence must not be empty")
         self.assertIsInstance(codec.evidence[0], Evidence)
 
-        # 9. Display Authenticity
-        auth = self.hw_tester.inspect_display_authenticity("test_serial")
+        # 9. Display Panel Info (renamed from DisplayPanelAuthenticity)
+        auth = self.hw_tester.inspect_display_panel_info("test_serial")
+        self.assertEqual(auth.check_id, "display.panel_info")
         self.assertIn(auth.status, VALID_STATUSES)
-        self.assertTrue(len(auth.evidence) > 0, "Display authenticity evidence must not be empty")
+        self.assertTrue(len(auth.evidence) > 0, "Display panel info evidence must not be empty")
         self.assertIsInstance(auth.evidence[0], Evidence)
+
+    def test_getevent_shell_access_and_errors(self):
+        """3. getevent works without root. General failure -> UNKNOWN with evidence. Stderr permission denied -> NEEDS_ROOT."""
+        # Case A: Normal live key events without root -> PASS
+        self.mock_bridge.shell.side_effect = [
+            (0, "dumpsys input ok", ""),  # dumpsys input
+            (0, "/dev/input/event1: EV_KEY KEY_POWER DOWN\n/dev/input/event1: EV_KEY KEY_POWER UP\n", "")  # getevent -l
+        ]
+        btn_pass = self.hw_tester.diagnose_physical_buttons("serial_1")
+        self.assertEqual(btn_pass.status, "PASS")
+
+        # Case B: getevent timeout / empty without permission error -> UNKNOWN (NOT NEEDS_ROOT!)
+        self.mock_bridge.shell.side_effect = [
+            (1, "", "Service input unavailable"),  # dumpsys input fails
+            (124, "", "")                          # getevent times out without events
+        ]
+        btn_unknown = self.hw_tester.diagnose_physical_buttons("serial_1")
+        self.assertEqual(btn_unknown.status, "UNKNOWN", "Non-permission getevent failure must return UNKNOWN, not NEEDS_ROOT")
+        self.assertTrue(len(btn_unknown.evidence) > 0)
+
+        # Case C: Actual permission error in stderr -> NEEDS_ROOT
+        self.mock_bridge.shell.side_effect = [
+            (1, "", "Permission denied: dumpsys input"),
+            (1, "", "getevent: could not open /dev/input/event0: Permission denied")
+        ]
+        btn_root = self.hw_tester.diagnose_physical_buttons("serial_1")
+        self.assertEqual(btn_root.status, "NEEDS_ROOT", "Permission error in stderr must return NEEDS_ROOT")
+
+    def test_display_panel_info_status_derivation(self):
+        """4. DisplayPanelInfo: no fake original claim. If dmesg is blocked by permissions -> NEEDS_ROOT."""
+        # Case A: dmesg blocked by SELinux / permission denied in stderr -> NEEDS_ROOT
+        self.mock_bridge.shell.side_effect = [
+            (1, "", "dmesg: klogctl: Permission denied"),
+            (1, "", "No such file or directory"),  # sysfs
+            (0, "green", ""),                     # verifiedbootstate
+            (0, "locked", "")                     # vbmeta
+        ]
+        panel_root = self.hw_tester.inspect_display_panel_info("serial_1")
+        self.assertEqual(panel_root.check_id, "display.panel_info")
+        self.assertEqual(panel_root.status, "NEEDS_ROOT", "Permission denied on dmesg must return NEEDS_ROOT")
+        self.assertNotIn("OEM Verified", panel_root.diagnosis, "Must not claim OEM authenticity")
+
+        # Case B: Panel controller identified from dmesg -> PASS
+        self.mock_bridge.shell.side_effect = [
+            (0, "[ 1.234] dsi_panel: probe novatek nt36672 active", ""),
+            (0, "green", ""),
+            (0, "locked", "")
+        ]
+        panel_pass = self.hw_tester.inspect_display_panel_info("serial_1")
+        self.assertEqual(panel_pass.status, "PASS")
+        self.assertEqual(panel_pass.panel_controller_name, "nt36672")
+
+        # Case C: Unexposed panel controller without permission error -> UNKNOWN
+        self.mock_bridge.shell.side_effect = [
+            (0, "normal boot logs without panel tags", ""),
+            (1, "", "No such file"),
+            (0, "green", ""),
+            (0, "locked", "")
+        ]
+        panel_unk = self.hw_tester.inspect_display_panel_info("serial_1")
+        self.assertEqual(panel_unk.status, "UNKNOWN", "Unexposed panel info must return UNKNOWN")
 
     def test_storage_health_unreadable_is_not_pass(self):
         """Verify storage health test without root or missing wear nodes returns NEEDS_ROOT or UNKNOWN, never PASS."""
@@ -244,6 +352,62 @@ class TestVerdictSystemAndNoFakeResults(unittest.TestCase):
         self.assertFalse(report.has_real_data, "has_real_data must be False when storage wear is unreadable")
         self.assertTrue(len(report.evidence) > 0, "Storage evidence must not be empty")
         self.assertIsInstance(report.evidence[0], Evidence)
+
+    def test_status_from_read_coverage_matrix(self):
+        """Step 3: Test checks covering normal output, empty output, permission denied (stderr), missing path, malformed."""
+        # 1. Storage health with Permission Denied in stderr -> NEEDS_ROOT
+        self.mock_bridge.shell.side_effect = [
+            (0, "", ""),                                                               # ls host
+            (0, "/sys/block/mmcblk0", ""),                                             # ls mmcblk0
+            (0, "KLMBG4GE", ""),                                                       # name
+            (0, "61071360", ""),                                                       # size
+            (1, "", "cat: /sys/block/mmcblk0/device/life_time: Permission denied"),    # life_time
+            (1, "", "cat: /sys/block/mmcblk0/device/pre_eol_info: Permission denied"), # pre_eol
+            (1, "", "dump_device_desc: Permission denied")                             # ufs
+        ]
+        rep_root = self.storage_bench.diagnose_storage_health("serial_x")
+        self.assertEqual(rep_root.status, "NEEDS_ROOT", "Permission denied in stderr must yield NEEDS_ROOT")
+
+        # 2. Storage health with normal wear output -> PASS
+        self.mock_bridge.shell.side_effect = [
+            (0, "", ""),
+            (0, "/sys/block/mmcblk0", ""),
+            (0, "KLMBG4GE", ""),
+            (0, "61071360", ""),
+            (0, "0x01 0x01", ""),       # life_time normal (0-10% wear)
+            (0, "0x01", ""),            # pre_eol normal
+            (1, "", "No such file")     # ufs
+        ]
+        rep_pass = self.storage_bench.diagnose_storage_health("serial_x")
+        self.assertEqual(rep_pass.status, "PASS", "Valid parsed wear data must yield PASS")
+        self.assertTrue(rep_pass.has_real_data)
+
+        # 3. Storage health with missing nodes without permission error -> UNKNOWN
+        self.mock_bridge.shell.side_effect = [
+            (0, "", ""),
+            (0, "/sys/block/mmcblk0", ""),
+            (0, "KLMBG4GE", ""),
+            (0, "61071360", ""),
+            (1, "", "cat: /sys/block/mmcblk0/device/life_time: No such file or directory"),
+            (1, "", "cat: /sys/block/mmcblk0/device/pre_eol_info: No such file or directory"),
+            (1, "", "dump_device_desc: No such file or directory")
+        ]
+        rep_unk = self.storage_bench.diagnose_storage_health("serial_x")
+        self.assertEqual(rep_unk.status, "UNKNOWN", "Missing wear nodes without permission error must yield UNKNOWN")
+        self.assertFalse(rep_unk.has_real_data)
+
+        # 4. Storage health with malformed wear output -> UNKNOWN
+        self.mock_bridge.shell.side_effect = [
+            (0, "", ""),
+            (0, "/sys/block/mmcblk0", ""),
+            (0, "KLMBG4GE", ""),
+            (0, "61071360", ""),
+            (0, "invalid_gibberish_hex", ""),
+            (0, "corrupt_data", ""),
+            (1, "", "No such file")
+        ]
+        rep_mal = self.storage_bench.diagnose_storage_health("serial_x")
+        self.assertEqual(rep_mal.status, "UNKNOWN", "Malformed wear data must yield UNKNOWN")
 
     def test_report_exporter_renamed_terms_and_evidence(self):
         """Verify HTML report includes renamed terms and expandable evidence drawers, and does not touch real reports/ directory."""
@@ -290,6 +454,7 @@ class TestVerdictSystemAndNoFakeResults(unittest.TestCase):
                 "buttons": {"status": "UNKNOWN", "evidence": [Evidence(source="getevent -p", raw_excerpt="permission denied", exit_code=1)]},
                 "wifi": {"status": "PASS", "evidence": [Evidence(source="dumpsys wifi", raw_excerpt="Wi-Fi is enabled", exit_code=0)]},
                 "bluetooth": {"status": "PASS", "evidence": [Evidence(source="dumpsys bluetooth_manager", raw_excerpt="state ON", exit_code=0)]},
+                "display_panel_info": {"status": "PASS", "panel_controller_name": "nt36672", "driver_source": "dmesg", "verified_boot_state": "green", "evidence": [Evidence(source="dmesg", raw_excerpt="novatek", exit_code=0)]},
                 "evidence": [
                     Evidence(source="dumpsys wifi", raw_excerpt="Wi-Fi is enabled", exit_code=0),
                     Evidence(source="dumpsys bluetooth_manager", raw_excerpt="state ON", exit_code=0)
