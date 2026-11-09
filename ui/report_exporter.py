@@ -38,6 +38,7 @@ class DiagnosticReportExporter:
         reported_fault: str = "",
         repair_cost: float = 0.0,
         output_path: Optional[str] = None,
+        output_dir: Optional[str] = None,
         lang: str = "ar"
     ) -> str:
         dev = device_profile or {}
@@ -59,7 +60,9 @@ class DiagnosticReportExporter:
         report_id = f"ADP-{int(time.time())}-{serial[:6].upper() if serial else 'DEV'}"
 
         if not output_path:
-            output_path = os.path.join(REPORTS_DIR, f"Diagnostic_Report_{serial}_{int(time.time())}.html")
+            target_dir = output_dir or REPORTS_DIR
+            os.makedirs(target_dir, exist_ok=True)
+            output_path = os.path.join(target_dir, f"Diagnostic_Report_{serial}_{int(time.time())}.html")
 
         pmic = bdiag.get("pmic", {})
         thermals = bdiag.get("thermal_zones", [])
@@ -154,11 +157,36 @@ class DiagnosticReportExporter:
         sec_card_title = "الفحص الأمني وصائد برامج التجسس" if is_ar else "SECURITY AUDIT & SPYWARE HUNTER"
         opt_card_title = "نتائج الصيانة وتسريع أداء النظام" if is_ar else "REAL SYSTEM OPTIMIZATION METRICS"
 
-        def make_evidence_box(evidence_text: str, label_ar="عرض الدليل التقني المباشر", label_en="Show Evidence") -> str:
-            if not evidence_text or not evidence_text.strip():
+        def make_evidence_box(evidence_items, label_ar="عرض الدليل التقني المباشر", label_en="Show Evidence") -> str:
+            if not evidence_items:
                 return ""
+            if isinstance(evidence_items, str):
+                if not evidence_items.strip():
+                    return ""
+                evidence_list = [{"source": "Raw Data", "raw_excerpt": evidence_items.strip(), "exit_code": 0}]
+            elif isinstance(evidence_items, list):
+                evidence_list = evidence_items
+            else:
+                evidence_list = [evidence_items]
+
             lbl = label_ar if is_ar else label_en
-            return f"""<details class="evidence-box"><summary>🔍 {lbl}</summary><pre>{evidence_text.strip()}</pre></details>"""
+            items_html = []
+            import html
+            for ev in evidence_list:
+                src = getattr(ev, "source", None) or (ev.get("source") if isinstance(ev, dict) else "")
+                exc = getattr(ev, "raw_excerpt", None) or (ev.get("raw_excerpt") if isinstance(ev, dict) else "")
+                code = getattr(ev, "exit_code", 0) if hasattr(ev, "exit_code") else (ev.get("exit_code") if isinstance(ev, dict) else 0)
+                if not src and not exc:
+                    continue
+                code_badge = f' <span class="badge" style="background:#30363d;font-size:10px;">exit {code}</span>' if code is not None and code != 0 else ''
+                src_html = f'<div style="font-family:monospace;font-size:11px;color:#58a6ff;margin-bottom:4px;word-break:break-all;"><strong>Source:</strong> {html.escape(str(src))}{code_badge}</div>'
+                exc_html = f'<pre style="margin-top:2px;margin-bottom:8px;background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:6px;font-size:11px;overflow-x:auto;max-height:200px;white-space:pre-wrap;">{html.escape(str(exc))}</pre>'
+                items_html.append(f'<div class="evidence-item" style="margin-bottom:8px;">{src_html}{exc_html}</div>')
+
+            if not items_html:
+                return ""
+
+            return f"""<details class="evidence-box" style="margin-top:8px;"><summary style="cursor:pointer;color:#79c0ff;font-weight:bold;font-size:12px;">🔍 {lbl} ({len(items_html)})</summary><div style="padding-top:8px;">{''.join(items_html)}</div></details>"""
 
         # Formatted PMIC readings
         v_val = pmic.get("voltage_mv")
@@ -508,7 +536,7 @@ class DiagnosticReportExporter:
                 <div class="prop-row"><span class="prop-name">{'حالة التوصيل:' if is_ar else 'Status:'}</span><span class="prop-val">{pmic.get("status", "UNKNOWN")}</span></div>
                 <div class="prop-row"><span class="prop-name">{'دورات الشحن:' if is_ar else 'Charge Cycles:'}</span><span class="prop-val">{pmic.get("cycle_count", "N/A")}</span></div>
                 <div class="prop-row"><span class="prop-name">{'السعة التصميمية:' if is_ar else 'Design Capacity:'}</span><span class="prop-val">{f"{pmic.get('charge_full_design_uah')} uAh" if pmic.get('charge_full_design_uah') else "UNKNOWN"}</span></div>
-                {make_evidence_box(pmic.get("raw_evidence", ""))}
+                {make_evidence_box(pmic.get("evidence", []))}
             </div>
         </div>
 
@@ -541,7 +569,7 @@ class DiagnosticReportExporter:
                 <div style="margin-top: 10px; font-size: 12px; color: #8b949e; background: #010409; padding: 8px; border-radius: 4px;">
                     {panics.get("summary_verdict", "No kernel errors found.")}
                 </div>
-                {make_evidence_box(panics.get("blackbox", {}).get("raw_evidence", ""))}
+                {make_evidence_box(panics.get("blackbox", {}).get("evidence", []))}
             </div>
         </div>
 
@@ -611,7 +639,7 @@ class DiagnosticReportExporter:
                     </div>
                 </div>
             </div>
-            {make_evidence_box(haudit.get("raw_evidence", "") or slife.get("raw_evidence", ""))}
+            {make_evidence_box(haudit.get("evidence", []) or slife.get("evidence", []))}
         </div>
 
         <!-- Security & Malware Hunter -->

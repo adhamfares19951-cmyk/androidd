@@ -15,17 +15,31 @@ class DatabaseManager:
     _instance = None
     _lock = threading.Lock()
 
+    @classmethod
+    def reset_instance(cls):
+        with cls._lock:
+            if cls._instance:
+                cls._instance.close()
+            cls._instance = None
+
     def __new__(cls, db_path: Optional[str] = None):
         with cls._lock:
-            if cls._instance is None:
-                cls._instance = super(DatabaseManager, cls).__new__(cls)
-                cls._instance._initialized = False
+            target_path = os.path.abspath(db_path) if db_path else os.path.abspath(DEFAULT_DB_PATH)
+            if cls._instance is not None:
+                if getattr(cls._instance, "db_path", None) != target_path:
+                    new_inst = super(DatabaseManager, cls).__new__(cls)
+                    new_inst._initialized = False
+                    return new_inst
+                return cls._instance
+            cls._instance = super(DatabaseManager, cls).__new__(cls)
+            cls._instance._initialized = False
             return cls._instance
 
     def __init__(self, db_path: Optional[str] = None):
-        if getattr(self, "_initialized", False):
+        target_path = os.path.abspath(db_path) if db_path else os.path.abspath(DEFAULT_DB_PATH)
+        if getattr(self, "_initialized", False) and getattr(self, "db_path", None) == target_path:
             return
-        self.db_path = db_path or DEFAULT_DB_PATH
+        self.db_path = target_path
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._db_lock = threading.Lock()
         self.init_db()

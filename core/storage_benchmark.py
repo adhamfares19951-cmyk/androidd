@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, Optional, List, Tuple
 from core.adb_bridge import ADBBridge
+from core.result import Evidence, Status, CheckResult
 
 logger = logging.getLogger("StorageBenchmark")
 
@@ -30,7 +31,7 @@ class StorageHealthReport:
     
     diagnosis: str = "Storage memory health not evaluated."
     raw_logs: List[str] = field(default_factory=list)
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     @property
     def write_speed_mb_s(self) -> float:
@@ -50,7 +51,7 @@ class StorageHealthReport:
 
     @property
     def has_real_data(self) -> bool:
-        return self.status in ("PASS", "FAIL") and (self.life_time_type_a != "Unknown" or self.life_time_type_b != "Unknown")
+        return self.status in ("PASS", "FAIL")
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -59,6 +60,7 @@ class StorageHealthReport:
         d["pre_eol_info"] = self.pre_eol_status
         d["health_verdict"] = self.status
         d["has_real_data"] = self.has_real_data
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
         return d
 
 
@@ -222,7 +224,13 @@ class StorageBenchmark:
                 report.diagnosis = f"UNKNOWN: JEDEC wear descriptors unexposed by OEM driver for {report.storage_type} ({report.storage_name})."
 
         report.raw_logs = logs
-        report.raw_evidence = " | ".join(logs) if logs else f"storage_type={report.storage_type}, name={report.storage_name}, capacity={report.storage_capacity_gb}GB, wear_pct={report.estimated_wear_pct}"
+        report.evidence.append(Evidence(
+            source="NAND Storage Controller",
+            raw_excerpt=f"type={report.storage_type}, name={report.storage_name}, capacity={report.storage_capacity_gb}GB, wear_pct={report.estimated_wear_pct}, EOL={report.pre_eol_status}",
+            exit_code=0
+        ))
+        for log in logs:
+            report.evidence.append(Evidence(source="JEDEC Life Time Log", raw_excerpt=log, exit_code=0))
         return report
 
     def run_speed_benchmark(self, serial: str, test_size_mb: int = 40) -> StorageHealthReport:

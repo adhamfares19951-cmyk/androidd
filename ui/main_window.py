@@ -46,6 +46,7 @@ from core.malware_hunter import MalwareHunter, SecurityAuditScan, AppSecurityInf
 from core.optimizer import RealSystemOptimizer, OptimizationResult
 from core.rescue_center import RescueCenter, FastbootVariables
 from core.provisioning_manager import ProvisioningManager, ProvisioningStatus
+from core.result import Evidence, Status, CheckResult
 from ui.report_exporter import DiagnosticReportExporter, REPORTS_DIR
 from ui.i18n import t
 
@@ -53,6 +54,34 @@ logger = logging.getLogger("MainWindow")
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"
+
+
+def format_evidence_for_display(evidence_items: Any, is_ar: bool = True) -> str:
+    """Renders a list of Evidence objects with source and excerpt formatted separately for UI display."""
+    if not evidence_items:
+        return ""
+    if isinstance(evidence_items, str):
+        evidence_list = [{"source": "Raw Data", "raw_excerpt": evidence_items.strip(), "exit_code": 0}]
+    elif isinstance(evidence_items, list):
+        evidence_list = evidence_items
+    else:
+        evidence_list = [evidence_items]
+
+    if not evidence_list:
+        return ""
+
+    header = "\n[الأدلة التقنية المباشرة / Evidence]:" if is_ar else "\n[Technical Evidence]:"
+    lines = [header]
+    for ev in evidence_list:
+        src = getattr(ev, "source", None) or (ev.get("source") if isinstance(ev, dict) else "")
+        exc = getattr(ev, "raw_excerpt", None) or (ev.get("raw_excerpt") if isinstance(ev, dict) else "")
+        code = getattr(ev, "exit_code", 0) if hasattr(ev, "exit_code") else (ev.get("exit_code") if isinstance(ev, dict) else 0)
+        code_str = f" [exit {code}]" if code is not None and code != 0 else ""
+        lines.append(f"  • Source: {src}{code_str}")
+        if exc:
+            for eline in str(exc).strip().splitlines():
+                lines.append(f"    {eline}")
+    return "\n".join(lines)
 
 
 class AndroidDoctorApp(ctk.CTk):
@@ -1566,9 +1595,8 @@ class AndroidDoctorApp(ctk.CTk):
             else:
                 out_lines.append("\n✓ قراءات جهد البطارية ومقياس الوقود طبيعية." if is_ar else "\n✓ Battery fuel gauge & voltage readings within normal ranges.")
 
-            if pmic.raw_evidence:
-                out_lines.append("\n[الأدلة الفنية والبيانات الخام / Raw Evidence]:" if is_ar else "\n[Raw Evidence]:")
-                out_lines.append(pmic.raw_evidence)
+            if pmic.evidence:
+                out_lines.append(format_evidence_for_display(pmic.evidence, is_ar=is_ar))
 
             def update_ui():
                 self.pmic_text.delete("1.0", "end")
@@ -1834,8 +1862,8 @@ class AndroidDoctorApp(ctk.CTk):
                 f"فلاتة التوصيل: {'⚠️ فلاتة مقطوعة أو مفصولة' if report.fingerprint.is_flex_disconnected else 'متصلة باللوحة'}",
                 f"التشخيص الفني: {report.fingerprint.diagnosis}"
             ]
-            if report.fingerprint.raw_evidence:
-                fp_lines.append(f"\n[الأدلة الفنية / Evidence]:\n{report.fingerprint.raw_evidence}")
+            if report.fingerprint.evidence:
+                fp_lines.append(format_evidence_for_display(report.fingerprint.evidence, is_ar=is_ar))
 
             # Physical Keys
             key_lines = [
@@ -1846,8 +1874,8 @@ class AndroidDoctorApp(ctk.CTk):
                 f"كشف تعليق الأزرار: {'⚠️ يوجد شورت/تعليق!' if report.buttons.is_any_key_stuck else '✓ سليم (محرر)'}",
                 f"التشخيص: {report.buttons.diagnosis}"
             ]
-            if report.buttons.raw_evidence:
-                key_lines.append(f"\n[الأدلة الفنية / Evidence]:\n{report.buttons.raw_evidence}")
+            if report.buttons.evidence:
+                key_lines.append(format_evidence_for_display(report.buttons.evidence, is_ar=is_ar))
 
             # SIM & Baseband
             sim_lines = [
@@ -1861,8 +1889,8 @@ class AndroidDoctorApp(ctk.CTk):
                 f"عطل آيسي الشبكة (RF Baseband): {'⚠️ تالف (No RIL)' if report.sim_baseband.is_rf_baseband_faulty else 'سليم'}" if is_ar else f"RF Baseband IC: {'FAULT' if report.sim_baseband.is_rf_baseband_faulty else 'PASS'}",
                 f"التشخيص: {report.sim_baseband.diagnosis}" if is_ar else f"Diagnosis: {report.sim_baseband.diagnosis}"
             ]
-            if report.sim_baseband.raw_evidence:
-                sim_lines.append(f"\n[الأدلة الفنية / Evidence]:\n{report.sim_baseband.raw_evidence}")
+            if report.sim_baseband.evidence:
+                sim_lines.append(format_evidence_for_display(report.sim_baseband.evidence, is_ar=is_ar))
 
             # Display Backlight
             disp_lines = [
@@ -1871,8 +1899,8 @@ class AndroidDoctorApp(ctk.CTk):
                 f"كشف شاشة العرض (DSI Panel): {'تم التعرف على الشاشة' if report.display_backlight.panel_detected else '⚠️ الشاشة غير متصلة/معطوبة'}" if is_ar else f"DSI Panel: {'Detected' if report.display_backlight.panel_detected else 'DISCONNECTED'}",
                 f"التشخيص: {report.display_backlight.diagnosis}" if is_ar else f"Diagnosis: {report.display_backlight.diagnosis}"
             ]
-            if report.display_backlight.raw_evidence:
-                disp_lines.append(f"\n[الأدلة الفنية / Evidence]:\n{report.display_backlight.raw_evidence}")
+            if report.display_backlight.evidence:
+                disp_lines.append(format_evidence_for_display(report.display_backlight.evidence, is_ar=is_ar))
 
             # Wi-Fi Chipset
             wifi_lines = [
@@ -1885,8 +1913,8 @@ class AndroidDoctorApp(ctk.CTk):
                 f"حالة التعريف والرقاقة: {report.wifi.driver_status}" if is_ar else f"Driver Status: {report.wifi.driver_status}",
                 f"التشخيص: {report.wifi.diagnosis}" if is_ar else f"Diagnosis: {report.wifi.diagnosis}"
             ]
-            if report.wifi.raw_evidence:
-                wifi_lines.append(f"\n[الأدلة الفنية / Evidence]:\n{report.wifi.raw_evidence}")
+            if report.wifi.evidence:
+                wifi_lines.append(format_evidence_for_display(report.wifi.evidence, is_ar=is_ar))
 
             # Bluetooth Controller
             bt_lines = [
@@ -1898,8 +1926,8 @@ class AndroidDoctorApp(ctk.CTk):
                 f"حالة العتاد: {'⚠️ عطل عتادي!' if report.bluetooth.is_hardware_faulty else 'سليم ويعمل'}" if is_ar else f"Hardware State: {'FAULT' if report.bluetooth.is_hardware_faulty else 'OK'}",
                 f"التشخيص: {report.bluetooth.diagnosis}" if is_ar else f"Diagnosis: {report.bluetooth.diagnosis}"
             ]
-            if report.bluetooth.raw_evidence:
-                bt_lines.append(f"\n[الأدلة الفنية / Evidence]:\n{report.bluetooth.raw_evidence}")
+            if report.bluetooth.evidence:
+                bt_lines.append(format_evidence_for_display(report.bluetooth.evidence, is_ar=is_ar))
 
             # Peripheral Chips (GPS, NFC, OTG)
             chip_lines = [
@@ -1909,8 +1937,8 @@ class AndroidDoctorApp(ctk.CTk):
                 f"منفذ USB OTG (توصيل فلاشة وماوس): {'مدعوم عتادياً' if report.peripherals.usb_otg_supported else 'غير مدعوم'}" if is_ar else f"USB OTG (Host Mode): {'Supported' if report.peripherals.usb_otg_supported else 'Not Supported'}",
                 f"التشخيص: {report.peripherals.diagnosis}" if is_ar else f"Diagnosis: {report.peripherals.diagnosis}"
             ]
-            if report.peripherals.raw_evidence:
-                chip_lines.append(f"\n[الأدلة الفنية / Evidence]:\n{report.peripherals.raw_evidence}")
+            if report.peripherals.evidence:
+                chip_lines.append(format_evidence_for_display(report.peripherals.evidence, is_ar=is_ar))
 
             # Audio Codec IC (ALSA Soundcards)
             codec_lines = [
@@ -1922,8 +1950,8 @@ class AndroidDoctorApp(ctk.CTk):
                 f"حالة العتاد: {'⚠️ عطل عتادي في آيسي الصوت!' if report.audio_codec.is_codec_faulty else 'سليم ويعمل ✓'}" if is_ar else f"Hardware State: {'FAULT' if report.audio_codec.is_codec_faulty else 'PASS'}",
                 f"التشخيص: {report.audio_codec.diagnosis}" if is_ar else f"Diagnosis: {report.audio_codec.diagnosis}"
             ]
-            if report.audio_codec.raw_evidence:
-                codec_lines.append(f"\n[الأدلة الفنية / Evidence]:\n{report.audio_codec.raw_evidence}")
+            if report.audio_codec.evidence:
+                codec_lines.append(format_evidence_for_display(report.audio_codec.evidence, is_ar=is_ar))
 
             # Display Controller & Authenticity
             auth_lines = [
@@ -1935,8 +1963,8 @@ class AndroidDoctorApp(ctk.CTk):
                 f"توثيق العتاد الأصلي (OEM Original): {'✓ معتمد ورسمي' if report.display_authenticity.is_oem_verified else 'معدل / غير موثق'}" if is_ar else f"OEM Verified: {'YES' if report.display_authenticity.is_oem_verified else 'Modified/Unlocked'}",
                 f"التشخيص: {report.display_authenticity.diagnosis}" if is_ar else f"Diagnosis: {report.display_authenticity.diagnosis}"
             ]
-            if report.display_authenticity.raw_evidence:
-                auth_lines.append(f"\n[الأدلة الفنية / Evidence]:\n{report.display_authenticity.raw_evidence}")
+            if report.display_authenticity.evidence:
+                auth_lines.append(format_evidence_for_display(report.display_authenticity.evidence, is_ar=is_ar))
 
             self.last_audio_codec = report.audio_codec
             self.last_disp_auth = report.display_authenticity
@@ -2969,9 +2997,8 @@ class AndroidDoctorApp(ctk.CTk):
                 f"تقييم صحة الذاكرة: {report.health_verdict}" if is_ar else f"Health Verdict: {report.health_verdict}",
                 f"التشخيص الفني: {report.diagnosis}" if is_ar else f"Diagnosis: {report.diagnosis}"
             ]
-            if report.raw_evidence:
-                lines.append("\n[الأدلة الفنية والبيانات الخام / Raw Evidence]:" if is_ar else "\n[Raw Evidence]:")
-                lines.append(report.raw_evidence)
+            if report.evidence:
+                lines.append(format_evidence_for_display(report.evidence, is_ar=is_ar))
             def upd():
                 self.storage_text.delete("1.0", "end")
                 self.storage_text.insert("end", "\n".join(lines))
@@ -3152,8 +3179,8 @@ class AndroidDoctorApp(ctk.CTk):
                 lines.append("\nأخطاء ناقل I2C المكتشفة:" if is_ar else "\nI2C Bus Error Logs:")
                 for err in rep.i2c_bus_errors[:5]:
                     lines.append(f"  • {err}")
-            if rep.raw_evidence:
-                lines.append(f"\nالأدلة التقنية المباشرة (Raw Evidence):\n{rep.raw_evidence[:300]}")
+            if rep.evidence:
+                lines.append(format_evidence_for_display(rep.evidence, is_ar=is_ar))
 
             def upd():
                 self.root_forensics_text.delete("1.0", "end")

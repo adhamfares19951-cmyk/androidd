@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Any
 from core.adb_bridge import ADBBridge
+from core.result import Evidence, Status, CheckResult
 
 logger = logging.getLogger("HardwareTester")
 
@@ -65,10 +66,12 @@ class FingerprintDiagnostics:
     status: str = "UNKNOWN"
     diagnosis: str = "Fingerprint IC normal"
     raw_details: str = ""
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -81,10 +84,12 @@ class PhysicalButtonsDiagnostics:
     status: str = "UNKNOWN"
     diagnosis: str = "All physical buttons responsive and released"
     captured_events: List[str] = field(default_factory=list)
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -99,10 +104,12 @@ class SIMBasebandDiagnostics:
     is_tray_det_faulty: bool = False
     status: str = "UNKNOWN"
     diagnosis: str = "SIM & Baseband Subsystem Normal"
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -117,10 +124,12 @@ class WiFiDiagnostics:
     is_hardware_faulty: bool = False
     status: str = "UNKNOWN"
     diagnosis: str = "Wi-Fi Chipset Normal"
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -132,10 +141,12 @@ class BluetoothDiagnostics:
     is_hardware_faulty: bool = False
     status: str = "UNKNOWN"
     diagnosis: str = "Bluetooth Controller Normal"
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -147,10 +158,12 @@ class PeripheralChipsDiagnostics:
     usb_otg_supported: bool = True
     status: str = "UNKNOWN"
     diagnosis: str = "Peripherals Normal"
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -163,10 +176,12 @@ class DisplayBacklightDiagnostics:
     status: str = "UNKNOWN"
     diagnosis: str = "Display & Backlight Normal"
     dsi_error_logs: List[str] = field(default_factory=list)
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -178,10 +193,12 @@ class AudioCodecReport:
     is_codec_faulty: bool = False
     status: str = "UNKNOWN"
     diagnosis: str = "Audio Codec IC Normal"
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -193,10 +210,12 @@ class DisplayPanelAuthenticity:
     is_oem_verified: bool = True
     status: str = "UNKNOWN"
     diagnosis: str = "OEM Display Controller & Verified Bootstate OK"
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -219,7 +238,7 @@ class HardwareAuditReport:
     pointer_location_active: bool = False
     summary: str = "PASS"
     status: str = "UNKNOWN"
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -241,7 +260,7 @@ class HardwareAuditReport:
             "pointer_location_active": self.pointer_location_active,
             "summary": self.summary,
             "status": self.status,
-            "raw_evidence": self.raw_evidence
+            "evidence": [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
         }
 
 
@@ -497,7 +516,14 @@ class HardwareTester:
             fp.status = "UNKNOWN"
             fp.diagnosis = "UNKNOWN: No biometric/fingerprint sensor detected on this model."
 
-        fp.raw_evidence = f"dumpsys fingerprint/biometric: {combined.strip()[:180]}"
+        if out_fp.strip():
+            fp.evidence.append(Evidence(source="dumpsys fingerprint", raw_excerpt=out_fp.strip()[:1000], exit_code=code_fp))
+        if out_bio.strip():
+            fp.evidence.append(Evidence(source="dumpsys biometric", raw_excerpt=out_bio.strip()[:1000], exit_code=code_bio))
+        if out_k.strip():
+            fp.evidence.append(Evidence(source="dmesg biometric traces", raw_excerpt=out_k.strip()[:1000], exit_code=code_k))
+        if not fp.evidence:
+            fp.evidence.append(Evidence(source="dumpsys fingerprint/biometric", raw_excerpt=combined.strip() or "No biometric data", exit_code=code_fp))
         return fp
 
     def diagnose_physical_buttons(self, serial: str) -> PhysicalButtonsDiagnostics:
@@ -542,7 +568,9 @@ class HardwareTester:
             diag.status = "PASS"
             diag.diagnosis = "PASS: Volume Up/Down and Power keys are normal and not shorted."
 
-        diag.raw_evidence = f"dumpsys input: code={code_input}, getevent: code={code_ev}, captured {len(diag.captured_events)} events"
+        diag.evidence.append(Evidence(source="dumpsys input", raw_excerpt=out_input.strip()[:1000] if out_input else "No input subsystem output", exit_code=code_input))
+        if out_ev:
+            diag.evidence.append(Evidence(source="timeout 8 getevent -l", raw_excerpt="\n".join(lines[:20]), exit_code=code_ev))
         return diag
 
     def diagnose_sim_and_baseband(self, serial: str) -> SIMBasebandDiagnostics:
@@ -597,7 +625,10 @@ class HardwareTester:
             diag.status = "UNKNOWN"
             diag.diagnosis = f"UNKNOWN: SIM/Baseband state unreadable (State: {s1}, Baseband: {bb})"
 
-        diag.raw_evidence = f"gsm.sim.state: {s1} | gsm.version.baseband: {bb} | gsm.operator.alpha: {op} | signal: {sig}"
+        diag.evidence.append(Evidence(source="getprop gsm.version.baseband", raw_excerpt=bb, exit_code=code_bb))
+        diag.evidence.append(Evidence(source="getprop gsm.sim.state", raw_excerpt=f"sim1={s1}, sim2={s2}, carrier={op}, net={net}", exit_code=code_sim1))
+        if out_sig:
+            diag.evidence.append(Evidence(source="dumpsys telephony.registry (mSignalStrength)", raw_excerpt=out_sig.strip()[:500], exit_code=code_sig))
         return diag
 
     def diagnose_wifi(self, serial: str) -> WiFiDiagnostics:
@@ -626,7 +657,7 @@ class HardwareTester:
                 diag.status = "FAIL"
                 diag.driver_status = "CRITICAL: Vendor HAL / Driver Start Failure"
                 diag.diagnosis = "FAIL: Wi-Fi Vendor HAL or Driver failed to initialize. Chipset desoldered or unpowered."
-                diag.raw_evidence = f"dumpsys wifi: Driver/HAL initialization error detected: {out_w.strip()[:150]}"
+                diag.evidence.append(Evidence(source="dumpsys wifi", raw_excerpt=out_w.strip()[:1000], exit_code=code_w))
                 return diag
 
             # Check SSID & RSSI
@@ -679,7 +710,10 @@ class HardwareTester:
             diag.status = "UNKNOWN"
             diag.diagnosis = f"UNKNOWN: Wi-Fi state indeterminate (State: {diag.state}, MAC: {mac_note})"
 
-        diag.raw_evidence = f"cmd wifi status: code={code_cmd} ({out_cmd.strip()[:40]}) | dumpsys wifi: state={diag.state} | MAC={mac_note}"
+        diag.evidence.append(Evidence(source="cmd wifi status", raw_excerpt=out_cmd.strip()[:400] if out_cmd else "No cmd wifi status output", exit_code=code_cmd))
+        if out_w:
+            diag.evidence.append(Evidence(source="dumpsys wifi", raw_excerpt=out_w.strip()[:1000], exit_code=code_w))
+        diag.evidence.append(Evidence(source="MAC Address", raw_excerpt=f"wlan0 MAC={mac_note}", exit_code=code_mac))
         return diag
 
     def diagnose_bluetooth(self, serial: str) -> BluetoothDiagnostics:
@@ -717,7 +751,8 @@ class HardwareTester:
             diag.status = "UNKNOWN"
             diag.diagnosis = f"UNKNOWN: Bluetooth adapter indeterminate (State: {diag.state}, MAC: {diag.mac_address})"
 
-        diag.raw_evidence = f"dumpsys bluetooth_manager: code={code_bt}, state={diag.state}, name={diag.name}, mac={diag.mac_address}"
+        diag.evidence.append(Evidence(source="dumpsys bluetooth_manager", raw_excerpt=out_bt.strip()[:1000] if out_bt else "No bluetooth_manager output", exit_code=code_bt))
+        diag.evidence.append(Evidence(source="pm feature bluetooth_le", raw_excerpt=f"BLE: {diag.ble_supported}", exit_code=code_ble))
         return diag
 
     def diagnose_peripherals_chips(self, serial: str) -> PeripheralChipsDiagnostics:
@@ -739,7 +774,9 @@ class HardwareTester:
         has_data = diag.gps_present or diag.usb_otg_supported or diag.nfc_present
         diag.status = "PASS" if has_data else "UNKNOWN"
         diag.diagnosis = f"GPS: {diag.gps_status} | NFC: {diag.nfc_status} | USB OTG: {'Supported' if diag.usb_otg_supported else 'Not Supported'}"
-        diag.raw_evidence = f"pm features: location.gps={diag.gps_present}, nfc={diag.nfc_present}, usb.host={diag.usb_otg_supported}"
+        diag.evidence.append(Evidence(source="pm feature location.gps", raw_excerpt=f"gps={diag.gps_present}", exit_code=code_gps))
+        diag.evidence.append(Evidence(source="pm feature nfc", raw_excerpt=f"nfc={diag.nfc_present}", exit_code=code_nfc))
+        diag.evidence.append(Evidence(source="pm feature usb.host", raw_excerpt=f"usb_host={diag.usb_otg_supported}", exit_code=code_otg))
         return diag
 
     def diagnose_display_backlight(self, serial: str) -> DisplayBacklightDiagnostics:
@@ -782,7 +819,9 @@ class HardwareTester:
             diag.status = "UNKNOWN"
             diag.diagnosis = f"UNKNOWN: Display brightness={diag.brightness_now}, panel indeterminate."
 
-        diag.raw_evidence = f"brightness_now={diag.brightness_now}, max_brightness={diag.max_brightness}, dmesg panel errors={len(diag.dsi_error_logs)}"
+        diag.evidence.append(Evidence(source="sysfs backlight brightness", raw_excerpt=f"brightness_now={diag.brightness_now}, max_brightness={diag.max_brightness}", exit_code=0))
+        if out_d:
+            diag.evidence.append(Evidence(source="dmesg DSI panel", raw_excerpt=out_d.strip()[:1000], exit_code=code_d))
         return diag
 
     def set_pointer_location(self, serial: str, enabled: bool) -> bool:
@@ -868,7 +907,11 @@ class HardwareTester:
             report.status = "UNKNOWN"
             report.diagnosis = "UNKNOWN: Audio subsystem telemetry unavailable"
 
-        report.raw_evidence = f"dumpsys media.audio_flinger: alive={report.audio_flinger_alive}, HAL={report.codec_chip_name} | /proc/asound/cards: {len(report.cards_detected)} cards"
+        report.evidence.append(Evidence(source="dumpsys media.audio_flinger", raw_excerpt=out_af.strip()[:1000] if out_af else f"alive={report.audio_flinger_alive}, HAL={report.codec_chip_name}", exit_code=code_af))
+        if out_c:
+            report.evidence.append(Evidence(source="/proc/asound/cards", raw_excerpt=out_c.strip()[:1000], exit_code=code_c))
+        if out_p:
+            report.evidence.append(Evidence(source="/proc/asound/pcm", raw_excerpt=out_p.strip()[:1000], exit_code=code_p))
         return report
 
     def inspect_display_authenticity(self, serial: str) -> DisplayPanelAuthenticity:
@@ -922,7 +965,10 @@ class HardwareTester:
             f"{report.status}: Display Controller: {report.panel_controller_name} | "
             f"Boot Integrity: {vbs_label} (vbmeta: {report.vbmeta_device_state})"
         )
-        report.raw_evidence = f"panel_controller={report.panel_controller_name}, verifiedbootstate={report.verified_boot_state}, vbmeta={report.vbmeta_device_state}"
+        if out_d:
+            report.evidence.append(Evidence(source="dmesg DSI panel", raw_excerpt=out_d.strip()[:1000], exit_code=code_d))
+        report.evidence.append(Evidence(source="ro.boot.verifiedbootstate", raw_excerpt=report.verified_boot_state, exit_code=code_vbs))
+        report.evidence.append(Evidence(source="ro.boot.vbmeta.device_state", raw_excerpt=report.vbmeta_device_state, exit_code=code_vbm))
         return report
 
     COMPANION_PKG = "com.androiddoctor.companion"
@@ -1127,12 +1173,10 @@ function nextColor() {
             overall_status = "PASS"
             summary = "PASS: All Tested Components Normal"
 
-        raw_ev = (
-            f"Sensors: {len(sensors)} (Missing: {len(missing)}) | "
-            f"Audio: {audio_codec.status} | Display: {disp.status} | "
-            f"WiFi: {wifi.status} | BT: {bt.status} | SIM: {sim.status} | "
-            f"Fingerprint: {fp.status} | Buttons: {btn.status}"
-        )
+        all_ev: List[Evidence] = []
+        for item in [fp, btn, sim, disp, disp_auth, wifi, bt, periph, audio_codec]:
+            if hasattr(item, "evidence") and item.evidence:
+                all_ev.extend(item.evidence)
 
         return HardwareAuditReport(
             serial=serial,
@@ -1153,5 +1197,5 @@ function nextColor() {
             pointer_location_active=ptr_loc,
             summary=summary,
             status=overall_status,
-            raw_evidence=raw_ev
+            evidence=all_ev
         )

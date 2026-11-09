@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Any, Callable
 from core.adb_bridge import ADBBridge
+from core.result import Evidence, Status, CheckResult
 from database.db_manager import DatabaseManager
 
 logger = logging.getLogger("BoardDiag")
@@ -26,11 +27,13 @@ BATTERY_SYSFS_DIRS = [
 class DiagnosticVerdict:
     status: str  # "PASS" | "FAIL" | "UNKNOWN" | "NEEDS_ROOT"
     value: Any = None
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
     diagnosis: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -53,14 +56,16 @@ class PMICStatus:
     is_ac_plugged: bool = False
     fault_flags: List[str] = field(default_factory=list)
     raw_details: Dict[str, Any] = field(default_factory=dict)
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     @property
     def temperature_c(self) -> float:
         return self.temp_c if self.temp_c is not None else 0.0
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -84,10 +89,12 @@ class BlackboxReport:
     kernel_ramoops_status: str = "UNKNOWN"  # "PASS", "FAIL", "NEEDS_ROOT"
     kernel_log_snippets: List[str] = field(default_factory=list)
     diagnosis: str = "System boot records normal."
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -160,10 +167,12 @@ class StorageLifeReport:
     is_critical: bool = False
     health_verdict: str = "GOOD"
     diagnosis: str = ""
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -248,10 +257,12 @@ class RootForensicsReport:
     nand_exact_pre_eol: str = ""
     nand_wear_status: str = "UNKNOWN"
     diagnosis: str = ""
-    raw_evidence: str = ""
+    evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        return d
 
 
 @dataclass
@@ -276,7 +287,7 @@ class MotherboardDiagnostics:
     def analyze_pmic(self, serial: str) -> PMICStatus:
         pmic = PMICStatus()
         raw: Dict[str, Any] = {}
-        evidence_lines = []
+        evidence_items: List[Evidence] = []
 
         # 1. Voltage (Battery voltage - fuel gauge)
         v_paths = [f"{base}/voltage_now" for base in BATTERY_SYSFS_DIRS] + \
@@ -294,7 +305,7 @@ class MotherboardDiagnostics:
                         elif raw_v > 100:
                             pmic.voltage_mv = float(raw_v)
                         pmic.voltage_source = p
-                        evidence_lines.append(f"Voltage source: {p} -> raw={raw_v} -> {pmic.voltage_mv} mV")
+                        evidence_items.append(Evidence(source=p, raw_excerpt=f"raw={raw_v} -> voltage_mv={pmic.voltage_mv}", exit_code=0))
                         break
                     except ValueError:
                         pass
@@ -315,7 +326,7 @@ class MotherboardDiagnostics:
                         else:
                             pmic.current_ma = float(raw_c)
                         pmic.current_source = p
-                        evidence_lines.append(f"Current source: {p} -> raw={raw_c} -> {pmic.current_ma} mA")
+                        evidence_items.append(Evidence(source=p, raw_excerpt=f"raw={raw_c} -> current_ma={pmic.current_ma}", exit_code=0))
                         break
                     except ValueError:
                         pass
@@ -332,18 +343,19 @@ class MotherboardDiagnostics:
         cf_raw = self.bridge.read_sysfs_int(cf_paths, serial=serial)
         if cf_raw is not None:
             pmic.charge_full_uah = cf_raw
-            evidence_lines.append(f"sysfs charge_full: {cf_raw} uAh")
+            evidence_items.append(Evidence(source=cf_paths[0], raw_excerpt=f"charge_full: {cf_raw} uAh", exit_code=0))
 
         cfd_paths = [f"{base}/charge_full_design" for base in BATTERY_SYSFS_DIRS]
         cfd_raw = self.bridge.read_sysfs_int(cfd_paths, serial=serial)
         if cfd_raw is not None:
             pmic.charge_full_design_uah = cfd_raw
-            evidence_lines.append(f"sysfs charge_full_design: {cfd_raw} uAh")
+            evidence_items.append(Evidence(source=cfd_paths[0], raw_excerpt=f"charge_full_design: {cfd_raw} uAh", exit_code=0))
 
         cycles_paths = [f"{base}/cycle_count" for base in BATTERY_SYSFS_DIRS]
         cycles_raw = self.bridge.read_sysfs_int(cycles_paths, serial=serial)
         if cycles_raw is not None:
             pmic.cycle_count = cycles_raw
+            evidence_items.append(Evidence(source=cycles_paths[0], raw_excerpt=f"cycle_count: {cycles_raw}", exit_code=0))
 
         temp_paths = [f"{base}/temp" for base in BATTERY_SYSFS_DIRS] + \
                      [f"{base}/batt_temp" for base in BATTERY_SYSFS_DIRS]
@@ -361,7 +373,7 @@ class MotherboardDiagnostics:
                         else:
                             pmic.temp_c = float(raw_t)
                         pmic.temp_source = p
-                        evidence_lines.append(f"Temperature source: {p} -> raw={raw_t} -> {pmic.temp_c} C")
+                        evidence_items.append(Evidence(source=p, raw_excerpt=f"raw={raw_t} -> temp_c={pmic.temp_c}", exit_code=0))
                         break
                     except ValueError:
                         pass
@@ -371,16 +383,18 @@ class MotherboardDiagnostics:
         if status_raw:
             pmic.status = status_raw.strip().capitalize()
             pmic.is_charging = "charg" in status_raw.lower()
+            evidence_items.append(Evidence(source=status_paths[0], raw_excerpt=f"status: {status_raw.strip()}", exit_code=0))
 
         health_paths = [f"{base}/health" for base in BATTERY_SYSFS_DIRS]
         health_raw = self.bridge.read_sysfs(health_paths, serial=serial)
         if health_raw:
             pmic.health = health_raw.strip().capitalize()
+            evidence_items.append(Evidence(source=health_paths[0], raw_excerpt=f"health: {health_raw.strip()}", exit_code=0))
 
         # Non-root dumpsys battery fallback and verification
         code, out, _ = self.bridge.shell("dumpsys battery", serial=serial, timeout=8)
         if code == 0 and out:
-            evidence_lines.append("dumpsys battery verified")
+            evidence_items.append(Evidence(source="dumpsys battery", raw_excerpt=out.strip()[:1000], exit_code=code))
             for line in out.splitlines():
                 line = line.strip()
                 if line.startswith("voltage:") and pmic.voltage_mv is None:
@@ -389,13 +403,11 @@ class MotherboardDiagnostics:
                         v = float(m.group(1))
                         pmic.voltage_mv = v if v < 10000 else round(v / 1000.0, 1)
                         pmic.voltage_source = "dumpsys battery (voltage)"
-                        evidence_lines.append(f"Voltage from dumpsys battery: {pmic.voltage_mv} mV")
                 elif line.startswith("temperature:") and pmic.temp_c is None:
                     m = re.search(r"(\d+)", line)
                     if m:
                         pmic.temp_c = round(int(m.group(1)) / 10.0, 1)
                         pmic.temp_source = "dumpsys battery (temperature)"
-                        evidence_lines.append(f"Temp from dumpsys battery: {pmic.temp_c} C")
                 elif line.startswith("status:") and pmic.status == "UNKNOWN":
                     val = line.split(":", 1)[1].strip()
                     status_map = {"1": "UNKNOWN", "2": "Charging", "3": "Discharging", "4": "Not charging", "5": "Full"}
@@ -409,18 +421,20 @@ class MotherboardDiagnostics:
                     pmic.is_ac_plugged = "true" in line.lower()
                 elif line.startswith("USB powered:") and not pmic.is_ac_plugged:
                     pmic.is_ac_plugged = "true" in line.lower()
+        else:
+            evidence_items.append(Evidence(source="dumpsys battery", raw_excerpt=out or "No output from dumpsys battery", exit_code=code))
 
         # Real Battery Health % Calculation (Zero fake numbers!)
         if pmic.charge_full_uah is not None and pmic.charge_full_design_uah is not None and pmic.charge_full_uah > 0 and pmic.charge_full_design_uah > 0:
             calc_health = (pmic.charge_full_uah / pmic.charge_full_design_uah) * 100.0
             pmic.true_health_pct = round(min(100.0, max(1.0, calc_health)), 1)
             pmic.health_verdict = "PASS" if pmic.true_health_pct >= 80.0 else "FAIL"
-            evidence_lines.append(f"Real capacity calculation: {pmic.charge_full_uah} / {pmic.charge_full_design_uah} = {pmic.true_health_pct}%")
+            evidence_items.append(Evidence(source="BMS Fuel Gauge Health Calc", raw_excerpt=f"{pmic.charge_full_uah} / {pmic.charge_full_design_uah} = {pmic.true_health_pct}%", exit_code=0))
         else:
             # When design capacity registers are blocked by SELinux / OEM
             pmic.true_health_pct = None
             pmic.health_verdict = "NEEDS_ROOT" if not self.bridge.is_root_available(serial) else "UNKNOWN"
-            evidence_lines.append("charge_full / charge_full_design inaccessible (Protected by SELinux or unexposed by OEM BMS driver)")
+            evidence_items.append(Evidence(source="BMS Fuel Gauge Capacity", raw_excerpt="charge_full / charge_full_design inaccessible (Protected by SELinux or unexposed by OEM BMS driver)", exit_code=1))
 
         if pmic.is_charging and pmic.voltage_mv is not None and 0 < pmic.voltage_mv < 3500.0:
             pmic.fault_flags.append(
@@ -433,7 +447,7 @@ class MotherboardDiagnostics:
             )
 
         pmic.raw_details = raw
-        pmic.raw_evidence = " | ".join(evidence_lines)
+        pmic.evidence = evidence_items
         return pmic
 
     def run_leakage_test(
@@ -563,7 +577,6 @@ class MotherboardDiagnostics:
         Reads boot reason properties, Dropbox restart entries, and kernel panic logs.
         """
         bb = BlackboxReport()
-        evidence_list = []
 
         # 1. Non-Root System Properties
         b_reason = self.bridge.get_prop("sys.boot.reason", serial=serial) or \
@@ -573,9 +586,7 @@ class MotherboardDiagnostics:
 
         bb.boot_reason = b_reason
         bb.boot_reason_history = b_history
-        evidence_list.append(f"sys.boot.reason: {b_reason}")
-        if b_history != "None":
-            evidence_list.append(f"history: {b_history}")
+        bb.evidence.append(Evidence(source="sys.boot.reason", raw_excerpt=f"reason={b_reason}, history={b_history}, shutdown_req={shutdown_req}", exit_code=0))
 
         # 2. Non-Root Dropbox Log Query
         code_drop, out_drop, _ = self.bridge.shell(
@@ -584,6 +595,7 @@ class MotherboardDiagnostics:
             timeout=10
         )
         if code_drop == 0 and out_drop:
+            bb.evidence.append(Evidence(source="dumpsys dropbox", raw_excerpt=out_drop.strip()[:1000], exit_code=code_drop))
             for line in out_drop.splitlines():
                 line_str = line.strip()
                 if not line_str:
@@ -592,6 +604,8 @@ class MotherboardDiagnostics:
                     bb.dropbox_events.append(line_str[:120])
                     if len(bb.dropbox_events) >= 15:
                         break
+        else:
+            bb.evidence.append(Evidence(source="dumpsys dropbox", raw_excerpt=out_drop or "No dropbox crash events logged", exit_code=code_drop))
 
         # 3. Kernel RAMOOPS and DMESG (Root vs Non-Root handling)
         is_root = self.bridge.is_root_available(serial)
@@ -599,14 +613,16 @@ class MotherboardDiagnostics:
             code_k, out_k, _ = self.bridge.shell("cat /sys/fs/pstore/console-ramoops* 2>/dev/null | tail -n 80", serial=serial, timeout=8, root=True)
             if code_k == 0 and out_k.strip():
                 bb.kernel_ramoops_status = "CRITICAL_LOG_FOUND"
+                bb.evidence.append(Evidence(source="/sys/fs/pstore/console-ramoops", raw_excerpt=out_k.strip()[:1000], exit_code=code_k))
                 for l in out_k.splitlines():
                     if re.search(r"(?i)(panic|oops|fatal|reset|watchdog)", l):
                         bb.kernel_log_snippets.append(l.strip()[:100])
             else:
                 bb.kernel_ramoops_status = "PASS"
+                bb.evidence.append(Evidence(source="/sys/fs/pstore/console-ramoops", raw_excerpt="No panic or crash logs in ramoops", exit_code=code_k))
         else:
             bb.kernel_ramoops_status = "NEEDS_ROOT"
-            evidence_list.append("Kernel ring buffer / ramoops: Protected by SELinux (Requires Root for raw kernel buffer)")
+            bb.evidence.append(Evidence(source="/sys/fs/pstore/console-ramoops", raw_excerpt="Protected by SELinux (Requires Root for raw kernel buffer)", exit_code=1))
 
         # 4. Categorize Shutdown Reason
         reason_combined = f"{b_reason} {b_history} {' '.join(bb.dropbox_events)}".lower()
@@ -632,7 +648,6 @@ class MotherboardDiagnostics:
             bb.has_abnormal_shutdown = False
             bb.diagnosis = "Standard boot state. No unexpected crash or sudden power cut records found."
 
-        bb.raw_evidence = " | ".join(evidence_list)
         return bb
 
     def inspect_panic_and_emmc(self, serial: str) -> PanicAnalysis:
@@ -1003,7 +1018,7 @@ class MotherboardDiagnostics:
         if emmc_life_raw:
             report.status = "PASS"
             report.storage_type = "eMMC / eMCP"
-            report.raw_evidence = f"eMMC life_time: {emmc_life_raw.strip()}, pre_eol: {emmc_pre_eol_raw or 'N/A'}"
+            report.evidence.append(Evidence(source="/sys/block/mmcblk0/device/life_time", raw_excerpt=f"eMMC life_time: {emmc_life_raw.strip()}, pre_eol: {emmc_pre_eol_raw or 'N/A'}", exit_code=0))
             parts = emmc_life_raw.strip().split()
             if len(parts) >= 2:
                 report.raw_hex_a = parts[0].lower()
@@ -1017,7 +1032,7 @@ class MotherboardDiagnostics:
         elif ufs_life_a or ufs_life_b:
             report.status = "PASS"
             report.storage_type = "Universal Flash Storage (UFS)"
-            report.raw_evidence = f"UFS life_time_a: {ufs_life_a}, b: {ufs_life_b}, pre_eol: {ufs_pre_eol}"
+            report.evidence.append(Evidence(source="health_descriptor/life_time_estimation", raw_excerpt=f"UFS life_time_a: {ufs_life_a}, b: {ufs_life_b}, pre_eol: {ufs_pre_eol}", exit_code=0))
             if ufs_life_a:
                 report.raw_hex_a = ufs_life_a.strip().lower()
             if ufs_life_b:
@@ -1033,18 +1048,18 @@ class MotherboardDiagnostics:
                 if code_r == 0 and out_r.strip():
                     report.status = "PASS"
                     report.storage_type = "eMMC / eMCP (via Root)"
-                    report.raw_evidence = f"root life_time: {out_r.strip()}"
+                    report.evidence.append(Evidence(source="root life_time", raw_excerpt=out_r.strip(), exit_code=0))
                     parts = out_r.strip().split()
                     report.raw_hex_a = parts[0].lower() if parts else "0x01"
                     report.raw_hex_b = parts[1].lower() if len(parts) > 1 else report.raw_hex_a
                 else:
                     report.status = "UNKNOWN"
                     report.storage_type = "Internal Flash (NAND)"
-                    report.raw_evidence = "NAND health descriptor not exposed by OEM storage driver."
+                    report.evidence.append(Evidence(source="sysfs NAND health descriptor", raw_excerpt="NAND health descriptor not exposed by OEM storage driver.", exit_code=code_r))
             else:
                 report.status = "NEEDS_ROOT"
                 report.storage_type = "Internal Flash (NAND)"
-                report.raw_evidence = "Permission denied: /sys/block/mmcblk0/device/life_time (SELinux Enforced). Root required for raw JEDEC health descriptor."
+                report.evidence.append(Evidence(source="/sys/block/mmcblk0/device/life_time", raw_excerpt="Permission denied: /sys/block/mmcblk0/device/life_time (SELinux Enforced). Root required for raw JEDEC health descriptor.", exit_code=1))
 
         def norm_hex(h: str) -> str:
             if not h:
@@ -1369,19 +1384,20 @@ class MotherboardDiagnostics:
 
         if not is_rooted:
             rep.diagnosis = "Device is NOT Rooted. Deep kernel ramoops & raw block forensics require root (UID 0)."
-            rep.raw_evidence = "su -c id: Permission Denied or su binary missing"
+            rep.evidence.append(Evidence(source="su -c id", raw_excerpt="Permission Denied or su binary missing", exit_code=1))
             return rep
 
-        evidence_parts = [f"Root: {root_type}"]
+        rep.evidence.append(Evidence(source="check_root_access", raw_excerpt=f"Root Type: {root_type}", exit_code=0))
 
         # 1. Read persistent console-ramoops & last_kmsg
         cmd_ramoops = "cat /sys/fs/pstore/console-ramoops* /sys/fs/pstore/dmesg-ramoops* /proc/last_kmsg 2>/dev/null | tail -n 250"
         code_r, out_r, _ = self.bridge.shell(cmd_ramoops, serial=serial, timeout=12, root=True)
         if code_r == 0 and out_r.strip():
             rep.kernel_ramoops_log = out_r.strip()
-            evidence_parts.append(f"Ramoops: {len(out_r.splitlines())} lines captured")
+            rep.evidence.append(Evidence(source="pstore/console-ramoops", raw_excerpt=out_r.strip()[:1000], exit_code=code_r))
         else:
             rep.kernel_ramoops_log = "No persistent console-ramoops crash log stored in pstore."
+            rep.evidence.append(Evidence(source="pstore/console-ramoops", raw_excerpt="No persistent console-ramoops crash log stored in pstore.", exit_code=code_r))
 
         # 2. Match fault signatures against dmesg & ramoops
         cmd_dmesg = "dmesg | tail -n 300"
@@ -1397,7 +1413,7 @@ class MotherboardDiagnostics:
 
         rep.matched_fault_signatures = matched
         if matched:
-            evidence_parts.append(f"Faults matched: {len(matched)}")
+            rep.evidence.append(Evidence(source="Fault Signature Engine", raw_excerpt=f"Matched {len(matched)} signatures", exit_code=0))
 
         # 3. Extract I2C bus hex errors
         i2c_errors = []
@@ -1408,7 +1424,7 @@ class MotherboardDiagnostics:
                     i2c_errors.append(l_str)
         rep.i2c_bus_errors = i2c_errors
         if i2c_errors:
-            evidence_parts.append(f"I2C Errors: {len(i2c_errors)}")
+            rep.evidence.append(Evidence(source="I2C Kernel Bus Traces", raw_excerpt="\n".join(i2c_errors), exit_code=0))
 
         # 4. Exact NAND Wear via su -c
         # eMMC
@@ -1436,14 +1452,14 @@ class MotherboardDiagnostics:
                 status_a = wear_map.get(tokens[0].lower(), tokens[0])
                 status_b = wear_map.get(tokens[1].lower(), tokens[1])
                 rep.nand_wear_status = f"SLC: {status_a} | MLC: {status_b}"
-                evidence_parts.append(f"eMMC Wear: {tokens[0]}/{tokens[1]}")
+                rep.evidence.append(Evidence(source="/sys/block/mmcblk0/device/life_time", raw_excerpt=out_lt.strip(), exit_code=code_lt))
 
         if code_eol == 0 and out_eol.strip():
             eol_val = out_eol.strip()
             rep.nand_exact_pre_eol = eol_val
             eol_map = {"0x01": "Normal", "0x02": "Warning (80% reserve used)", "0x03": "Critical (EOL reached)"}
             rep.nand_exact_pre_eol = eol_map.get(eol_val.lower(), eol_val)
-            evidence_parts.append(f"Pre-EOL: {rep.nand_exact_pre_eol}")
+            rep.evidence.append(Evidence(source="/sys/block/mmcblk0/device/pre_eol_info", raw_excerpt=out_eol.strip(), exit_code=code_eol))
 
         # UFS health descriptor fallback if eMMC was absent
         if not rep.nand_wear_status or rep.nand_wear_status == "UNKNOWN":
@@ -1454,9 +1470,7 @@ class MotherboardDiagnostics:
             if code_ufs == 0 and out_ufs.strip():
                 rep.nand_exact_lifetime_a = out_ufs.strip()
                 rep.nand_wear_status = f"UFS Wear: {out_ufs.strip()}"
-                evidence_parts.append(f"UFS: {out_ufs.strip()}")
-
-        rep.raw_evidence = " | ".join(evidence_parts)
+                rep.evidence.append(Evidence(source="health_descriptor/life_time_estimation_a", raw_excerpt=out_ufs.strip(), exit_code=code_ufs))
 
         # Formulate diagnosis
         diag_items = []
