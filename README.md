@@ -1,149 +1,214 @@
-# Android Doctor Pro 🚀
-**Advanced Android Hardware Diagnostics, Motherboard Analyzer, Interactive Component Tester, Malware Hunter & Deep System Repair Suite**
+# Android Doctor Pro
+
+Android Doctor Pro is an offline-first Windows desktop application (Python 3.13, CustomTkinter, SQLite) and console diagnostic tool that inspects Android devices over ADB, fastboot, and scrcpy. It uses a private ADB server port (`5038`), enforces a strict four-state result model so missing or blocked reads remain explicit rather than fabricated, externalizes all user-facing strings to locale files, and stores raw command and sysfs evidence alongside every check.
 
 ---
 
-## 🌟 Executive Overview
-**Android Doctor Pro** is a 100% offline-first, professional desktop diagnostic and repair workstation engineered for hardware repair technicians, forensic auditors, and Android power users. It directly bridges with Android device kernels via ADB, Fastboot, and low-latency Scrcpy screen mirroring to deliver true low-level component telemetry without reliance on third-party cloud services or dummy animations.
+## How Results Work
+
+Every check returns one of four statuses defined in `core/result.py` (`Status`):
+
+- `PASS`: a real value was parsed within its defined healthy bounds, or a tested subsystem command succeeded with confirmed output.
+- `FAIL`: a parsed reading exceeded fault thresholds, critical kernel or storage error patterns matched, or a fault condition was directly observed.
+- `UNKNOWN`: the default status. Returned when a node or path does not exist, command output is empty or malformed, a required precondition is missing (for example, running the screen-off drain test over USB), or a stage errors out.
+- `NEEDS_ROOT`: access was denied by permissions or SELinux (`permission denied`, `avc: denied`, or `operation not permitted` detected on `stderr` or command `stdout`). When reading kernel logs (`dmesg`, `pstore`), `log_content=True` prevents audit log lines inside the stream from being misclassified as a denied command.
+
+### Evidence Rule
+
+- Every check attaches one or more `Evidence` records (`source`, `raw_excerpt` trimmed at 2048 characters, and `exit_code`).
+- `exit_code` defaults to `None` when no real process exit code is known (such as legacy ADB connections without `shell_v2` or host-side ratio calculations) so an unknown exit state never looks like `0`.
+- Raw evidence is exposed in the UI, printed in CLI tables, and rendered inside expandable `<details>` blocks in exported HTML reports.
+- `aggregate_status()` combines check statuses as `FAIL` if any key check failed, `UNKNOWN` if any key check is `UNKNOWN` or `NEEDS_ROOT`, and `PASS` only when all key checks pass.
+
+### "Possible Causes" Wording
+
+Board-level anomalies (abnormal boot reasons such as `THERMAL`, `UVLO`, or `WATCHDOG_PANIC`, high screen-off battery current, battery voltage sag under load, low charging voltage/current, high NAND wear, and BootROM USB modes) attach structured `possible_causes` entries rather than stating a definitive hardware diagnosis. Software cannot prove electrical motherboard faults on its own.
 
 ---
 
-## ⚡ Key Architectural Features & Diagnostic Engines
+## Features
 
-### 1. Multi-Vendor Motherboard & Charging IC (PMIC) Analyzer (`core/board_diag.py`)
-- **Multi-Vendor Sysfs Fallbacks:** Automatically traverses vendor-specific battery and power management kernel nodes in priority order:
-  - `/sys/class/power_supply/battery/`
-  - `/sys/class/power_supply/bms/`
-  - `/sys/class/power_supply/sec-battery/` (Samsung Exynos / Snapdragon)
-  - `/sys/class/power_supply/qcom-battery/` (Qualcomm PMIC)
-  - `/sys/class/power_supply/mtk-battery/` (MediaTek Helio / Dimensity)
-  - `/sys/class/power_supply/charger/`
-  - `/sys/class/power_supply/usb/`
-  - Graceful fallback to `dumpsys battery`.
-- **Unit Normalization Engine:** Auto-detects and normalizes microvolts ($\mu\text{V}$) to millivolts ($\text{mV}$) and microamperes ($\mu\text{A}$) to milliamperes ($\text{mA}$).
-- **Hardware Fault Detection Rules:**
-  - `Voltage < 3500mV while charging` &rarr; Flags **"Critical Voltage Drop: Potential Charging IC (PMIC) failure or degraded battery cell"**.
-  - `Charging Current < 200mA on AC` &rarr; Flags **"High Resistance / Low Current: Dirty charging port, bad cable, or damaged USB board line"**.
-  - `True Battery Health %` calculated via `(charge_full / charge_full_design) * 100`.
-- **Motherboard Standby Current Leakage Test:**
-  - Isolates board standby drain by powering screen off (`input keyevent 223`).
-  - Samples current draw 10 times over 30 seconds.
-  - If average leakage exceeds **250mA** (or peak > 350mA) with screen off &rarr; Flags **"Board Current Leakage / Partial Short Detected"**.
-- **Thermal Mapping Matrix:** Reads all `/sys/class/thermal/thermal_zone*/type` and `temp` sensors. Converts millidegrees to Celsius and alerts when CPU, GPU, PMIC, Modem/PA, or Battery exceeds **45°C**.
-- **NAND Flash & Kernel Panic Analyzer:** Scans kernel ring buffer (`dmesg`), `/proc/kmsg`, and `dumpsys dropbox` for:
-  - `I/O error`, `mmc0`, `ufs`, `blk_update_request` (NAND controller wear / corruption)
-  - `watchdog`, `softlockup`, `hung_task` (hardware lockups)
-  - `thermal_shutdown` (emergency heat trip-offs)
-  - `Kernel panic`, `fatal exception`, `Oops` (system crash triggers).
+### Device Profiler (`core/profiler.py`)
+Reads device properties (`getprop`), CPU core count (`/proc/cpuinfo`), kernel string (`uname -a`, `/proc/version`), uptime (`/proc/uptime`), RAM (`/proc/meminfo`), `/data` capacity (`df -k /data`), battery overview (`dumpsys battery`), display dimensions and refresh rate (`wm`, `dumpsys display`), SELinux mode (`getenforce`), and root availability (`su -c id`).
 
----
+### Board, Power, Battery & Storage Diagnostics (`core/board_diag.py`, `core/storage_benchmark.py`, `core/jedec.py`)
+- **Battery voltage (fuel gauge)** & **Battery current**: Reads kernel `power_supply` sysfs directories (`battery`, `bms`, `sec-battery`, `qcom-battery`, `mtk-battery`) with `dumpsys battery` fallback. Distinguishes transport context in notes: over USB, `"Battery current"` explicitly notes that it includes charging current while USB is connected; over wireless ADB, it notes wireless transport without USB charging. Battery capacity vs. design ratio (`charge_full / charge_full_design`) is computed only when both values are parsed and plausible; otherwise it reports `NEEDS_ROOT` or `UNKNOWN`.
+- **Reset battery statistics**: Calls `dumpsys batterystats --reset` to clear Android's OS battery usage history only; it does not alter hardware fuel-gauge registers.
+- **Battery current, screen off**: Measures discharge current across 10 samples at 3-second intervals after turning the screen off (`input keyevent 223`). Executes **only** over wireless ADB (`host:port` or `_adb-tls-connect`) when external chargers (`AC`, `USB`, `Wireless`, `Dock`) are verified disconnected both before and after sampling; otherwise it returns `UNKNOWN`. Averages over unreadable samples are never fabricated. Readings above `250.0 mA` average or `350.0 mA` peak yield `FAIL` with `possible_causes`.
+- **Charger Input (`diagnose_fast_charge`)**: Reads USB `real_type`/`type`, `charge_type`, measured `usb/voltage_now` and `usb/current_now` (keeping reported `current_max` limits separate from measured current), and derives wattage when both voltage and current are measured.
+- **Thermal Zones (`read_thermal`)**: Queries `dumpsys thermalservice` (excluding non-temperature BCL HAL types `6, 7, 8`) with fallback to `/sys/class/thermal/thermal_zone*`. Applies per-category thresholds loaded from `data/thermal_thresholds.json` (`battery`: `50.0°C`, `skin`: `45.0°C`, `usb_port`: `60.0°C`, `cpu`/`gpu`/`npu`: `95.0°C`, `modem`/`pmic`: `85.0°C`). Zones that match no category (`other`) are displayed as not judged.
+- **Boot Reason & Kernel Logs (`run_blackbox_forensics`, `inspect_panic_and_emmc`)**: Reads `sys.boot.reason`, `ro.boot.bootreason`, `dumpsys dropbox`, `/sys/fs/pstore/console-ramoops*`, and `dmesg` (retrying with `su` when rooted) to categorize thermal, undervoltage, watchdog, kernel panic, and storage I/O errors.
+- **Storage Health & Benchmark (`read_emmc_ufs_lifespan`, `core/storage_benchmark.py`, `core/jedec.py`)**: Reads eMMC `life_time` / `pre_eol_info` and UFS `health_descriptor` nodes through one shared JEDEC parser (`FAIL` at wear register >= `0x09` or pre-EOL >= `0x02`). Optional sequential `dd` write/read test in `/data/local/tmp` flags slow writes (`< 25 MB/s`) and cleans up temp files (`benchmark_storage_speed` / `run_speed_benchmark`). Without root, Linux page cache is not dropped, so sequential read speeds may come from RAM cache.
+- **CPU Stress Test (`run_cpu_pmic_stress_test`)**: Spawns 4 time-bounded shell loops (default 30s), sampling `scaling_cur_freq`, `battery/voltage_now`, and `thermal_zone0/temp` every 2s to measure voltage sag and frequency drop, then terminates its tracked PIDs.
+- **Dead-Phone BootROM Port Scan (`diagnose_dead_phone_bootrom`)**: On Windows, queries `Get-PnpDevice` via PowerShell (`CREATE_NO_WINDOW`) for Qualcomm EDL (`9008`, `900E`), MediaTek BROM/Preloader, Samsung Odin, Android Fastboot, MTP interfaces, or USB port cycling, returning `possible_causes`.
+- **Root Forensics & EFS Backup (`run_root_forensics_pro`, `backup_efs_nvram_partitions`)**: Requires root (`su -c id`). Matches kernel logs against `data/fault_signatures.json`, collects I2C bus error lines, reads JEDEC registers, and dumps critical NVRAM/EFS/modem/persist block nodes via `dd` with SHA-256 checksums saved to `manifest.json`.
 
-### 2. Interactive Hardware & Sensor Tester (`core/hardware_tester.py`)
-- **Sensor Service Auditor:** Parses `dumpsys sensorservice` to verify active I2C bus sensors (Accelerometer, Gyroscope, Magnetometer, Proximity, Light, Barometer). Identifies dead or un-enumerated I2C sensors.
-- **Camera Subsystem Inspector:** Enumerates front and back camera modules, IDs, flash unit availability, and active client connections via `dumpsys media.camera`.
-- **Audio & Haptic Feedback:** Triggers 1000ms vibration pulses through multi-tier fallback APIs (`cmd vibrator_manager`, `cmd vibrator`, or sysfs `/sys/class/timed_output/vibrator/enable`) and performs acoustic sound tests.
-- **Touch Digitizer Inspection:** Toggles `pointer_location` (`settings put system pointer_location 1/0`) to expose dead touch zones and ghost touches directly on screen.
+### Hardware Subsystem Checks & Interactive Tools (`core/hardware_tester.py`, `core/touch_matrix.py`)
+- **Reported sensors & cameras**: Parses `dumpsys sensorservice` and `dumpsys media.camera` for reported sensors and camera modules; absent fields stay `None`. Missing common sensors are listed for reference rather than treated as an automatic fault.
+- **Subsystem checks**: Evaluates AudioFlinger/ALSA soundcards (`/proc/asound/cards`, `/proc/asound/pcm`), biometric HAL (`dumpsys fingerprint`, `dumpsys biometric`, `dmesg`), physical keys (`dumpsys input` and interactive `getevent -l`, passing each key only on observed `DOWN` + `UP`), SIM & baseband (`getprop`, `dumpsys telephony.registry`), display backlight + DSI logs, display panel controller & verified boot state (`display.panel_info`, without claiming screen originality), Wi-Fi (`cmd wifi status`, `dumpsys wifi`), Bluetooth (`dumpsys bluetooth_manager`), and declared features (`pm has-system-feature` flags for GPS, NFC, and USB host).
+- **Interactive bench helpers**: Pushes standalone HTML5 screen color and `8x14` touch-grid test pages (`core/touch_matrix.py`) opened via intent with `pointer_location` enabled, generates a temporary `1000 Hz` PCM speaker WAV tone in the OS temp folder, triggers haptic vibration pulses, and includes optional companion APK broadcast helpers.
 
----
+### Apps with Sensitive Permissions & Debloater (`core/malware_hunter.py`)
+- Lists third-party packages holding granted sensitive permissions (`install permissions:` / `runtime permissions:` with `granted=true` in `dumpsys package`; ungranted declarations are ignored), enabled accessibility services, active device admins, user CA storage (`/data/misc/user/0/cacerts-added`), and active `/proc/net/tcp` + `/proc/net/tcp6` sockets mapped to UIDs. Reported strictly as a technician review inventory, with no threat or malware labels.
+- Checks installed packages against `OEM_DEBLOAT_PACKAGES` (Xiaomi, Samsung, Oppo/Realme) and supports background restriction, disabling, `--user 0` uninstallation, and restoration (`cmd package install-existing`) tracked in SQLite `rollback_history`.
 
-### 3. Malware Hunter, Spyware Auditor & Debloater (`core/malware_hunter.py`)
-- **Ghost Apps Detection:** Flags stealth applications that have background services actively executing but hide their icon from the launcher app drawer.
-- **RAT & Spyware Permission Risk Scorer:** Detects dangerous permission combinations on non-system apps:
-  - `BIND_ACCESSIBILITY_SERVICE` (input hijacking / keyloggers)
-  - `BIND_DEVICE_ADMIN` (anti-uninstall locks)
-  - `SYSTEM_ALERT_WINDOW` (phishing overlays)
-  - `READ_SMS` / `RECEIVE_SMS` / `SEND_SMS` (2FA interception)
-  - `RECORD_AUDIO` / `CAMERA` (covert surveillance)
-- **Active Network Socket Sniffer:** Inspects `netstat` and `/proc/net/tcp` to correlate remote IPs and non-standard connection ports with app package UIDs.
-- **Safe Rollback Center:** Restrict background access, disable, or uninstall malicious packages. Every removed package is recorded in the SQLite `rollback_history` table and can be reinstalled anytime with one click via `cmd package install-existing <pkg>`.
+### System Maintenance (`core/optimizer.py`)
+- Executes three non-root commands: `pm trim-caches 999G` (measured before and after via free `/data` space from `df -k /data`), `sm idle-maint run`, and `cmd package bg-dexopt-job`. The latter two jobs are explicitly marked as **not measurable**. Does not delete user/app cache folders manually, force idle modes, alter animation scales, or report attributed RAM or battery-current gains.
+
+### Rescue, Partition Backup, APK Batch & Provisioning (`core/rescue_center.py`, `core/partition_backup.py`, `core/batch_apk_manager.py`, `core/provisioning_manager.py`)
+- Launches bundled `scrcpy` screen mirroring (`--turn-screen-off`, `--stay-awake`) and `--otg` HID mode on port `5038`, plus ADB key/text/swipe helpers.
+- Fastboot utilities: `getvar all`, active slot switching (`--set-active` / `set_active`), Anti-Rollback index check (`getvar anti`, `rollback-ver`), whitelisted partition flashing, and `fastboot erase cache` guarded by `fastboot getvar partition-type:cache` (refuses if no `cache` partition is reported).
+- Streams `.zip` packages via `adb sideload` with percentage progress parsing.
+- Media rescue (`emergency_data_pull`, `one_click_customer_backup`): pulls `/sdcard/DCIM`, `/sdcard/Pictures`, `/sdcard/Download`, `/sdcard/Documents`, and **WhatsApp Media folders only** (`/sdcard/Android/media/com.whatsapp/WhatsApp/Media`, `/sdcard/WhatsApp/Media`); encrypted chat history files (`msgstore.db.crypt*`) are not copied. Contacts and SMS are queried via `content query` where permitted.
+- Partition table discovery (`by-name`, `/proc/partitions`) and `dd` backup (`core/partition_backup.py`), bulk APK installation (`adb install -r -d -g`) and extraction (`core/batch_apk_manager.py`), and neutral setup-wizard flag reading/writing (`device_provisioned`, `user_setup_complete`) and Settings/URL intent helpers (`core/provisioning_manager.py`).
+
+### Diagnostic Report & Persistence (`ui/report_exporter.py`, `database/db_manager.py`)
+- Generates printable dark-theme HTML **Diagnostic Report** files (saved to `reports/` by default or `--output-dir`), featuring HTML-escaped device values, a per-check status table, overall aggregated status, expandable evidence drawers, and optional vector SVG QR codes (`qrcode`). Reports are **not digitally signed** and state this in the footer.
+- Persists device history, diagnostic summaries, repair tickets, leakage logs, maintenance logs, and package rollbacks in SQLite (`data/android_doctor.db`).
 
 ---
 
-### 4. Real System Optimizer (`core/optimizer.py`)
-Executes 5 genuine system tuning protocols with live metrics:
-1. **Cache & Junk Purge:** Runs `pm trim-caches 999G`, cleans `/sdcard/DCIM/.thumbnails`, and wipes orphaned debug logs.
-2. **NAND Flash TRIM:** Executes `sm fstrim` (fallback: `vdc fstrim dotrim`) for SSD wear-leveling and write speed restoration.
-3. **Bytecode Compilation:** Runs `cmd package bg-dexopt-job` & `cmd package compile -m speed-profile -a` to pre-compile ART bytecode for smooth execution.
-4. **Deep Doze Activation:** Enforces aggressive Doze standby via `dumpsys deviceidle force-idle`.
-5. **UI Responsiveness Tuning:** Sets window, transition, and animator scales to `0.5x`.
-- Compares and logs Before vs. After RAM, Storage, and Standby current drain to SQLite.
+## Bundled Tools
+
+Tool versions and SHA-256 checksums are pinned in `bin/manifest.json` (`manifest_version: 1`):
+
+- `platform-tools`: **`37.0.1`** (`adb.exe`, `fastboot.exe`, and supporting binaries/DLLs; download URLs, archive SHA-256, and per-file SHA-256 hashes listed for `windows-x86_64`, `windows-arm64`, `linux-x86_64`, `darwin-arm64`, `darwin-x86_64`).
+- `scrcpy`: **`5.0.1`** (`scrcpy.exe`, `scrcpy-server`, libraries, and `LICENSE.txt`; download URLs and archive SHA-256 hashes listed for all 5 platforms; per-file SHA-256 hashes pre-listed for `windows-x86_64`, while non-Windows installs record verified hashes into `bin/installed.json`).
+
+Key tool policies enforced in `setup_bins.py` and `core/adb_bridge.py`:
+- **No startup downloads:** `verify_binaries()` hashes files in `bin/` against `bin/manifest.json` without touching the network or spawning subprocesses.
+- **Manual verified repair:** Triggered via the GUI banner `"Repair tools"` button, `python main.py --repair-tools`, or `python setup_bins.py --repair [--archive-dir DIR]`. Downloads the pinned archive for the current OS, verifies archive SHA-256 **before** extraction, rejects unsafe archive paths (`..`, absolute paths, drive letters), verifies extracted file hashes, and only then installs into `bin/`.
+- **Private ADB server port:** Configured via `ADB_SERVER_PORT = 5038`. Child tools run with `ANDROID_ADB_SERVER_PORT=5038` and `ADB` pointing to `bin/adb.exe`. Direct socket shell commands connect to `127.0.0.1:5038` using `shell,v2,raw:` when supported. `stop_adb_server()` executes `adb -P 5038 kill-server` and never kills external ADB servers.
 
 ---
 
-### 5. Broken Screen & Bootloop Rescue (`core/rescue_center.py`)
-- **Embedded Scrcpy Mirroring:** Low-latency screen mirroring for devices with broken touch screens or displays, with `--turn-screen-off` support to save battery and reduce technician bench heat.
-- **Fastboot Recovery Tools:**
-  - Reads bootloader variables: `fastboot getvar all` (secure boot, slot, battery mV, product).
-  - Fixes bootloops by clearing and formatting corrupted cache (`fastboot erase cache`).
-  - Fastboot partition flashing (`boot`, `recovery`, `vbmeta`, etc.).
-- **Emergency Data Extraction:** One-click pull of DCIM camera photos, downloads, documents, or WhatsApp databases to the PC Desktop.
+## Installation & Running
+
+### Requirements
+- Windows 10/11 (primary target; PnP USB and BootROM port queries use PowerShell) and Python 3.10+ (developed/tested on Python 3.13).
+- USB Debugging enabled on Android devices for ADB checks (Fastboot and `scrcpy --otg` work outside ADB).
+
+Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+`requirements.txt` lists `customtkinter>=6.0.0`, `darkdetect>=0.8.0`, `packaging>=24.0`, and `Pillow>=10.0.0`. Note that `ui/i18n.py` also imports `arabic_reshaper` and `python-bidi` (`bidi.algorithm`), and `ui/report_exporter.py` optionally imports `qrcode` for SVG QR rendering; install them if missing in your environment:
+```bash
+pip install arabic-reshaper python-bidi qrcode
+```
+
+### Launching the GUI
+On Windows, double-click `run.bat` (launches `python main.py --lang ar`) or run directly:
+```bash
+python main.py
+python main.py --lang en
+```
+GUI tabs are created on demand and during idle intervals for fast startup. If `verify_binaries()` detects missing or mismatched tool files, a non-blocking banner offers `"Repair tools"`.
+
+### CLI Usage & Exit Codes
+```bash
+python main.py --cli --lang en
+python main.py --cli --serial <DEVICE_SERIAL> --output-dir <PATH>
+python main.py --check-bins
+python main.py --repair-tools
+```
+Arguments parsed in `main.py`:
+- `--cli`: run diagnostics in console mode without launching the GUI
+- `--serial SERIAL`: target a specific device serial
+- `--lang {ar,en}`: interface/report language (loaded dynamically from `locales/`, default `ar`)
+- `--check-bins`: verify `bin/` against `bin/manifest.json` and print JSON status (no download)
+- `--repair-tools`: download/reinstall missing or mismatched packages after SHA-256 verification
+- `--output-dir OUTPUT_DIR`: custom folder for the CLI HTML report
+
+CLI exit codes:
+- `0`: run completed (individual checks may still be `FAIL`, `UNKNOWN`, or `NEEDS_ROOT`; also returned after reading variables in `fastboot` mode)
+- `1`: no device found, or the given `--serial` is not connected
+- `2`: device is `unauthorized`, `offline`, or in an unsupported ADB state
+- `3`: partial results (one or more diagnostic stages failed and became `UNKNOWN`; the HTML report is still written)
+- `4`: internal error (for example, `list_devices` failure, report write error, or `--check-bins` failure)
+
+### Log File Location
+Logs are written by a rotating file handler (`1 MB` per file, `5` backups) in:
+- `%LOCALAPPDATA%\AndroidDoctorPro\logs\android_doctor.log` (or `~/.local/state/AndroidDoctorPro/logs/android_doctor.log` if `LOCALAPPDATA` is unset).
 
 ---
 
-### 6. Official Diagnostic Certificate Exporter (`ui/report_exporter.py`)
-- Generates a dark-themed **Diagnostic Certificate** (HTML & printable to PDF).
-- Displays Device Specifications, Battery True Health %, PMIC Status, Motherboard Leakage Verdict, Thermal Map, Security Audit, and Before/After Optimization metrics.
-- Complete with Lead Technician sign-off and SHA256 integrity stamp.
+## Languages
+
+All user-facing text lives in `locales/ar.json` and `locales/en.json` (1140 matching keys in each). `ui/i18n.py` loads all `locales/*.json` files, exposes `available_languages()`, formats `{placeholders}` safely via `t()` / `render()`, and applies `arabic-reshaper` + `python-bidi` for Tkinter RTL widgets. Core modules emit `Msg(key, args)` objects via `M()` rather than building display strings.
+
+To add or modify text:
+1. Add the same key and matching `{placeholder}` names to both `locales/ar.json` and `locales/en.json`.
+2. Reference the key from code via `M("key", ...)` (in `core/`) or `self._tr("key", ...)` / `t("key", lang, ...)` (in UI/CLI).
+
+`tests/test_i18n_keys.py` statically parses `core/*.py`, `ui/*.py`, `main.py`, and `setup_bins.py` with `ast` and fails if:
+- Any language in `locales/` has missing, extra, or empty keys or mismatched `{placeholders}`.
+- Any key referenced by `M`, `Msg`, `t`, `_tr`, `tr`, progress keys, abnormal-boot rules, or `check_id` names is absent from any locale.
+- Any Arabic character literal or language-branching UI string ternary (`if is_ar else`) appears inside Python code.
 
 ---
 
-## 📂 Project Directory Structure
+## Tests
+
+Run the full test suite from the repository root:
+```bash
+python -m unittest discover -s tests -t .
+```
+All tests run against in-memory fakes (`tests/fakes.py`) or mocked bridges and store temporary SQLite databases and generated HTML reports inside `tempfile.TemporaryDirectory()`. Running the test suite does not touch `data/android_doctor.db` or `reports/`.
+
+Test modules:
+- `tests/test_verdict_system.py`: 4-state verdict contracts, `Evidence` truncation and `exit_code=None` default, USB vs. Wi-Fi current notes, BootROM `possible_causes`, `getevent` non-root error behavior, `display.panel_info`, and HTML report terms.
+- `tests/test_status_matrix.py`: Command-routed `FakeBridge` read matrices (`normal`, `empty`, `permission denied` in stdout/stderr, `missing`, `malformed`), legacy shell vs. `shell_v2` parsing, strict integer and JEDEC parsers, and glob path handling.
+- `tests/test_misleading_checks.py`: Preconditions for wireless-only screen-off current, per-category thermal limits, measurable vs. unmeasurable maintenance actions, `fastboot erase cache` precondition, WhatsApp media-only pulls, unsigned report notices, and granted-permission security inventories.
+- `tests/test_i18n_keys.py`: Locale key parity, placeholder parity, AST scan for hardcoded text, and `check_id` translations.
+- `tests/test_cli_and_tools.py`: CLI exit codes (`0`–`4`), isolated stage failures, `bin/manifest.json` schema, archive SHA-256 verification before extraction, path traversal rejection, and private ADB port `5038` lifecycle.
+
+---
+
+## Limitations Without Root
+
+On an unrooted production Android device, SELinux restricts several paths and tools; the application marks these explicitly rather than faking results:
+- **Kernel log (`dmesg`):** Typically restricted for shell users -> returns `NEEDS_ROOT` (retries with `su` in `MotherboardDiagnostics` when root is present).
+- **`pstore` / `console-ramoops` (`/sys/fs/pstore/console-ramoops*`):** Usually blocked without root -> `NEEDS_ROOT`, or `UNKNOWN` if not created by the kernel.
+- **Battery capacity (`charge_full`, `charge_full_design`):** Frequently blocked by SELinux or omitted by OEM BMS drivers -> `health_verdict` returns `NEEDS_ROOT` or `UNKNOWN`.
+- **Storage wear registers (`life_time`, `pre_eol_info`, UFS `health_descriptor`):** Commonly blocked -> `StorageBenchmark` returns `NEEDS_ROOT` / `UNKNOWN`; `read_emmc_ufs_lifespan` retries with `su` when root is available.
+- **Storage read benchmark:** Without root, Linux page cache cannot be flushed between write and read passes, so read speeds may reflect RAM cache.
+- **User CA store (`/data/misc/user/0/cacerts-added`):** Typically restricted without root -> returns `NEEDS_ROOT`.
+- **EFS / NVRAM / partition `dd` backups:** `backup_efs_nvram_partitions` requires `su -c id` (`uid=0`); `PartitionBackupManager` requires root for protected block devices.
+- **Root forensics (`run_root_forensics_pro`):** Explicitly requires root and returns `NEEDS_ROOT` otherwise.
+
+### What Software Cannot Prove at All
+- **Original vs. replacement screen:** `display.panel_info` reads kernel controller strings and boot state properties; software cannot verify OEM screen originality.
+- **Motherboard short circuits:** High battery discharge with the screen off lists possible hardware/software causes; isolating an electrical short requires bench hardware tools.
+- **Vibrator motor, screen uniformity, touch dead zones, and speaker distortion:** Software triggers the motor, test color/grid pages, and tone playback; the technician must observe the hardware directly.
+- **App intent:** Apps holding sensitive permissions, accessibility access, or device admin privileges are listed for human review, not labeled malicious.
+
+---
+
+## Known Limitations
+
+- **Physical device coverage:** All 104 automated tests use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
+- **Non-Windows tool manifests:** Download URLs and archive SHA-256 hashes are pinned for all 5 platforms, but pre-listed per-file `scrcpy` SHA-256 entries cover `windows-x86_64` only, and non-Windows archive downloads have not been runtime-tested.
+- **Unsigned reports:** Generated HTML reports have no cryptographic signature; an external-key Ed25519 signing mechanism is planned.
+- **`requirements.txt` completeness:** `arabic-reshaper`, `python-bidi`, and optional `qrcode` are imported in code (`ui/i18n.py`, `ui/report_exporter.py`) but omitted from `requirements.txt`.
+
+---
+
+## Project Structure
 
 ```text
 android/
-├── bin/                       # Local ADB, Fastboot, and scrcpy binaries (auto-downloaded)
-│   ├── adb.exe
-│   ├── fastboot.exe
-│   └── scrcpy.exe
-├── core/                      # 5 Heavy Diagnostic & Repair Engines
-│   ├── __init__.py
-│   ├── adb_bridge.py          # Subprocess wrapper with CREATE_NO_WINDOW & sysfs fallbacks
-│   ├── profiler.py            # Deep device hardware & OS profiler
-│   ├── board_diag.py          # PMIC, Motherboard Short/Leakage, Thermals & Panic Analyzer
-│   ├── hardware_tester.py     # Sensors, I2C bus, Vibrator, Camera & Touch Digitizer
-│   ├── malware_hunter.py      # Ghost apps, RAT permissions, Network sniffer & Rollback
-│   ├── optimizer.py           # Real 5-step optimizer with before/after metrics
-│   └── rescue_center.py       # Scrcpy mirror, Fastboot repair & Data extraction
-├── database/                  # SQLite Persistence Layer
-│   ├── __init__.py
-│   └── db_manager.py          # SQLite schema (devices, reports, rollbacks, optimization, leakage)
-├── data/                      # SQLite database storage (android_doctor.db)
-├── ui/                        # User Interface Layer
-│   ├── __init__.py
-│   ├── main_window.py         # Modern Dark CustomTkinter GUI
-│   └── report_exporter.py     # Printable HTML/PDF Certificate Generator
-├── reports/                   # Output folder for generated diagnostic certificates
-├── main.py                    # Main Application Entrypoint (GUI & CLI)
-├── setup_bins.py              # Automated binary verification & downloader
-└── requirements.txt           # Python package dependencies
+├── bin/                   # Pinned platform-tools (37.0.1), scrcpy (5.0.1), and manifest.json
+├── core/                  # ADB shell_v2 bridge, shared readers, Result/Msg contracts, diagnostics, rescue
+├── data/                  # Runtime SQLite DB (android_doctor.db), fault_signatures.json, thermal_thresholds.json
+├── database/              # SQLite schema and persistence manager (db_manager.py)
+├── locales/               # Complete Arabic (ar.json) and English (en.json) translation files
+├── reports/               # Exported HTML Diagnostic Report output directory
+├── tests/                 # Unit, contract, matrix, i18n AST, and CLI/tool verification tests
+├── ui/                    # CustomTkinter desktop app, i18n renderer, HTML report exporter
+├── main.py                # Application entrypoint (GUI default, --cli console mode)
+├── setup_bins.py          # Manifest verification, hash-checked repair, and port 5038 configuration
+├── requirements.txt       # Base GUI Python package dependencies
+├── run.bat                # Windows GUI launcher (--lang ar)
+└── README.md              # Project documentation
 ```
-
----
-
-## 🚀 Installation & Running
-
-### Requirements
-- Windows 10/11 (or Linux/macOS with adb installed)
-- Python 3.10+
-- Enabled **USB Debugging** on target Android devices.
-
-### Quick Start
-```bash
-# 1. Install Python dependencies
-pip install -r requirements.txt
-
-# 2. Verify / Auto-download Google platform tools & scrcpy
-python setup_bins.py
-
-# 3. Launch the Modern Dark Desktop GUI
-python main.py
-
-# (Optional) Run diagnostics directly via CLI
-python main.py --cli
-```
-
----
-
-## 🔒 Security & Subprocess Safety
-- **No Console Flashing:** On Windows, all subprocess calls utilize `CREATE_NO_WINDOW` (`0x08000000`). No command prompt windows flash during background diagnostics.
-- **Thread Safety:** Every diagnostic scan and repair script executes in background worker threads, preventing GUI unresponsiveness.
