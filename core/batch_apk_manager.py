@@ -68,8 +68,7 @@ class BatchAPKManager:
         if grant_permissions:
             flags += " -g"
 
-        cmd = [self.bridge.adb_path, "-s", serial, "install"] + flags.split() + [apk_path]
-        code, stdout, stderr = self.bridge._run_process(cmd, timeout=120)
+        code, stdout, stderr = self.bridge.run_adb(["install"] + flags.split() + [apk_path], serial=serial, timeout=120)
 
         duration = round(time.time() - start_time, 2)
         combined = (stdout + " " + stderr).strip()

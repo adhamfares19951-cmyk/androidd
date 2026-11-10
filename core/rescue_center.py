@@ -6,7 +6,7 @@ import threading
 import logging
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Any, Callable
-from setup_bins import get_scrcpy_path, CREATE_NO_WINDOW
+from setup_bins import get_scrcpy_path, CREATE_NO_WINDOW, tool_env
 from core.adb_bridge import ADBBridge
 from core.result import Msg, M
 
@@ -74,12 +74,14 @@ class RescueCenter:
 
             try:
                 logger.info(f"Launching scrcpy: {' '.join(cmd)}")
+                # scrcpy uses our adb (ADB=...) on our private server port; output is discarded so
+                # an unread pipe can never block it
                 self._scrcpy_process = subprocess.Popen(
                     cmd,
                     creationflags=CREATE_NO_WINDOW,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    env=tool_env()
                 )
                 return True, M("scrcpy.started")
             except Exception as e:
@@ -104,12 +106,14 @@ class RescueCenter:
 
             try:
                 logger.info(f"Launching scrcpy in OTG HID mode: {' '.join(cmd)}")
+                # scrcpy uses our adb (ADB=...) on our private server port; output is discarded so
+                # an unread pipe can never block it
                 self._scrcpy_process = subprocess.Popen(
                     cmd,
                     creationflags=CREATE_NO_WINDOW,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    env=tool_env()
                 )
                 return True, M("scrcpy.otg_started")
             except Exception as e:
@@ -397,6 +401,7 @@ class RescueCenter:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                env=tool_env(),
                 bufsize=1
             )
 

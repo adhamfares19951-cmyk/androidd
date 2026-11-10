@@ -1021,10 +1021,9 @@ function nextColor() {
         Generates a 16-bit PCM mono sine-wave test tone with soft fade-in/out and plays it
         over the phone's primary loudspeaker at maximum volume to audit hardware clarity.
         """
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        bin_dir = os.path.join(base_dir, "bin")
-        os.makedirs(bin_dir, exist_ok=True)
-        local_wav = os.path.join(bin_dir, f"test_tone_{freq}hz.wav")
+        import tempfile
+        # generated file: never written into bin/ (bin/ holds only the pinned, hash-checked tools)
+        local_wav = os.path.join(tempfile.gettempdir(), f"adp_test_tone_{freq}hz.wav")
         samplerate = 44100
         n_samples = int(samplerate * duration_sec)
 

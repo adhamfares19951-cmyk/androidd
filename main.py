@@ -1,182 +1,283 @@
-import os
-import sys
+"""
+Android Doctor Pro - entry point (GUI by default, --cli for a console run).
+
+Exit codes (CLI):
+  0  run completed (results may still contain FAIL / UNKNOWN / NEEDS_ROOT)
+  1  no device (or the --serial given is not connected)
+  2  device unauthorized or offline
+  3  partial results: at least one stage failed and is reported as UNKNOWN
+  4  internal error (e.g. the report could not be written)
+"""
+
 import argparse
 import logging
-import threading
+import logging.handlers
+import os
+import sys
+import traceback
+from typing import Any, Dict, List, Optional, Tuple
 
-# Configure clean logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+EXIT_OK, EXIT_NO_DEVICE, EXIT_UNAUTHORIZED, EXIT_PARTIAL, EXIT_INTERNAL = 0, 1, 2, 3, 4
+
 logger = logging.getLogger("AndroidDoctorPro")
 
 
-def enable_windows_high_dpi():
+def configure_console_encoding() -> None:
+    """UTF-8 console output (Arabic text, °C, etc.). pythonw has no stdout at all."""
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
+def log_directory() -> str:
+    base = os.environ.get("LOCALAPPDATA")
+    if base:
+        return os.path.join(base, "AndroidDoctorPro", "logs")
+    return os.path.join(os.path.expanduser("~"), ".local", "state", "AndroidDoctorPro", "logs")
+
+
+def configure_logging(console_level: int = logging.WARNING) -> str:
+    """Rotating log file (1 MB x 5) in %LOCALAPPDATA%\\AndroidDoctorPro\\logs\\; console shows warnings only."""
+    log_dir = log_directory()
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        fh = logging.handlers.RotatingFileHandler(os.path.join(log_dir, "android_doctor.log"),
+                                                  maxBytes=1_000_000, backupCount=5, encoding="utf-8")
+        fh.setFormatter(fmt)
+        root.addHandler(fh)
+    except OSError:
+        log_dir = ""
+    if sys.stderr is not None:
+        ch = logging.StreamHandler(sys.stderr)
+        ch.setLevel(console_level)
+        ch.setFormatter(fmt)
+        root.addHandler(ch)
+    return log_dir
+
+
+def enable_windows_high_dpi() -> None:
     if sys.platform == "win32":
         try:
             import ctypes
             ctypes.windll.shcore.SetProcessDpiAwareness(2)
         except Exception:
             try:
+                import ctypes
                 ctypes.windll.user32.SetProcessDPIAware()
             except Exception:
                 pass
 
 
-def run_cli_diagnostics(serial: str = ""):
-    print("\n=======================================================")
-    print("      ANDROID DOCTOR PRO — CLI HARDWARE SUITE          ")
-    print("=======================================================\n")
-    
-    # Lazy imports to guarantee fast and fail-safe execution
-    from core.adb_bridge import ADBBridge
-    from database.db_manager import DatabaseManager
-    from core.profiler import DeviceProfiler
-    from core.board_diag import MotherboardDiagnostics
-    from core.hardware_tester import HardwareTester
-    from core.malware_hunter import MalwareHunter
-    from ui.report_exporter import DiagnosticReportExporter
-
-    bridge = ADBBridge()
-    devices = bridge.list_devices()
+# ------------------------------------------------------------------------------------------------
+# CLI
+# ------------------------------------------------------------------------------------------------
+def choose_device(devices: List[Dict[str, Any]], serial: str, lang: str) -> Tuple[Optional[Dict[str, Any]], int]:
+    from ui.i18n import t
     if not devices:
-        print("[!] No connected Android devices detected in ADB or Fastboot mode.")
-        print("[i] Please connect a device via USB with USB Debugging enabled.")
-        return
-
-    # Check device states
-    target = None
+        print(t("cli.no_device", lang))
+        return None, EXIT_NO_DEVICE
     if serial:
         for d in devices:
-            if d["serial"] == serial:
-                target = d
-                break
-        if not target:
-            print(f"[!] Specified serial {serial} not found in connected devices.")
-            return
-    else:
-        # Default to first authorized device, or first device if none authorized
-        authorized = [d for d in devices if d.get("state") == "device"]
-        target = authorized[0] if authorized else devices[0]
+            if d.get("serial") == serial:
+                return d, EXIT_OK
+        print(t("cli.serial_not_found", lang, serial=serial))
+        return None, EXIT_NO_DEVICE
+    if len(devices) > 1:
+        print(t("cli.several_devices", lang, count=len(devices)))
+        for d in devices:
+            print(f"  - {d.get('serial')}  [{d.get('state')}]  {d.get('model') or ''}")
+    authorized = [d for d in devices if d.get("state") == "device"]
+    chosen = authorized[0] if authorized else devices[0]
+    if len(devices) > 1:
+        print(t("cli.chosen_device", lang, serial=chosen.get("serial")))
+    return chosen, EXIT_OK
 
-    target_serial = target["serial"]
-    target_state = target.get("state", "unknown")
-    print(f"[*] Target device: {target_serial} (State: {target_state.upper()})")
 
-    if target_state == "unauthorized":
-        print("[!] Device is UNAUTHORIZED: Please unlock your phone screen and allow USB Debugging prompt.")
-        return
-    elif target_state == "offline":
-        print("[!] Device is OFFLINE: Replug the USB cable or check USB port/cable stability.")
-        return
-    elif target_state == "fastboot":
-        print("[i] Device is in FASTBOOT Bootloader Mode. Querying bootloader variables...")
-        from core.rescue_center import RescueCenter
-        rescue = RescueCenter(bridge)
-        fb_vars = rescue.get_fastboot_variables(target_serial)
-        print(f"Product: {fb_vars.product} | Bootloader: {fb_vars.bootloader_version} | Unlocked: {fb_vars.is_unlocked}")
-        return
-    elif target_state != "device":
-        print(f"[!] Device in unsupported state: {target_state}")
-        return
+def print_status_table(rows: List[Tuple[str, str, Any]], lang: str) -> None:
+    from ui.i18n import t, render
+    name_w = max([len(t(cid, lang)) for cid, _, _ in rows] + [10])
+    print(f"\n{t('cli.table_title', lang)}")
+    print("-" * (name_w + 14))
+    for cid, status, detail in rows:
+        line = f"{t(cid, lang):<{name_w}}  {status:<10}"
+        if detail is not None:
+            line += f"  {render(detail, lang)}"
+        print(line)
 
-    db = DatabaseManager()
+
+def run_cli_diagnostics(serial: str = "", lang: str = "ar", output_dir: Optional[str] = None) -> int:
+    from core.adb_bridge import ADBBridge
+    from core.result import aggregate_status
+    from ui.i18n import t, render, set_current_language
+
+    set_current_language(lang)
+    print(f"\n=== {t('cli.title', lang)} ===\n")
+
+    bridge = ADBBridge()
     try:
-        profiler = DeviceProfiler(bridge)
-        board_diag = MotherboardDiagnostics(bridge, db)
-        hw_tester = HardwareTester(bridge)
-        malware_hunter = MalwareHunter(bridge, db)
+        devices = bridge.list_devices()
+    except Exception:
+        logger.exception("Listing devices failed")
+        print(t("cli.internal_error", lang, error="list_devices"))
+        return EXIT_INTERNAL
 
-        print("\n--- 1. PROFILING DEVICE ---")
-        profile = profiler.profile_device(target_serial)
-        print(f"Device: {profile.brand} {profile.model} (Codename: {profile.device_codename})")
-        print(f"OS: Android {profile.android_version} (API {profile.sdk_version}, Security Patch: {profile.security_patch})")
-        print(f"SoC: {profile.soc_chipset} ({profile.cpu_cores} Cores, {profile.cpu_architecture})")
-        print(f"RAM: {profile.ram_free_mb}MB free / {profile.ram_total_mb}MB total")
-        print(f"Storage: {profile.storage_free_gb}GB free / {profile.storage_total_gb}GB total")
+    target, code = choose_device(devices, serial, lang)
+    if target is None:
+        return code
+    target_serial = target["serial"]
+    state = target.get("state", "unknown")
+    print(t("cli.target", lang, serial=target_serial, state=state))
 
-        print("\n--- 2. MOTHERBOARD & PMIC DIAGNOSTICS ---")
-        bdiag = board_diag.run_full_diagnostics(target_serial)
-        print(f"PMIC Voltage: {bdiag.pmic.voltage_mv} mV | Standby Current: {bdiag.pmic.current_ma} mA")
-        print(f"Battery Health: {bdiag.pmic.health} | True Capacity Pct: {bdiag.pmic.true_health_pct}% | Temp: {bdiag.pmic.temp_c}°C")
-        print(f"Monitored Thermal Zones: {len(bdiag.thermal_zones)}")
-        if bdiag.critical_findings:
-            print("Hardware Warnings / Faults:")
+    if state in ("unauthorized", "offline"):
+        print(t(f"cli.state.{state}", lang))
+        return EXIT_UNAUTHORIZED
+    if state == "fastboot":
+        from core.rescue_center import RescueCenter
+        fb = RescueCenter(bridge).get_fastboot_variables(target_serial)
+        print(t("cli.fastboot_vars", lang, product=fb.product, bootloader=fb.bootloader_version, unlocked=fb.is_unlocked))
+        return EXIT_OK
+    if state != "device":
+        print(t("cli.unsupported_state", lang, state=state))
+        return EXIT_UNAUTHORIZED
+
+    from database.db_manager import DatabaseManager
+    db = DatabaseManager()
+    results: Dict[str, Any] = {}
+    failed_stages: List[str] = []
+
+    def stage(name: str, fn):
+        print(f"\n--- {t('cli.stage.' + name, lang)} ---")
+        try:
+            results[name] = fn()
+            return results[name]
+        except Exception as e:
+            logger.error(f"Stage {name} failed: {e}\n{traceback.format_exc()}")
+            failed_stages.append(name)
+            print(t("cli.stage_failed", lang, error=f"{type(e).__name__}: {e}"))
+            return None
+
+    try:
+        from core.profiler import DeviceProfiler
+        from core.board_diag import MotherboardDiagnostics
+        from core.hardware_tester import HardwareTester
+        from core.malware_hunter import MalwareHunter
+
+        profile = stage("profile", lambda: DeviceProfiler(bridge).profile_device(target_serial))
+        if profile is not None:
+            print(t("cli.device_line", lang, brand=profile.brand, model=profile.model,
+                    android=profile.android_version, sdk=profile.sdk_version, patch=profile.security_patch))
+
+        bdiag = stage("board", lambda: MotherboardDiagnostics(bridge, db).run_full_diagnostics(target_serial))
+        if bdiag is not None:
+            p = bdiag.pmic
+            print(t("cli.battery_voltage", lang, value=p.voltage_mv, source=p.voltage_source))
+            print(t("cli.battery_current", lang, value=p.current_ma, source=p.current_source, note=p.current_note))
+            print(t("cli.battery_capacity", lang, value=p.true_health_pct, status=p.health_verdict))
+            print(t("cli.battery_temp", lang, value=p.temp_c, source=p.temp_source))
             for f in bdiag.critical_findings:
-                print(f"  [ALERT] {f}")
-        else:
-            print("Motherboard Health: PASS (All voltages and thermal zones normal)")
+                print(f"  [!] {render(f, lang)}")
 
-        print("\n--- 3. HARDWARE COMPONENTS & SENSORS ---")
-        hw = hw_tester.run_full_audit(target_serial)
-        print(f"Active I2C Sensors: {len(hw.sensors)}")
-        print(f"Camera Sensors: {len(hw.cameras)}")
-        if hw.missing_critical_sensors:
-            print(f"Missing Sensors: {', '.join(hw.missing_critical_sensors)}")
+        hw = stage("hardware", lambda: HardwareTester(bridge).run_full_audit(target_serial))
+        if hw is not None:
+            print(t("cli.reported_sensors", lang, count=len(hw.sensors), status=hw.sensors_status))
+            print(t("cli.reported_cameras", lang, count=len(hw.cameras), status=hw.cameras_status))
 
-        print("\n--- 4. APPS WITH SENSITIVE PERMISSIONS ---")
-        sec = malware_hunter.audit_security(target_serial)
-        print(f"Scanned: {sec.total_packages_scanned} packages (3rd Party: {sec.third_party_count})")
-        print(sec.summary)
+        sec = stage("security", lambda: MalwareHunter(bridge, db).audit_security(target_serial))
+        if sec is not None:
+            print(render(sec.summary, lang))
 
-        print("\n--- 5. EXPORTING OFFICIAL CERTIFICATE ---")
-        report_file = DiagnosticReportExporter.generate_html_report(
-            device_profile=profile.to_dict(),
-            board_diag=bdiag.to_dict(),
-            hw_audit=hw.to_dict(),
-            sec_scan=sec.to_dict()
-        )
-        print(f"[✓] Printable Diagnostic Certificate generated at:\n    {report_file}")
-        print("\nScan Completed Successfully.")
+        # ---------------- per-check status table ----------------
+        rows: List[Tuple[str, str, Any]] = []
+        key_statuses: List[str] = []
+        if bdiag is not None:
+            details = {"board.boot_reason": bdiag.panic_analysis.blackbox.diagnosis,
+                       "board.kernel_log": bdiag.panic_analysis.summary_verdict}
+            for cid, st in bdiag.check_statuses.items():
+                rows.append((cid, st, details.get(cid)))
+                key_statuses.append(st)
+        if hw is not None:
+            for cid, st in hw.check_statuses.items():
+                rows.append((cid, st, None))
+                key_statuses.append(st)
+        if sec is not None:
+            rows.append(("security.user_ca_certificates", sec.user_ca_status, sec.user_ca_diagnosis))
+        for name in failed_stages:
+            rows.append((f"cli.stage.{name}", "UNKNOWN", t("cli.stage_failed_short", lang)))
+            key_statuses.append("UNKNOWN")
+        overall = str(aggregate_status(key_statuses))
+        print_status_table(rows, lang)
+        print(f"\n{t('cli.overall', lang, status=overall)}")
+
+        # ---------------- report (always written, also for partial results) ----------------
+        try:
+            from ui.report_exporter import DiagnosticReportExporter
+            report_file = DiagnosticReportExporter.generate_html_report(
+                device_profile=profile.to_dict() if profile is not None else {"serial": target_serial},
+                board_diag=bdiag.to_dict() if bdiag is not None else {},
+                hw_audit=hw.to_dict() if hw is not None else {},
+                sec_scan=sec.to_dict() if sec is not None else {},
+                lang=lang,
+                output_dir=output_dir,
+            )
+            print(f"\n{t('cli.report_written', lang, path=report_file)}")
+        except Exception as e:
+            logger.error(f"Report generation failed: {e}\n{traceback.format_exc()}")
+            print(t("cli.internal_error", lang, error=f"report: {e}"))
+            return EXIT_INTERNAL
     finally:
         if hasattr(db, "close"):
             db.close()
 
+    return EXIT_PARTIAL if failed_stages else EXIT_OK
 
-def main():
-    parser = argparse.ArgumentParser(description="Android Doctor Pro — Diagnostic & Repair Desktop Suite")
-    parser.add_argument("--cli", action="store_true", help="Run diagnostics in CLI mode without GUI")
-    parser.add_argument("--serial", type=str, default="", help="Target device serial number")
-    parser.add_argument("--lang", type=str, default="ar", choices=["ar", "en"], help="Interface language (ar / en)")
-    parser.add_argument("--check-bins", action="store_true", help="Verify and download ADB/Fastboot/scrcpy binaries")
-    args = parser.parse_args()
 
-    enable_windows_high_dpi()
+# ------------------------------------------------------------------------------------------------
+def build_parser():
+    from ui.i18n import available_languages
+    parser = argparse.ArgumentParser(description="Android Doctor Pro - diagnostics over ADB / fastboot")
+    parser.add_argument("--cli", action="store_true", help="run the diagnostics in the console (no GUI)")
+    parser.add_argument("--serial", type=str, default="", help="target device serial")
+    parser.add_argument("--lang", type=str, default="ar", choices=available_languages(), help="interface language")
+    parser.add_argument("--check-bins", action="store_true", help="verify bin/ against bin/manifest.json (no download)")
+    parser.add_argument("--repair-tools", action="store_true", help="download and re-install broken tools (hash-checked)")
+    parser.add_argument("--output-dir", type=str, default=None, help="folder for the HTML report (CLI)")
+    return parser
 
-    from setup_bins import verify_binaries, ensure_all_binaries, get_adb_path, get_fastboot_path, get_scrcpy_path
 
-    # Check local binaries without blocking
-    local_adb = get_adb_path()
-    local_fastboot = get_fastboot_path()
-    local_scrcpy = get_scrcpy_path()
-    all_present = os.path.exists(local_adb) and os.path.exists(local_fastboot) and os.path.exists(local_scrcpy)
+def main() -> int:
+    configure_console_encoding()
+    configure_logging()
+    args = build_parser().parse_args()
 
-    if args.check_bins or not all_present:
-        logger.info("Ensuring bundled local binaries in bin/...")
-        bin_status = ensure_all_binaries()
-        logger.info(f"Binaries verified: ADB={bin_status['adb']['available']}, Fastboot={bin_status['fastboot']['available']}, scrcpy={bin_status['scrcpy']['available']}")
-        if args.check_bins:
-            print("Binary verification complete.")
-            return
-    else:
-        # Instant local check
-        bin_status = verify_binaries()
-        logger.info(f"Local binaries verified in bin/: ADB={bin_status['adb']['available']}, Fastboot={bin_status['fastboot']['available']}, scrcpy={bin_status['scrcpy']['available']}")
+    if args.check_bins or args.repair_tools:
+        import json
+        from setup_bins import verify_binaries, repair_tools
+        if args.repair_tools:
+            print(json.dumps(repair_tools(), indent=2))
+        status = verify_binaries()
+        print(json.dumps(status, indent=2))
+        return EXIT_OK if status["ok"] else EXIT_INTERNAL
 
     if args.cli:
-        run_cli_diagnostics(args.serial)
-        return
+        try:
+            return run_cli_diagnostics(args.serial, args.lang, args.output_dir)
+        except Exception:
+            logger.critical(f"Internal error\n{traceback.format_exc()}")
+            return EXIT_INTERNAL
 
-    # Launch GUI immediately without network delay
-    logger.info(f"Launching Android Doctor Pro GUI (Language: {args.lang})...")
+    # GUI: nothing is downloaded or repaired before the window opens; a banner offers "Repair tools".
+    enable_windows_high_dpi()
     from ui.main_window import AndroidDoctorApp
     app = AndroidDoctorApp(lang=args.lang)
     app.mainloop()
+    return EXIT_OK
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -55,6 +55,17 @@ class FakeBridge:
         self.commands.append(f"pull {remote_path}")
         return False, "remote object does not exist"
 
+    devices: List[dict] = []
+
+    def list_devices(self) -> List[dict]:
+        return list(self.devices)
+
+    def get_all_props(self, serial: Optional[str] = None) -> Dict[str, str]:
+        return dict(self.props)
+
+    def is_device_ready(self, serial: Optional[str] = None) -> bool:
+        return True
+
     def get_prop(self, name: str, serial: Optional[str] = None) -> str:
         return self.props.get(name, "")
 

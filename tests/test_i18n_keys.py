@@ -16,7 +16,8 @@ sys.path.insert(0, ROOT)
 
 from ui.i18n import STRINGS, available_languages  # noqa: E402
 
-CODE_FILES = sorted(glob.glob(os.path.join(ROOT, "core", "*.py")) + glob.glob(os.path.join(ROOT, "ui", "*.py")))
+CODE_FILES = sorted(glob.glob(os.path.join(ROOT, "core", "*.py")) + glob.glob(os.path.join(ROOT, "ui", "*.py"))
+                    + [os.path.join(ROOT, "main.py"), os.path.join(ROOT, "setup_bins.py")])
 KEY_CALLS = {"M", "Msg", "t", "_tr", "tr"}
 ARABIC = re.compile(r"[؀-ۿ]")
 
@@ -95,6 +96,8 @@ class TestKeysUsedInCode(unittest.TestCase):
             "bloat.desc.": list(OEM_DEBLOAT_PACKAGES),
             "bloat.impact.": sorted({v["battery_impact"] for v in OEM_DEBLOAT_PACKAGES.values()}),
             "bloat.safety.": sorted({v["safety"] for v in OEM_DEBLOAT_PACKAGES.values()}),
+            "cli.stage.": ["profile", "board", "hardware", "security"],
+            "cli.state.": ["unauthorized", "offline"],
         }
         unknown = sorted(set(self.dynamic) - set(families))
         self.assertEqual(unknown, [], "dynamic key prefix without an enumerated test family")
@@ -106,6 +109,16 @@ class TestKeysUsedInCode(unittest.TestCase):
         for _, _, diag_key, cause_keys in MotherboardDiagnostics._ABNORMAL_RULES:
             for key in [diag_key] + cause_keys:
                 self.assertKey(key, "_ABNORMAL_RULES")
+
+    def test_progress_keys_passed_as_constants(self):
+        """Keys handed to callbacks as plain strings (e.g. setup_bins progress) must exist too."""
+        for path in CODE_FILES:
+            with open(path, encoding="utf-8") as fh:
+                tree = ast.parse(fh.read())
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                        and re.fullmatch(r"(tools|cli)\.[a-z_]+(\.[a-z_]+)*", node.value)):
+                    self.assertKey(node.value, f"{os.path.relpath(path, ROOT)}:{node.lineno}")
 
     def test_check_ids_have_names(self):
         """Every check_id default in a result dataclass has a translated display name."""

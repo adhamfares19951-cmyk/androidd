@@ -6,14 +6,14 @@ import logging
 import re
 import time
 from typing import List, Dict, Tuple, Optional, Callable, Any
-from setup_bins import get_adb_path, get_fastboot_path, get_scrcpy_path, CREATE_NO_WINDOW
+from setup_bins import get_adb_path, get_fastboot_path, get_scrcpy_path, CREATE_NO_WINDOW, ADB_SERVER_PORT, tool_env
 
 from core.result import Msg, M
 
 logger = logging.getLogger("ADBBridge")
 
 
-ADB_SERVER_PORT = int(os.environ.get("ANDROID_ADB_SERVER_PORT", "5037"))
+# Our adb server listens on a private port (setup_bins.ADB_SERVER_PORT = 5038), never the default 5037.
 
 # shell v2 packet ids (see adb shell_protocol.h)
 _SHELL_V2_STDOUT = 1
@@ -237,6 +237,7 @@ class ADBBridge:
                     text=True,
                     encoding="utf-8",
                     errors="replace",
+                    env=tool_env(),
                     timeout=timeout
                 )
                 return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
@@ -293,6 +294,7 @@ class ADBBridge:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                env=tool_env(),
                 bufsize=1
             )
 
@@ -331,6 +333,7 @@ class ADBBridge:
                     text=True,
                     encoding="utf-8",
                     errors="replace",
+                    env=tool_env(),
                     timeout=timeout
                 )
                 return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
@@ -564,8 +567,11 @@ class ADBBridge:
     def restart_server(self) -> Tuple[bool, str]:
         with self._cmd_lock:
             try:
-                subprocess.run([self.adb_path, "kill-server"], creationflags=CREATE_NO_WINDOW, timeout=10)
-                proc = subprocess.run([self.adb_path, "start-server"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=CREATE_NO_WINDOW, text=True, timeout=15)
+                # only our own server (private port); other tools' adb servers are left alone
+                subprocess.run([self.adb_path, "-P", str(ADB_SERVER_PORT), "kill-server"], env=tool_env(),
+                               creationflags=CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                proc = subprocess.run([self.adb_path, "-P", str(ADB_SERVER_PORT), "start-server"], stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE, creationflags=CREATE_NO_WINDOW, text=True, env=tool_env(), timeout=15)
                 return proc.returncode == 0, proc.stdout.strip() or "ADB server restarted."
             except Exception as e:
                 logger.error(f"Error restarting ADB server: {e}")

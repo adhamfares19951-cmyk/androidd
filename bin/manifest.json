@@ -1,0 +1,190 @@
+{
+  "manifest_version": 1,
+  "note": "Pinned tool versions. Archive SHA-256 is checked before extraction; file SHA-256 is checked at startup.",
+  "packages": {
+    "platform-tools": {
+      "version": "37.0.1",
+      "source": "https://developer.android.com/tools/releases/platform-tools (archives also matched Google's SHA-1 in repository2-3.xml)",
+      "downloads": {
+        "windows-x86_64": {
+          "url": "https://dl.google.com/android/repository/platform-tools_r37.0.1-win.zip",
+          "sha256": "45f4d63113e895ebde0c90f194099a4676b6ac653bd28d54314a9e022bbc1a99",
+          "type": "zip",
+          "strip_prefix": "platform-tools/"
+        },
+        "windows-arm64": {
+          "url": "https://dl.google.com/android/repository/platform-tools_r37.0.1-win.zip",
+          "sha256": "45f4d63113e895ebde0c90f194099a4676b6ac653bd28d54314a9e022bbc1a99",
+          "type": "zip",
+          "strip_prefix": "platform-tools/"
+        },
+        "linux-x86_64": {
+          "url": "https://dl.google.com/android/repository/platform-tools_r37.0.1-linux.zip",
+          "sha256": "d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1",
+          "type": "zip",
+          "strip_prefix": "platform-tools/"
+        },
+        "darwin-arm64": {
+          "url": "https://dl.google.com/android/repository/platform-tools_r37.0.1-darwin.zip",
+          "sha256": "ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d",
+          "type": "zip",
+          "strip_prefix": "platform-tools/"
+        },
+        "darwin-x86_64": {
+          "url": "https://dl.google.com/android/repository/platform-tools_r37.0.1-darwin.zip",
+          "sha256": "ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d",
+          "type": "zip",
+          "strip_prefix": "platform-tools/"
+        }
+      },
+      "files": {
+        "windows-x86_64": {
+          "AdbWinApi.dll": "c1d653030b4bde65d3e07e4d0b0979e17be56df1436cdd15528630f27808050d",
+          "AdbWinUsbApi.dll": "0710e894d9b40f71a670c13c694079d564c92c1279da382cfe4850983aaebe1b",
+          "NOTICE.txt": "38ec8c6f5b7799c223ffeab1f9e81c2d5fc67b5e56d6424f649630ca1ee1a811",
+          "adb.exe": "b4a6b455702684652cccf7b46258b29e653538904359a58fd4931cf3ef286b3f",
+          "etc1tool.exe": "ee9bb89bb770badcfeb12bb9a3c4095682fb2ea0105487f9f16e440c582064a3",
+          "fastboot.exe": "b2d9cbff4ce9ae7eb448cfc831bafc867935f50f5be38f8f81057fd7eb3b8d86",
+          "hprof-conv.exe": "70cfef266dd9d94922679be159901cec3218561be946347e6e4a7577fc81dede",
+          "libwinpthread-1.dll": "f2044c755e39efc5d47f47c5a942178dd6d79dc8945bb182dc8753d10e2a4269",
+          "make_f2fs.exe": "a1d8e18474636972e4ebaf2617ac17c880e76642fad7fa3e51ae5cd3c1fe5d17",
+          "make_f2fs_casefold.exe": "9ac076516c2a1f620df24e148660becf3e7d4102b46ddda66970d35c59db2962",
+          "mke2fs.conf": "ad58a58dcdd24d85055814ca9cac67db89d4e67c434e96774bdce0d0a007d067",
+          "mke2fs.exe": "308304852b1f1a1449e9d9115332ab908b8a54b99f460ed1df5d109decef5be7",
+          "source.properties": "2dccd788c0234d8cf7f7457377e57f57527a86a629c6ed54feb8af0f549dac38",
+          "sqlite3.exe": "234d9e6c475c6e9ba07498a1ad96a6a32840fbfdc74e50277e1a94cbac48abdc"
+        },
+        "windows-arm64": {
+          "AdbWinApi.dll": "c1d653030b4bde65d3e07e4d0b0979e17be56df1436cdd15528630f27808050d",
+          "AdbWinUsbApi.dll": "0710e894d9b40f71a670c13c694079d564c92c1279da382cfe4850983aaebe1b",
+          "NOTICE.txt": "38ec8c6f5b7799c223ffeab1f9e81c2d5fc67b5e56d6424f649630ca1ee1a811",
+          "adb.exe": "b4a6b455702684652cccf7b46258b29e653538904359a58fd4931cf3ef286b3f",
+          "etc1tool.exe": "ee9bb89bb770badcfeb12bb9a3c4095682fb2ea0105487f9f16e440c582064a3",
+          "fastboot.exe": "b2d9cbff4ce9ae7eb448cfc831bafc867935f50f5be38f8f81057fd7eb3b8d86",
+          "hprof-conv.exe": "70cfef266dd9d94922679be159901cec3218561be946347e6e4a7577fc81dede",
+          "libwinpthread-1.dll": "f2044c755e39efc5d47f47c5a942178dd6d79dc8945bb182dc8753d10e2a4269",
+          "make_f2fs.exe": "a1d8e18474636972e4ebaf2617ac17c880e76642fad7fa3e51ae5cd3c1fe5d17",
+          "make_f2fs_casefold.exe": "9ac076516c2a1f620df24e148660becf3e7d4102b46ddda66970d35c59db2962",
+          "mke2fs.conf": "ad58a58dcdd24d85055814ca9cac67db89d4e67c434e96774bdce0d0a007d067",
+          "mke2fs.exe": "308304852b1f1a1449e9d9115332ab908b8a54b99f460ed1df5d109decef5be7",
+          "source.properties": "2dccd788c0234d8cf7f7457377e57f57527a86a629c6ed54feb8af0f549dac38",
+          "sqlite3.exe": "234d9e6c475c6e9ba07498a1ad96a6a32840fbfdc74e50277e1a94cbac48abdc"
+        },
+        "linux-x86_64": {
+          "NOTICE.txt": "c29da8f704720fa1d3d802b834b86d9c023f20ae2596a8f2a4e17ed5490b17ae",
+          "adb": "a902be8f45c6c62e76c9efaf6947a0fa747c9cabd89a2ac8e0d16ecb30b3ed01",
+          "etc1tool": "1057739318002324f12e468fe22bc0a0533f3ca3428b4b7dc79855a3053428b9",
+          "fastboot": "a686e2c7e8dc9cf4cba0cb8a2eef05f7b2bd682c925abd032fe203215d80b618",
+          "hprof-conv": "f0b41063a4420667d52689cf7739899a23d5a88653037be12d9106023f670e02",
+          "lib64/libc++.so": "6cb165d671ced6a719b153b72e5d1b0a9cfd488badccc92d0aee55eda294f8ff",
+          "make_f2fs": "16d06d185b62c7401e1b1468c1b7830c35f18f1cd78be21333cf340c1fe78a4c",
+          "make_f2fs_casefold": "ddf5bdad689a9af9314865868e0fe9310b52f8dc0369ee3f01b8ffbb3b89a90f",
+          "mke2fs": "78d622cb0bf46409e2c040b729bcbda9f986e162cfd1fe8f98dd2b4efeac6ee9",
+          "mke2fs.conf": "ad58a58dcdd24d85055814ca9cac67db89d4e67c434e96774bdce0d0a007d067",
+          "source.properties": "2dccd788c0234d8cf7f7457377e57f57527a86a629c6ed54feb8af0f549dac38",
+          "sqlite3": "2e903ef0a08117c6c25016732047ee9905123cf235e10ff36a99e57c5ccc4496"
+        },
+        "darwin-arm64": {
+          "NOTICE.txt": "356cc66516060e4da6bdc53e6f0bbb8e8101673f326b73c68d535eddd04dd7b1",
+          "adb": "1811e253b21b12cbfda7201ebaf86c10e7ddcb5c606a7a81f7c82b4c429c2d3b",
+          "etc1tool": "5f4dae606453a82c696737620ba94f933b49cfce845565c2a1ee3c76f7dbb747",
+          "fastboot": "c97aa28970ba9a46023a8ca52a78dd6547c2c1c4133f9715d4fe551e1dfae152",
+          "hprof-conv": "7be7f34fead2d5a3a4f9e4d88589e20a516427ad1913f341a452498e037c6b04",
+          "lib64/libc++.dylib": "861dfb2d769b81267c118cb061aab1b2637686363a2ecf162411774fa6a37faf",
+          "make_f2fs": "5a8db8fdd99910931bcdc8ac1184603c05f51efe982a4e3b8940b803a5a60814",
+          "make_f2fs_casefold": "4dd12ddde8c4758b056442bf3b3541b5e1cf7b6cef19167e7c369de1ed85505c",
+          "mke2fs": "29a460f471bdf5cb1c0666bc3ad8e0a1b02788a04e0865a6068aeddc0065afd0",
+          "mke2fs.conf": "ad58a58dcdd24d85055814ca9cac67db89d4e67c434e96774bdce0d0a007d067",
+          "source.properties": "2dccd788c0234d8cf7f7457377e57f57527a86a629c6ed54feb8af0f549dac38",
+          "sqlite3": "c98030f9ec5cc6c1c193fa8c5bdc156d7404309d63d194a085e655f46819651e"
+        },
+        "darwin-x86_64": {
+          "NOTICE.txt": "356cc66516060e4da6bdc53e6f0bbb8e8101673f326b73c68d535eddd04dd7b1",
+          "adb": "1811e253b21b12cbfda7201ebaf86c10e7ddcb5c606a7a81f7c82b4c429c2d3b",
+          "etc1tool": "5f4dae606453a82c696737620ba94f933b49cfce845565c2a1ee3c76f7dbb747",
+          "fastboot": "c97aa28970ba9a46023a8ca52a78dd6547c2c1c4133f9715d4fe551e1dfae152",
+          "hprof-conv": "7be7f34fead2d5a3a4f9e4d88589e20a516427ad1913f341a452498e037c6b04",
+          "lib64/libc++.dylib": "861dfb2d769b81267c118cb061aab1b2637686363a2ecf162411774fa6a37faf",
+          "make_f2fs": "5a8db8fdd99910931bcdc8ac1184603c05f51efe982a4e3b8940b803a5a60814",
+          "make_f2fs_casefold": "4dd12ddde8c4758b056442bf3b3541b5e1cf7b6cef19167e7c369de1ed85505c",
+          "mke2fs": "29a460f471bdf5cb1c0666bc3ad8e0a1b02788a04e0865a6068aeddc0065afd0",
+          "mke2fs.conf": "ad58a58dcdd24d85055814ca9cac67db89d4e67c434e96774bdce0d0a007d067",
+          "source.properties": "2dccd788c0234d8cf7f7457377e57f57527a86a629c6ed54feb8af0f549dac38",
+          "sqlite3": "c98030f9ec5cc6c1c193fa8c5bdc156d7404309d63d194a085e655f46819651e"
+        }
+      }
+    },
+    "scrcpy": {
+      "version": "5.0.1",
+      "source": "https://github.com/Genymobile/scrcpy/releases/tag/v5.0.1 (SHA-256 as published on the release)",
+      "downloads": {
+        "windows-x86_64": {
+          "url": "https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-win64-v5.0.1.zip",
+          "sha256": "b12a2c4ee8be317422451fc7dcf8ee20a71b5ea7ef9ad73ddd825a25316227a5",
+          "type": "zip",
+          "strip_prefix": "scrcpy-win64-v5.0.1/",
+          "exclude": [
+            "adb.exe",
+            "AdbWinApi.dll",
+            "AdbWinUsbApi.dll"
+          ]
+        },
+        "windows-arm64": {
+          "url": "https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-winarm64-v5.0.1.zip",
+          "sha256": "16c3fc2068df64946f670e3504b4752073ebae47a416a45b46e79a5ab19c689b",
+          "type": "zip",
+          "strip_prefix": "scrcpy-winarm64-v5.0.1/",
+          "exclude": [
+            "adb.exe",
+            "AdbWinApi.dll",
+            "AdbWinUsbApi.dll"
+          ]
+        },
+        "linux-x86_64": {
+          "url": "https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-linux-x86_64-v5.0.1.tar.gz",
+          "sha256": "9f969d30cc574816077edecda65719c1c70b0aee1df1ba5fa00779ac07b8fd6e",
+          "type": "tar.gz",
+          "strip_prefix": "scrcpy-linux-x86_64-v5.0.1/",
+          "exclude": [
+            "adb"
+          ]
+        },
+        "darwin-arm64": {
+          "url": "https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-macos-aarch64-v5.0.1.tar.gz",
+          "sha256": "33611e51977a8289e2e124b220f727895181ef2eb9060e0987a4dc2db9cf0d6b",
+          "type": "tar.gz",
+          "strip_prefix": "scrcpy-macos-aarch64-v5.0.1/",
+          "exclude": [
+            "adb"
+          ]
+        },
+        "darwin-x86_64": {
+          "url": "https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-macos-x86_64-v5.0.1.tar.gz",
+          "sha256": "31a5467a9e907f162b093267cbbab1276b15c6e709c2ea8159566a8d165beb50",
+          "type": "tar.gz",
+          "strip_prefix": "scrcpy-macos-x86_64-v5.0.1/",
+          "exclude": [
+            "adb"
+          ]
+        }
+      },
+      "files": {
+        "windows-x86_64": {
+          "LICENSE.txt": "01c12035bf35af37241298dc7ad538eb2a07e5c940437bc6876feeaa9d1951d0",
+          "SDL3.dll": "288aaf5b4f246bd84c276351867e3132cfcd9b0a9d25fb679c8d94b30cdf333e",
+          "avcodec-63.dll": "159928e3bbe7beaca046ccf831fdf44f1e5559c0e63417f007889a6bb2c5de88",
+          "avformat-63.dll": "4dbb0c1c8262f7ae45e7edc4866e26f53b358bf4fc7a0b971f15d1f2d7baf22f",
+          "avutil-61.dll": "52eb504ced0ea6d9e936d348df51c8aaeec1cae8fa4a7dba339fea87d7cce725",
+          "disconnected.png": "e394873cd3e2cc3ab0cca6212b10ed2a8a0fad11a05675c8a9fa6f26f3ae12c0",
+          "libusb-1.0.dll": "0c82e969c046d816507a2fe1e57253a334cb203bd6ea223194ad17c007154f32",
+          "open_a_terminal_here.bat": "843758795a84d0d035a7d277ad29cc1ff1702048b4b61ae74b9e3439ae683423",
+          "scrcpy-noconsole.vbs": "3ccda94c161f18cef07c50d4d3c4913eb883d4b0fe3b939c35fae52784fb1d2b",
+          "scrcpy-server": "764eb6f79811d5211fe9df341120882ba9994c7a61b897d7bf3fb662e53bc536",
+          "scrcpy.exe": "64bcee493d9243dab1e84093928014348738e31f3225e67558210e6b6cfb9cd6",
+          "scrcpy.png": "8e8ca237898faa16014cdd118396af53405b423f3db0508c50cc3edce08eb313",
+          "swresample-7.dll": "7b57e891bf09c43422d79f98cf9d1830c4b1d48a251423ce5fb8c2048eb8fc1e"
+        }
+      }
+    }
+  }
+}

@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import customtkinter as ctk
 
-from setup_bins import verify_binaries, ensure_all_binaries, get_adb_path, get_fastboot_path, get_scrcpy_path
+from setup_bins import verify_binaries, repair_tools, get_adb_path, get_fastboot_path, get_scrcpy_path
 from database.db_manager import DatabaseManager
 from core.adb_bridge import ADBBridge
 from core.profiler import DeviceProfiler, DeviceProfile
@@ -299,25 +299,30 @@ class AndroidDoctorApp(ctk.CTk):
         self.adb_status_label.pack(padx=8, pady=8)
 
         # ------------------ MAIN CONTENT AREA ------------------
+        # Row 0: tools banner (hidden unless a bundled tool is missing / does not match bin/manifest.json)
+        self.grid_rowconfigure(0, weight=0)
+        self.grid_rowconfigure(1, weight=1)
+        self.sidebar_frame.grid_configure(rowspan=2)
+        self.tools_banner = ctk.CTkFrame(self, fg_color="#3d1d1d", corner_radius=6)
+        self.tools_banner_lbl = ctk.CTkLabel(self.tools_banner, text="", text_color="#fca5a5", justify="left", wraplength=700)
+        self.tools_banner_lbl.pack(side="left", padx=12, pady=8, fill="x", expand=True)
+        self.btn_repair_tools = ctk.CTkButton(self.tools_banner, text=self._tr("tools.repair"), width=140,
+                                              fg_color="#b91c1c", hover_color="#dc2626", command=self._repair_tools_async)
+        self.btn_repair_tools.pack(side="right", padx=12, pady=8)
+
         self.content_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="#0d1117")
-        self.content_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+        self.content_frame.grid(row=1, column=1, sticky="nsew", padx=10, pady=10)
         self.content_frame.grid_columnconfigure(0, weight=1)
         self.content_frame.grid_rowconfigure(0, weight=1)
 
-        # Tabs Container
+        # Tabs are built on first use (and in idle time), so the window opens quickly
         self.tab_frames = {}
-        self._build_dashboard_tab()
-        self._build_board_diag_tab()
-        self._build_hardware_tester_tab()
-        self._build_malware_hunter_tab()
-        self._build_optimizer_tab()
-        self._build_rescue_tab()
-        self._build_reports_tab()
-
-        # Select initial tab
+        self._init_tab_builders()
         self.select_tab("dashboard")
+        self.after(150, self._build_next_pending_tab)
         self.after(300, self.refresh_devices_async)
         self.after(5000, self._auto_poll_devices)
+        self.after(400, self._check_tools_background)
 
     def _auto_poll_devices(self):
         try:
@@ -338,14 +343,8 @@ class AndroidDoctorApp(ctk.CTk):
         for widget in self.content_frame.winfo_children():
             widget.destroy()
         self.tab_frames.clear()
-
-        self._build_dashboard_tab()
-        self._build_board_diag_tab()
-        self._build_hardware_tester_tab()
-        self._build_malware_hunter_tab()
-        self._build_optimizer_tab()
-        self._build_rescue_tab()
-        self._build_reports_tab()
+        self.btn_repair_tools.configure(text=self._tr("tools.repair"))
+        self.after(150, self._build_next_pending_tab)
 
         tab_tr = {
             "dashboard": "tab_dashboard",
@@ -365,16 +364,91 @@ class AndroidDoctorApp(ctk.CTk):
         self.select_tab("dashboard")
         self.refresh_devices_async()
 
+    def _init_tab_builders(self):
+        self._tab_builders = {
+            "dashboard": self._build_dashboard_tab,
+            "board_diag": self._build_board_diag_tab,
+            "hardware_tester": self._build_hardware_tester_tab,
+            "malware_hunter": self._build_malware_hunter_tab,
+            "optimizer": self._build_optimizer_tab,
+            "rescue_center": self._build_rescue_tab,
+            "reports": self._build_reports_tab,
+        }
+
+    def _ensure_tab(self, key: str):
+        if key not in self.tab_frames and key in self._tab_builders:
+            self._tab_builders[key]()
+
+    def _build_next_pending_tab(self):
+        """Build one not-yet-built tab per idle slot, so every tab exists shortly after startup."""
+        for key in self._tab_builders:
+            if key not in self.tab_frames:
+                self._ensure_tab(key)
+                self.after(50, self._build_next_pending_tab)
+                return
+
     def select_tab(self, key: str):
-        for k, frame in self.tab_frames.items():
+        self._ensure_tab(key)
+        self._current_tab = key
+        for k in self._tab_builders:
+            frame = self.tab_frames.get(k)
             if k == key:
                 frame.grid(row=0, column=0, sticky="nsew")
                 if k in self.nav_buttons:
                     self.nav_buttons[k].configure(fg_color="#1f6feb", text_color="#ffffff")
             else:
-                frame.grid_forget()
+                if frame is not None:
+                    frame.grid_forget()
                 if k in self.nav_buttons:
                     self.nav_buttons[k].configure(fg_color="transparent", text_color="#c9d1d9")
+
+    # ------------------ bundled tools check / repair ------------------
+    def _check_tools_background(self):
+        """Hash check of bin/ against the manifest (runs on the Tk thread shortly after the window appears)."""
+        try:
+            status = verify_binaries()
+        except Exception as e:
+            status = {"ok": False, "packages": {}, "error": str(e)}
+        self._show_tools_status(status)
+
+    def _show_tools_status(self, status):
+        self.tools_status = status
+        if status.get("ok"):
+            self.tools_banner.grid_forget()
+            return
+        problems = []
+        for name, info in status.get("packages", {}).items():
+            bad = info.get("missing", []) + info.get("mismatched", [])
+            if bad:
+                problems.append(f"{name}: {', '.join(bad[:4])}")
+        if status.get("error"):
+            problems.append(status["error"])
+        self.tools_banner_lbl.configure(text=self._tr("tools.banner", details="; ".join(problems) or "-"))
+        self.tools_banner.grid(row=0, column=1, sticky="ew", padx=10, pady=(10, 0))
+
+    def _repair_tools_async(self):
+        self.btn_repair_tools.configure(state="disabled")
+
+        def progress(key, pct):
+            self.after(0, lambda: self.tools_banner_lbl.configure(text=self._tr(key, pct=pct)))
+
+        def task():
+            try:
+                results = repair_tools(progress)
+            except Exception as e:
+                results = {"repair": {"ok": False, "error": str(e)}}
+            failed = [f"{n}: {r['error']}" for n, r in results.items() if not r.get("ok")]
+            self.bridge.refresh_paths()
+
+            def done():
+                self.btn_repair_tools.configure(state="normal")
+                if failed:
+                    messagebox.showerror(self._tr("tools.repair"), self._tr("tools.repair_failed", details="\n".join(failed)))
+                else:
+                    messagebox.showinfo(self._tr("tools.repair"), self._tr("tools.repair_done"))
+                self.after(400, self._check_tools_background)
+            self.after(0, done)
+        threading.Thread(target=task, daemon=True).start()
 
     # =========================================================================
     # TAB 1: DASHBOARD & SPECS
@@ -1041,7 +1115,7 @@ class AndroidDoctorApp(ctk.CTk):
         self.lbl_storage_gain = ctk.CTkLabel(self.card_storage_gain, text=self._tr("ui.0_0_mb"), font=ctk.CTkFont(size=22, weight="bold"), text_color="#238636")
         self.lbl_storage_gain.pack(padx=10, pady=(0, 10))
 
-        # Standby Current Reduced Card
+        # Battery drain card (not measured)
         self.card_drain_gain = ctk.CTkFrame(comp_grid, fg_color="#161b22", corner_radius=8)
         self.card_drain_gain.grid(row=0, column=2, padx=(6, 0), sticky="nsew")
         ctk.CTkLabel(self.card_drain_gain, text=self._tr("gain_drain"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(padx=10, pady=(10, 2))
