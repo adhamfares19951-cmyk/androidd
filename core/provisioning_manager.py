@@ -4,6 +4,8 @@ from dataclasses import dataclass, asdict
 from typing import Optional, Dict, Any, Tuple
 from core.adb_bridge import ADBBridge
 
+from core.result import Msg, M
+
 logger = logging.getLogger("ProvisioningManager")
 
 
@@ -13,7 +15,7 @@ class ProvisioningStatus:
     is_user_setup_complete: bool = False
     raw_provisioned_val: str = "0"
     raw_setup_complete_val: str = "0"
-    status_summary: str = "Setup Incomplete"
+    status_summary: Any = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -37,11 +39,11 @@ class ProvisioningManager:
         status.is_user_setup_complete = (v2 == "1")
 
         if status.is_device_provisioned and status.is_user_setup_complete:
-            status.status_summary = "Fully Provisioned & Setup Completed"
+            status.status_summary = M("prov.complete")
         elif status.is_device_provisioned:
-            status.status_summary = "Device Provisioned (User Setup Pending)"
+            status.status_summary = M("prov.user_pending")
         else:
-            status.status_summary = "Setup Wizard Active / Incomplete"
+            status.status_summary = M("prov.incomplete")
 
         return status
 
@@ -50,10 +52,10 @@ class ProvisioningManager:
         results = []
 
         code1, out1, err1 = self.bridge.shell("settings put global device_provisioned 1", serial=serial, timeout=8)
-        results.append(f"device_provisioned=1: {'OK' if code1 == 0 else err1 or out1}")
+        results.append(f"device_provisioned=1: exit={code1} {err1 or out1}".strip())
 
         code2, out2, err2 = self.bridge.shell("settings put secure user_setup_complete 1", serial=serial, timeout=8)
-        results.append(f"user_setup_complete=1: {'OK' if code2 == 0 else err2 or out2}")
+        results.append(f"user_setup_complete=1: exit={code2} {err2 or out2}".strip())
 
         self.bridge.shell(
             "content insert --uri content://settings/secure --bind name:s:user_setup_complete --bind value:i:1 2>/dev/null",
@@ -66,17 +68,17 @@ class ProvisioningManager:
             serial=serial,
             timeout=8
         )
-        results.append(f"Launch Home Activity: {'Dispatched' if code_home == 0 else 'Failed'}")
+        results.append(f"am start HOME: exit={code_home}")
 
         success = (code1 == 0 and code2 == 0)
-        return success, " | ".join(results)
+        return success, M("prov.flags_result", output=" | ".join(results))
 
     def launch_settings_activity(self, serial: str) -> Tuple[bool, str]:
         logger.info(f"Launching Android Settings activity on device: {serial}")
         code, out, err = self.bridge.shell("am start -a android.settings.SETTINGS", serial=serial, timeout=8)
         if code == 0:
-            return True, "Settings activity launched successfully on device screen."
-        return False, f"Failed to launch Settings: {err or out}"
+            return True, M("prov.settings_opened")
+        return False, M("prov.settings_failed", output=err or out)
 
     def launch_browser_url(self, url: str, serial: str) -> Tuple[bool, str]:
         clean_url = url.strip()
@@ -85,5 +87,5 @@ class ProvisioningManager:
         logger.info(f"Opening URL {clean_url} on device: {serial}")
         code, out, err = self.bridge.shell(f"am start -a android.intent.action.VIEW -d '{clean_url}'", serial=serial, timeout=8)
         if code == 0:
-            return True, f"Browser URL launched: {clean_url}"
-        return False, f"Failed to open URL: {err or out}"
+            return True, M("prov.url_opened", url=clean_url)
+        return False, M("prov.url_failed", output=err or out)

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Any, Callable
 
 from core.adb_bridge import ADBBridge
-from core.result import Evidence, Status
+from core.result import Evidence, Status, Msg, M
 from core.readers import run_read
 from database.db_manager import DatabaseManager
 
@@ -49,7 +49,7 @@ class MaintenanceAction:
     after: Optional[float] = None
     delta: Optional[float] = None
     status: str = "UNKNOWN"   # PASS = command succeeded (and measured if measurable); FAIL = command failed
-    note: str = ""
+    note: Any = None
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -150,13 +150,13 @@ class RealSystemOptimizer:
             log_lines.append(f"[{time.strftime('%H:%M:%S')}] {msg}")
 
         if progress_callback:
-            progress_callback(5, "Reading free storage and memory (before)...")
+            progress_callback(5, M("maint.progress.before"))
         before = self.capture_metrics(serial)
         actions: List[MaintenanceAction] = []
 
         # 1. App cache trim: measured by free space on /data before/after
         if progress_callback:
-            progress_callback(20, "Step 1/3: pm trim-caches (measured)...")
+            progress_callback(20, M("maint.progress.step1"))
         trim = run_read(self.bridge, "pm trim-caches 999G", serial=serial, timeout=60)
         mid = self.capture_metrics(serial)
         a1 = MaintenanceAction(action_id="cache_trim", command="pm trim-caches 999G", exit_code=trim.exit_code,
@@ -164,41 +164,41 @@ class RealSystemOptimizer:
         a1.evidence = [trim.evidence()] + before.evidence[1:] + mid.evidence[1:]
         if trim.exit_code not in (0, None) or trim.status == Status.NEEDS_ROOT:
             a1.status = str(Status.FAIL if trim.status != Status.NEEDS_ROOT else Status.NEEDS_ROOT)
-            a1.note = "Command failed; no space change attributed."
+            a1.note = M("maint.note.trim_failed")
         elif a1.before is not None and a1.after is not None:
             a1.delta = round(a1.after - a1.before, 1)
             a1.status = str(Status.PASS)
-            a1.note = "Change in free /data space measured around the command (other apps writing at the same time also affect it)."
+            a1.note = M("maint.note.trim_measured")
         else:
             a1.status = str(Status.UNKNOWN)
-            a1.note = "Command ran but free space could not be read before and after."
+            a1.note = M("maint.note.trim_unmeasured")
         actions.append(a1)
         log_step(f"pm trim-caches: exit={trim.exit_code}, free /data {a1.before} -> {a1.after} MB (delta {a1.delta})")
 
         # 2. Android storage maintenance (includes fstrim on the system's own schedule) - not measurable
         if progress_callback:
-            progress_callback(50, "Step 2/3: sm idle-maint run (not measurable)...")
+            progress_callback(50, M("maint.progress.step2"))
         maint = run_read(self.bridge, "sm idle-maint run", serial=serial, timeout=60)
         a2 = MaintenanceAction(action_id="idle_maintenance", command="sm idle-maint run", exit_code=maint.exit_code,
                                measured=False, evidence=[maint.evidence()])
         a2.status = _command_status(maint)
-        a2.note = "Requests Android's storage maintenance job. Its effect is not measurable here."
+        a2.note = M("maint.note.idle_maint")
         actions.append(a2)
         log_step(f"sm idle-maint run: exit={maint.exit_code}")
 
         # 3. Background app compilation job - not measurable
         if progress_callback:
-            progress_callback(70, "Step 3/3: cmd package bg-dexopt-job (not measurable, may take minutes)...")
+            progress_callback(70, M("maint.progress.step3"))
         dex = run_read(self.bridge, "cmd package bg-dexopt-job", serial=serial, timeout=300)
         a3 = MaintenanceAction(action_id="bg_dexopt", command="cmd package bg-dexopt-job", exit_code=dex.exit_code,
                                measured=False, evidence=[dex.evidence()])
         a3.status = _command_status(dex)
-        a3.note = "Runs Android's background app compilation job now. Its effect is not measurable here."
+        a3.note = M("maint.note.dexopt")
         actions.append(a3)
         log_step(f"bg-dexopt-job: exit={dex.exit_code}")
 
         if progress_callback:
-            progress_callback(90, "Reading free storage and memory (after)...")
+            progress_callback(90, M("maint.progress.after"))
         after = self.capture_metrics(serial)
 
         result = OptimizationResult(
@@ -228,6 +228,5 @@ class RealSystemOptimizer:
             logger.warning(f"Could not store maintenance log: {e}")
 
         if progress_callback:
-            delta_txt = f"{a1.delta} MB" if a1.delta is not None else "UNKNOWN"
-            progress_callback(100, f"Done. Measured change in free storage after cache trim: {delta_txt}.")
+            progress_callback(100, M("maint.progress.done", delta=a1.delta))
         return result

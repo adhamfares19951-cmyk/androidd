@@ -4,6 +4,8 @@ import logging
 from typing import Dict, Any, Optional, Tuple
 from core.adb_bridge import ADBBridge
 
+from core.result import Msg, M
+
 logger = logging.getLogger("TouchMatrix")
 
 HTML_TOUCH_GRID_TEMPLATE = """<!DOCTYPE html>
@@ -26,14 +28,13 @@ HTML_TOUCH_GRID_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
     <div id="header">
-        <span id="title">Android Doctor Pro — Touch Test</span>
+        <span id="title">&#9995;</span>
         <span id="score">0% (0/112)</span>
     </div>
     <div id="grid-container"></div>
     <div id="modal">
-        <h2>✓ 100% Digitizer Coverage Passed</h2>
-        <p>No dead zones or broken touch lines detected.</p>
-        <button onclick="resetGrid()">Repeat Test</button>
+        <h2>&#10003; 100%</h2>
+        <button onclick="resetGrid()">&#8635;</button>
     </div>
 
     <script>
@@ -117,7 +118,7 @@ class TouchMatrixTester:
                 ok, msg = self.bridge.push(local_temp, remote_path, serial=serial)
 
             if not ok:
-                return False, f"Failed to push touch test HTML to phone: {msg}"
+                return False, M("touch.push_failed", output=msg)
 
             # Open via Chrome / default browser intent
             launch_cmd = (
@@ -139,7 +140,7 @@ class TouchMatrixTester:
             self.bridge.shell("settings put system pointer_location 1", serial=serial, timeout=4)
 
             logger.info(f"Touch matrix test launched on device {serial}")
-            return True, f"Touch Digitizer Matrix launched on device. Swipe across all squares on the phone screen."
+            return True, M("touch.started")
         except Exception as e:
             return False, str(e)
 

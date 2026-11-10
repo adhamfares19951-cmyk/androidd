@@ -7,7 +7,7 @@ One parser shared by every storage-health check so the thresholds are identical 
 import re
 from typing import List, Optional, Tuple
 
-from core.result import Status
+from core.result import Status, Msg, M
 
 # DEVICE_LIFE_TIME_EST_TYP_A/B: value -> (lower %, upper %) of device life time used
 LIFE_TIME_RANGES = {
@@ -16,10 +16,11 @@ LIFE_TIME_RANGES = {
     0x0B: (100, None),
 }
 
+# pre-EOL values -> translation keys
 PRE_EOL_LABELS = {
-    0x01: "Normal",
-    0x02: "Warning: 80% of reserved blocks consumed",
-    0x03: "Urgent: 90% of reserved blocks consumed",
+    0x01: "jedec.pre_eol.normal",
+    0x02: "jedec.pre_eol.warning",
+    0x03: "jedec.pre_eol.urgent",
 }
 
 # FAIL thresholds: >= 80-90% of life time used, or pre-EOL warning or worse.
@@ -60,15 +61,15 @@ def parse_pre_eol(text: Optional[str]) -> Optional[int]:
     return v if v in PRE_EOL_LABELS else None
 
 
-def life_time_label(value: int) -> str:
+def life_time_label(value: int) -> Msg:
     low, high = LIFE_TIME_RANGES[value]
     if high is None:
-        return f"0x{value:02x}: exceeded estimated device life time"
-    return f"0x{value:02x}: {low}% - {high}% of device life time used"
+        return M("jedec.life.exceeded", code=f"0x{value:02x}")
+    return M("jedec.life.range", code=f"0x{value:02x}", low=low, high=high)
 
 
-def pre_eol_label(value: int) -> str:
-    return f"0x{value:02x}: {PRE_EOL_LABELS[value]}"
+def pre_eol_label(value: int) -> Msg:
+    return M(PRE_EOL_LABELS[value], code=f"0x{value:02x}")
 
 
 def evaluate(life_values: List[int], pre_eol: Optional[int]) -> Status:

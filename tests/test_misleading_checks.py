@@ -19,7 +19,7 @@ from core.rescue_center import RescueCenter, WHATSAPP_MEDIA_PATHS, WHATSAPP_NOTE
 from core.malware_hunter import MalwareHunter, parse_granted_permissions
 from database.db_manager import DatabaseManager
 from ui.report_exporter import DiagnosticReportExporter
-from ui.i18n import STRINGS
+from ui.i18n import STRINGS, render
 
 NO_CHARGER = (0, "Current Battery Service state:\n  AC powered: false\n  USB powered: false\n  Wireless powered: false\n  Dock powered: false\n  level: 80", "")
 WITH_CHARGER = (0, "  AC powered: false\n  USB powered: true\n  Wireless powered: false\n  level: 80", "")
@@ -71,7 +71,9 @@ class TestScreenOffCurrent(_DbCase):
         r = self.run_test(FakeBridge({"dumpsys battery": NO_CHARGER, "battery/current_now": (0, "-400000", "")}))
         self.assertEqual(r.status, "FAIL")
         self.assertGreaterEqual(len(r.possible_causes), 2)
-        self.assertNotRegex(r.diagnosis.lower(), r"short|leak")
+        self.assertEqual(r.diagnosis.key, "leak.high")
+        for lang in ("en", "ar"):
+            self.assertNotRegex(render(r.diagnosis, lang).lower(), r"short|leak|شورت|تسريب")
 
     def test_unreadable_current_is_never_averaged(self):
         r = self.run_test(FakeBridge({"dumpsys battery": NO_CHARGER, "battery/current_now": PERMISSION}))
@@ -289,10 +291,14 @@ class TestNoMisleadingWording(unittest.TestCase):
     AR = re.compile(r"التجسس|تجسس|موثق|المعتمد|شبحي|تسريب|شورت|الفيروسات|التسريع")
 
     def test_i18n_values(self):
+        # The honest disclaimer "not (digitally) signed" / "غير موقّع" is allowed; any claim of signing is not.
         for key, value in STRINGS["en"].items():
-            self.assertIsNone(self.EN.search(value), f"en.{key}")
+            claim = re.sub(r"not (digitally )?signed", "", value, flags=re.I)
+            self.assertIsNone(self.EN.search(claim), f"en.{key}")
         for key, value in STRINGS["ar"].items():
-            self.assertIsNone(self.AR.search(value), f"ar.{key}")
+            claim = value.replace("غير موقّع", "")
+            self.assertIsNone(self.AR.search(claim), f"ar.{key}")
+            self.assertNotIn("موقّع", claim, f"ar.{key}")
 
 
 if __name__ == "__main__":

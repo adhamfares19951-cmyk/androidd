@@ -8,6 +8,7 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Any, Callable
 from setup_bins import get_scrcpy_path, CREATE_NO_WINDOW
 from core.adb_bridge import ADBBridge
+from core.result import Msg, M
 
 logger = logging.getLogger("RescueCenter")
 
@@ -16,7 +17,7 @@ WHATSAPP_MEDIA_PATHS = (
     "/sdcard/Android/media/com.whatsapp/WhatsApp/Media",
     "/sdcard/WhatsApp/Media",
 )
-WHATSAPP_NOTE = "WhatsApp chats are not copied: their databases are encrypted. Use WhatsApp's own chat backup to move messages."
+WHATSAPP_NOTE = M("rescue.whatsapp_note")
 
 
 @dataclass
@@ -53,10 +54,10 @@ class RescueCenter:
     ) -> Tuple[bool, str]:
         with self._proc_lock:
             if self._scrcpy_process is not None and self._scrcpy_process.poll() is None:
-                return True, "scrcpy screen mirror is already running."
+                return True, M("scrcpy.already_running")
 
             if not os.path.exists(self.scrcpy_path):
-                return False, f"scrcpy binary not found at {self.scrcpy_path}. Please run setup_bins.py."
+                return False, M("scrcpy.not_found", path=self.scrcpy_path)
 
             cmd = [self.scrcpy_path]
             if serial:
@@ -80,7 +81,7 @@ class RescueCenter:
                     stderr=subprocess.PIPE,
                     text=True
                 )
-                return True, "scrcpy screen mirror launched successfully."
+                return True, M("scrcpy.started")
             except Exception as e:
                 logger.error(f"Failed to launch scrcpy: {e}")
                 return False, str(e)
@@ -94,7 +95,7 @@ class RescueCenter:
         """
         with self._proc_lock:
             if not os.path.exists(self.scrcpy_path):
-                return False, f"scrcpy binary not found at {self.scrcpy_path}. Please run setup_bins.py."
+                return False, M("scrcpy.not_found", path=self.scrcpy_path)
 
             cmd = [self.scrcpy_path, "--otg"]
             if serial:
@@ -110,7 +111,7 @@ class RescueCenter:
                     stderr=subprocess.PIPE,
                     text=True
                 )
-                return True, "scrcpy OTG HID mode launched! Control your phone using your PC mouse and keyboard (No ADB required)."
+                return True, M("scrcpy.otg_started")
             except Exception as e:
                 logger.error(f"Failed to launch scrcpy OTG mode: {e}")
                 return False, str(e)
@@ -142,15 +143,15 @@ class RescueCenter:
                     self._scrcpy_process.terminate()
                     self._scrcpy_process.wait(timeout=3)
                     self._scrcpy_process = None
-                    return True, "scrcpy stopped successfully."
+                    return True, M("scrcpy.stopped")
                 except Exception as e:
                     try:
                         self._scrcpy_process.kill()
                         self._scrcpy_process = None
-                        return True, "scrcpy killed forcefully."
+                        return True, M("scrcpy.killed")
                     except Exception as ke:
-                        return False, f"Failed to stop scrcpy: {ke}"
-            return True, "scrcpy is not running."
+                        return False, M("scrcpy.stop_failed", error=str(ke))
+            return True, M("scrcpy.not_running")
 
     def is_screen_mirror_running(self) -> bool:
         with self._proc_lock:
@@ -217,19 +218,19 @@ class RescueCenter:
         """
         has_cache, evidence = self.has_cache_partition(serial)
         if has_cache is not True:
-            return False, f"{evidence}\nNo cache partition confirmed; nothing was erased."
+            return False, M("cache.none_confirmed", evidence=evidence)
         logger.info(f"Erasing cache partition on {serial}...")
         code, out, err = self.bridge.run_fastboot(["erase", "cache"], serial=serial, timeout=30)
         text = (out or err or "").strip()
-        return code == 0, f"{evidence}\nfastboot erase cache -> exit={code}: {text[:300]}"
+        return code == 0, M("cache.erase_result", evidence=evidence, exit=code, output=text[:300])
 
     def flash_partition(self, partition: str, file_path: str, serial: Optional[str] = None) -> Tuple[bool, str]:
         if not os.path.exists(file_path):
-            return False, f"Image file not found: {file_path}"
+            return False, M("flash.file_missing", path=file_path)
 
         clean_partition = partition.strip().lower()
         if clean_partition not in ["boot", "recovery", "system", "vendor", "vbmeta", "dtbo", "cache", "userdata"]:
-            return False, f"Refusing to flash untrusted or dangerous partition: {partition}"
+            return False, M("flash.refused", partition=partition)
 
         logger.info(f"Flashing partition '{clean_partition}' with {file_path} on {serial}...")
         code, out, err = self.bridge.run_fastboot(["flash", clean_partition, file_path], serial=serial, timeout=120)
@@ -272,11 +273,12 @@ class RescueCenter:
         # Resolve paths
         paths_to_pull = bundles.get(cat_lower)
         if not paths_to_pull:
-            if "photo" in cat_lower or "صور" in cat_lower:
+            # the UI passes a category id (first word of the combo entry); only English ids are matched
+            if "photo" in cat_lower:
                 paths_to_pull = bundles["all_photos"]
-            elif "what" in cat_lower or "واتس" in cat_lower:
+            elif "what" in cat_lower:
                 paths_to_pull = bundles["whatsapp"]
-            elif "full" in cat_lower or "شامل" in cat_lower or "كل" in cat_lower:
+            elif "full" in cat_lower:
                 paths_to_pull = bundles["full_storage"]
             else:
                 paths_to_pull = ["/sdcard/DCIM", "/sdcard/Pictures"]
@@ -293,21 +295,21 @@ class RescueCenter:
             os.makedirs(sub_dest, exist_ok=True)
 
             if progress_callback:
-                progress_callback(f"[{idx}/{total_paths}] جاري سحب: {remote_path}...")
+                progress_callback(M("rescue.progress.pulling", idx=idx, total=total_paths, path=remote_path))
 
             ok, out = self.bridge.pull(remote_path, sub_dest, serial=serial)
             if ok:
                 successes += 1
-                logs.append(f"✓ {folder_name}: تم السحب بنجاح")
+                logs.append(M("rescue.pulled", name=folder_name))
             else:
-                logs.append(f"• {folder_name}: {out.strip() or 'تجاوز (المجلد غير موجود على الهاتف)'}")
+                logs.append(M("rescue.skipped", name=folder_name, output=out.strip() or "-"))
 
         if any(p in WHATSAPP_MEDIA_PATHS for p in paths_to_pull):
-            logs.append(f"i {WHATSAPP_NOTE}")
+            logs.append(WHATSAPP_NOTE)
         all_ok = successes > 0
-        final_summary = "\n".join(logs)
+        final_summary = logs
         if progress_callback:
-            progress_callback(f"اكتملت العملية: تم سحب المجلدات إلى:\n{local_dest_dir}")
+            progress_callback(M("rescue.progress.done", path=local_dest_dir))
 
         return all_ok, final_summary
 
@@ -318,7 +320,7 @@ class RescueCenter:
         """
         slot = target_slot.strip().lower()
         if slot not in ["a", "b", "_a", "_b"]:
-            return False, f"Invalid target slot: '{target_slot}'. Must be 'a' or 'b'."
+            return False, M("slot.invalid", slot=target_slot)
 
         slot_clean = slot.lstrip("_")
         logger.info(f"Switching active slot to '{slot_clean}' on {serial or 'default device'}...")
@@ -327,16 +329,15 @@ class RescueCenter:
         code, out, err = self.bridge.run_fastboot(["--set-active=" + slot_clean], serial=serial, timeout=15)
         combined = f"{out}\n{err}".strip()
         if code == 0 and "error" not in combined.lower():
-            return True, f"Active slot successfully changed to: slot {slot_clean.upper()}\n{combined}"
+            return True, M("slot.changed", slot=slot_clean.upper(), output=combined)
 
         # Fallback syntax for older fastboot implementations: fastboot set_active <slot>
         code2, out2, err2 = self.bridge.run_fastboot(["set_active", slot_clean], serial=serial, timeout=15)
         combined2 = f"{out2}\n{err2}".strip()
         if code2 == 0 and "error" not in combined2.lower():
-            return True, f"Active slot successfully changed to: slot {slot_clean.upper()}\n{combined2}"
+            return True, M("slot.changed", slot=slot_clean.upper(), output=combined2)
 
-        error_msg = combined2 or combined or "Fastboot failed to set active slot."
-        return False, f"Slot switch failed: {error_msg}"
+        return False, M("slot.failed", output=combined2 or combined or "-")
 
     def check_anti_rollback(self, serial: Optional[str] = None) -> Tuple[bool, str, int]:
         """
@@ -359,14 +360,9 @@ class RescueCenter:
                 arb_index = int(m2.group(1))
 
         if arb_index >= 0:
-            msg = (
-                f"Anti-Rollback Protection Index: ARB={arb_index}\n"
-                f"[CRITICAL SAFETY WARNING] Do NOT flash any ROM or bootloader image "
-                f"with an ARB index LOWER than {arb_index}, otherwise device will permanently hard-brick into EDL 9008."
-            )
-            return True, msg, arb_index
+            return True, M("arb.index", index=arb_index), arb_index
         else:
-            return False, f"Could not determine Anti-Rollback index (Device returned: {combined.strip() or 'Unknown'})", -1
+            return False, M("arb.unknown", output=combined.strip() or "-"), -1
 
     def sideload_firmware(
         self,
@@ -380,10 +376,10 @@ class RescueCenter:
         """
         import re
         if not os.path.exists(file_path):
-            return False, f"Firmware file not found: {file_path}"
+            return False, M("sideload.file_missing", path=file_path)
 
         if not file_path.lower().endswith(".zip"):
-            return False, "Sideload package must be a valid .zip archive."
+            return False, M("sideload.not_zip")
 
         cmd = [self.bridge.adb_path]
         if serial:
@@ -392,7 +388,7 @@ class RescueCenter:
 
         logger.info(f"Starting ADB Sideload: {' '.join(cmd)}")
         if progress_callback:
-            progress_callback(0, f"Initializing sideload for {os.path.basename(file_path)}...")
+            progress_callback(0, M("sideload.progress.start", name=os.path.basename(file_path)))
 
         try:
             process = subprocess.Popen(
@@ -418,10 +414,10 @@ class RescueCenter:
                     pct = int(m.group(1))
                     last_pct = pct
                     if progress_callback:
-                        progress_callback(pct, f"Serving OTA package: {pct}% complete...")
+                        progress_callback(pct, M("sideload.progress.pct", pct=pct))
                 elif "Total xfer:" in line_clean or "100%" in line_clean:
                     if progress_callback:
-                        progress_callback(100, "Sideload package transfer complete (100%).")
+                        progress_callback(100, M("sideload.progress.transferred"))
 
             process.stdout.close()
             return_code = process.wait()
@@ -429,12 +425,12 @@ class RescueCenter:
             success = (return_code == 0)
             log_summary = "\n".join(full_logs[-15:])
             if success:
-                msg = f"ADB Sideload completed successfully (Exit code: 0).\n{log_summary}"
+                msg = M("sideload.done", log=log_summary)
                 if progress_callback:
-                    progress_callback(100, "Sideload finished successfully.")
+                    progress_callback(100, M("sideload.progress.finished"))
                 return True, msg
             else:
-                msg = f"ADB Sideload failed with code {return_code}.\n{log_summary}"
+                msg = M("sideload.failed", code=return_code, log=log_summary)
                 return False, msg
 
         except Exception as e:
@@ -464,7 +460,7 @@ class RescueCenter:
         os.makedirs(backup_dir, exist_ok=True)
 
         if progress_callback:
-            progress_callback(f"Starting complete customer backup into:\n{backup_dir}")
+            progress_callback(M("backup.progress.start", path=backup_dir))
 
         log_lines = []
 
@@ -482,19 +478,19 @@ class RescueCenter:
         for name, remote_p in media_targets:
             local_target = os.path.join(backup_dir, name)
             if progress_callback:
-                progress_callback(f"Extracting {name} ({remote_p})...")
+                progress_callback(M("backup.progress.item", name=name, path=remote_p))
             ok, out = self.bridge.pull(remote_p, local_target, serial=serial)
             if ok:
                 total_pulled += 1
-                log_lines.append(f"✓ {name}: Extracted successfully")
+                log_lines.append(M("rescue.pulled", name=name))
             else:
-                log_lines.append(f"• {name}: Skipped ({out.strip() or 'Not on device'})")
+                log_lines.append(M("rescue.skipped", name=name, output=out.strip() or "-"))
 
-        log_lines.append(f"i {WHATSAPP_NOTE}")
+        log_lines.append(WHATSAPP_NOTE)
 
         # 2. Extract Contacts where permitted
         if progress_callback:
-            progress_callback("Extracting contacts database...")
+            progress_callback(M("backup.progress.contacts"))
         contacts_code, contacts_out, _ = self.bridge.shell(
             "content query --uri content://contacts/phones/ --projection display_name:number 2>/dev/null",
             serial=serial,
@@ -512,11 +508,11 @@ class RescueCenter:
                         num_val = m_num.group(1).strip() if m_num else ""
                         if num_val:
                             f.write(f'"{name_val}","{num_val}"\n')
-                log_lines.append("✓ Contacts: Exported to contacts_dump.csv")
+                log_lines.append(M("backup.contacts_ok", file="contacts_dump.csv"))
             except Exception as e:
-                log_lines.append(f"• Contacts parse notice: {e}")
+                log_lines.append(M("backup.parse_error", item="contacts", error=str(e)))
         else:
-            log_lines.append("• Contacts: Requires elevated permission / contacts app restricted")
+            log_lines.append(M("backup.contacts_blocked"))
 
         # 3. Extract SMS where permitted
         sms_code, sms_out, _ = self.bridge.shell(
@@ -536,12 +532,12 @@ class RescueCenter:
                         body_val = m_body.group(1).strip() if m_body else ""
                         if addr_val or body_val:
                             f.write(f'"{addr_val}","","{body_val}"\n')
-                log_lines.append("✓ SMS Inbox: Exported to sms_inbox_dump.csv")
+                log_lines.append(M("backup.sms_ok", file="sms_inbox_dump.csv"))
             except Exception as e:
-                log_lines.append(f"• SMS parse notice: {e}")
+                log_lines.append(M("backup.parse_error", item="sms", error=str(e)))
 
-        summary = "\n".join(log_lines)
+        summary = log_lines
         if progress_callback:
-            progress_callback(f"Customer Backup Complete!\nSaved to: {backup_dir}")
+            progress_callback(M("backup.progress.done", path=backup_dir))
 
         return True, summary, backup_dir

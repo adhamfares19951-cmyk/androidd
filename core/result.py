@@ -124,3 +124,41 @@ def aggregate_status(statuses: List[Any]) -> Status:
     if any(v in (Status.UNKNOWN, Status.NEEDS_ROOT) for v in values):
         return Status.UNKNOWN
     return Status.PASS
+
+
+@dataclass(frozen=True)
+class Msg:
+    """
+    A user-facing message: a translation key plus format arguments.
+    Core code never builds display sentences; the UI renders Msg via ui.i18n.render(msg, lang).
+    Arguments may be numbers, strings or other Msg objects.
+    """
+    key: str
+    args: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"key": self.key, "args": {k: (v.to_dict() if isinstance(v, Msg) else v) for k, v in self.args.items()}}
+
+    def __str__(self) -> str:
+        return _message_renderer(self) if _message_renderer else self.key
+
+    def __format__(self, spec: str) -> str:
+        return format(str(self), spec)
+
+
+class Lines(list):
+    """A list of messages shown one per line (e.g. a step-by-step log)."""
+
+
+# Set by the UI / CLI (ui.i18n.set_current_language) so str(msg) gives text in the chosen language.
+_message_renderer = None
+
+
+def set_message_renderer(fn) -> None:
+    global _message_renderer
+    _message_renderer = fn
+
+
+def M(key: str, **args: Any) -> Msg:
+    """Shorthand constructor: M("hw.wifi.enabled", ssid="Home")."""
+    return Msg(key, dict(args))

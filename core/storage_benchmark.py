@@ -5,7 +5,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, Optional, List
 
 from core.adb_bridge import ADBBridge
-from core.result import Evidence, Status
+from core.result import Evidence, Status, Msg, M
 from core.readers import ReadResult, run_read, read_node, failure_status, parse_int
 from core import jedec
 
@@ -39,9 +39,9 @@ class StorageHealthReport:
     storage_capacity_gb: Optional[float] = None
 
     # JEDEC wear registers
-    life_time_type_a: str = "UNKNOWN"
-    life_time_type_b: str = "UNKNOWN"
-    pre_eol_status: str = "UNKNOWN"
+    life_time_type_a: Any = "UNKNOWN"  # Msg once read
+    life_time_type_b: Any = "UNKNOWN"
+    pre_eol_status: Any = "UNKNOWN"
     estimated_wear_pct: Optional[int] = None  # upper bound of the worst JEDEC range, None if not read
     is_failing_or_degraded: bool = False
     status: str = "UNKNOWN"            # "PASS" | "FAIL" | "UNKNOWN" | "NEEDS_ROOT"
@@ -50,9 +50,10 @@ class StorageHealthReport:
     read_speed_mbps: Optional[float] = None
     write_speed_mbps: Optional[float] = None
     benchmark_duration_sec: Optional[float] = None
-    benchmark_status: str = "Not run"
+    benchmark_status: str = "NOT_RUN"   # NOT_RUN / COMPLETED / UNKNOWN
 
-    diagnosis: str = ""
+    diagnosis: Any = None
+    benchmark_note: Any = None
     raw_logs: List[str] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
 
@@ -65,7 +66,7 @@ class StorageHealthReport:
         return self.read_speed_mbps
 
     @property
-    def pre_eol_info(self) -> str:
+    def pre_eol_info(self) -> Any:
         return self.pre_eol_status
 
     @property
@@ -170,14 +171,13 @@ class StorageBenchmark:
 
         if status == Status.FAIL:
             report.is_failing_or_degraded = True
-            report.diagnosis = (f"Wear registers report high wear (up to {report.estimated_wear_pct}% of rated life, "
-                                f"pre-EOL: {report.pre_eol_status}). Possible cause: flash near end of endurance; back up data.")
+            report.diagnosis = M("storagehealth.high", pct=report.estimated_wear_pct, eol=report.pre_eol_status)
         elif status == Status.PASS:
-            report.diagnosis = f"Wear registers read: up to {report.estimated_wear_pct}% of rated life used, pre-EOL: {report.pre_eol_status}."
+            report.diagnosis = M("storagehealth.ok", pct=report.estimated_wear_pct, eol=report.pre_eol_status)
         elif status == Status.NEEDS_ROOT:
-            report.diagnosis = f"Wear registers for {report.storage_type} are blocked without root."
+            report.diagnosis = M("storagehealth.needs_root", type=report.storage_type)
         else:
-            report.diagnosis = f"Wear registers are not exposed (or unreadable) on this {report.storage_type} device."
+            report.diagnosis = M("storagehealth.not_exposed", type=report.storage_type)
         return report
 
     def run_speed_benchmark(self, serial: str, test_size_mb: int = 40) -> StorageHealthReport:
@@ -200,11 +200,10 @@ class StorageBenchmark:
 
         if report.write_speed_mbps is None and report.read_speed_mbps is None:
             report.benchmark_status = "UNKNOWN"
-            report.diagnosis += " | Benchmark: dd output could not be parsed."
+            report.benchmark_note = M("storagehealth.bench_unparsed")
         else:
-            report.benchmark_status = "Completed"
-            report.diagnosis += (f" | Benchmark: write {report.write_speed_mbps} MB/s, read {report.read_speed_mbps} MB/s "
-                                 f"(read may be served from page cache).")
+            report.benchmark_status = "COMPLETED"
+            report.benchmark_note = M("storagehealth.bench_result", write=report.write_speed_mbps, read=report.read_speed_mbps)
         return report
 
     # Name used by the UI

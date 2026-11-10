@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Any
 from core.adb_bridge import ADBBridge
-from core.result import Evidence, Status, CheckResult, status_from_read, aggregate_status
+from core.result import Evidence, Status, CheckResult, status_from_read, aggregate_status, Msg, M
 from core.readers import ReadResult, run_read, read_node, failure_status, parse_int, parse_bool_feature
 
 logger = logging.getLogger("HardwareTester")
@@ -44,7 +44,7 @@ class CameraInfo:
     orientation: Optional[int] = None
     flash_available: Optional[bool] = None
     status: str = "Reported"
-    details: str = ""
+    details: Any = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -72,8 +72,8 @@ class FingerprintDiagnostics:
     is_flex_disconnected: bool = False
     error_status: str = "UNKNOWN"
     status: str = "UNKNOWN"
-    diagnosis: str = ""
-    possible_causes: List[str] = field(default_factory=list)
+    diagnosis: Any = None
+    possible_causes: List[Msg] = field(default_factory=list)
     raw_details: str = ""
     evidence: List[Evidence] = field(default_factory=list)
 
@@ -93,7 +93,7 @@ class PhysicalButtonsDiagnostics:
     is_any_key_stuck: bool = False
     stuck_keys: List[str] = field(default_factory=list)
     status: str = "UNKNOWN"
-    diagnosis: str = ""
+    diagnosis: Any = None
     captured_events: List[str] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
 
@@ -116,8 +116,8 @@ class SIMBasebandDiagnostics:
     is_rf_baseband_faulty: bool = False
     is_tray_det_faulty: bool = False
     status: str = "UNKNOWN"
-    diagnosis: str = ""
-    possible_causes: List[str] = field(default_factory=list)
+    diagnosis: Any = None
+    possible_causes: List[Msg] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -138,8 +138,8 @@ class WiFiDiagnostics:
     driver_status: str = "UNKNOWN"
     is_hardware_faulty: bool = False
     status: str = "UNKNOWN"
-    diagnosis: str = ""
-    possible_causes: List[str] = field(default_factory=list)
+    diagnosis: Any = None
+    possible_causes: List[Msg] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -157,8 +157,8 @@ class BluetoothDiagnostics:
     ble_supported: Optional[bool] = None
     is_hardware_faulty: bool = False
     status: str = "UNKNOWN"
-    diagnosis: str = ""
-    possible_causes: List[str] = field(default_factory=list)
+    diagnosis: Any = None
+    possible_causes: List[Msg] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -177,7 +177,7 @@ class PeripheralChipsDiagnostics:
     nfc_status: str = "UNKNOWN"
     usb_otg_supported: Optional[bool] = None
     status: str = "UNKNOWN"
-    diagnosis: str = ""
+    diagnosis: Any = None
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -196,8 +196,8 @@ class DisplayBacklightDiagnostics:
     is_backlight_faulty: bool = False
     is_panel_disconnected: bool = False
     status: str = "UNKNOWN"
-    diagnosis: str = ""
-    possible_causes: List[str] = field(default_factory=list)
+    diagnosis: Any = None
+    possible_causes: List[Msg] = field(default_factory=list)
     dsi_error_logs: List[str] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
 
@@ -217,8 +217,8 @@ class AudioCodecReport:
     codec_chip_name: str = "UNKNOWN"
     is_codec_faulty: bool = False
     status: str = "UNKNOWN"
-    diagnosis: str = ""
-    possible_causes: List[str] = field(default_factory=list)
+    diagnosis: Any = None
+    possible_causes: List[Msg] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -236,7 +236,7 @@ class DisplayPanelInfo:
     verified_boot_state: str = "UNKNOWN"
     vbmeta_device_state: str = "UNKNOWN"
     status: str = "UNKNOWN"
-    diagnosis: str = ""
+    diagnosis: Any = None
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -266,7 +266,7 @@ class HardwareAuditReport:
     vibrator_functional: Optional[bool] = None  # software cannot sense vibration; confirmed by the technician only
     pointer_location_active: bool = False
     check_statuses: Dict[str, str] = field(default_factory=dict)
-    summary: str = ""
+    summary: Any = None
     status: str = "UNKNOWN"
     evidence: List[Evidence] = field(default_factory=list)
 
@@ -291,7 +291,7 @@ class HardwareAuditReport:
             "vibrator_functional": self.vibrator_functional,
             "pointer_location_active": self.pointer_location_active,
             "check_statuses": dict(self.check_statuses),
-            "summary": self.summary,
+            "summary": self.summary.to_dict() if isinstance(self.summary, Msg) else self.summary,
             "status": self.status,
             "evidence": _ev_dict(self.evidence)
         }
@@ -413,10 +413,10 @@ class HardwareTester:
             n = re.search(r"Number of camera devices:\s*(\d+)", res.text)
             if n:
                 for i in range(int(n.group(1))):
-                    cameras.append(CameraInfo(camera_id=str(i), details="count reported; per-camera details not parsed"))
+                    cameras.append(CameraInfo(camera_id=str(i), details=M("camera.count_only")))
         for c in cameras:
             if not c.details:
-                c.details = f"Lens facing: {c.facing}"
+                c.details = M("camera.facing_detail", facing=M(f"camera.facing.{c.facing}"))
         return cameras
 
     def audit_audio(self, serial: str) -> AudioSubsystemInfo:
@@ -462,24 +462,24 @@ class HardwareTester:
             fp.status = str(Status.FAIL)
             fp.is_functional = False
             fp.error_status = "HW_UNAVAILABLE"
-            fp.diagnosis = "Fingerprint service reports the hardware as unavailable."
-            fp.possible_causes = ["Disconnected or damaged fingerprint flex cable", "Damaged sensor", "Sensor firmware/HAL failure"]
+            fp.diagnosis = M("fp.hw_unavailable")
+            fp.possible_causes = [M("fp.cause.flex"), M("fp.cause.sensor"), M("fp.cause.firmware")]
         elif dfp.service_missing and declared:
             fp.status = str(Status.FAIL)
             fp.error_status = "SERVICE_MISSING"
-            fp.diagnosis = "The device declares a fingerprint sensor but the fingerprint service is not running."
-            fp.possible_causes = ["Fingerprint HAL failed to start", "Sensor not detected at boot", "Corrupted vendor firmware"]
+            fp.diagnosis = M("fp.service_missing")
+            fp.possible_causes = [M("fp.cause.hal"), M("fp.cause.not_detected"), M("fp.cause.vendor_fw")]
         elif sensor_reported and dfp.ok:
             fp.status = str(Status.PASS)
             fp.is_detected = True
             fp.error_status = "OK"
-            fp.diagnosis = "Fingerprint sensor is reported by the fingerprint service. A touch/enrolment test is still needed to confirm it works."
+            fp.diagnosis = M("fp.reported")
         elif declared is False:
             fp.status = str(Status.UNKNOWN)
-            fp.diagnosis = "The device does not declare a fingerprint sensor."
+            fp.diagnosis = M("fp.not_declared")
         else:
             fp.status = str(failure_status([dfp, dbio]))
-            fp.diagnosis = "Fingerprint sensor state could not be determined from the service output."
+            fp.diagnosis = M("fp.unknown")
         return fp
 
     # ------------------------------------------------------------------
@@ -509,7 +509,7 @@ class HardwareTester:
             if {"DOWN", "UP"} <= seen[key]:
                 setattr(diag, attr, str(Status.PASS))
             elif "DOWN" in seen[key]:
-                setattr(diag, attr, "DOWN without UP during capture")
+                setattr(diag, attr, "DOWN_NO_UP")
                 diag.stuck_keys.append(key)
             else:
                 setattr(diag, attr, "NOT_PRESSED")
@@ -520,18 +520,19 @@ class HardwareTester:
             diag.status = str(aggregate_status(key_statuses))
             diag.is_any_key_stuck = bool(diag.stuck_keys)
             tested = [k for k in seen if {"DOWN", "UP"} <= seen[k]]
-            diag.diagnosis = f"Keys pressed and released during capture: {', '.join(tested) or 'none'}."
+            diag.diagnosis = M("keys.tested", keys=", ".join(tested) or "-")
             if diag.stuck_keys:
-                diag.diagnosis += f" Pressed but not released before capture ended: {', '.join(diag.stuck_keys)} (possible stuck key or still held)."
+                diag.possible_causes = [M("keys.cause.stuck", keys=", ".join(diag.stuck_keys))]
         else:
             st = res.status
             # timeout(1) ends getevent with exit 124: that is a normal end of capture, not an error
             diag.status = str(st)
             if st == Status.NEEDS_ROOT:
-                diag.diagnosis = "getevent could not open input devices (permission denied)."
+                diag.diagnosis = M("keys.permission")
             else:
                 err = (res.stderr or "").strip()
-                diag.diagnosis = f"No key events captured. Press Vol+, Vol- and Power during the {capture_seconds}s capture." + (f" Error: {err}" if err and res.exit_code not in (0, 124) else "")
+                diag.diagnosis = M("keys.no_events", seconds=capture_seconds,
+                                   error=err if err and res.exit_code not in (0, 124) else "-")
         return diag
 
     # ------------------------------------------------------------------
@@ -569,33 +570,32 @@ class HardwareTester:
 
         if diag.has_telephony_feature is False:
             diag.status = str(Status.UNKNOWN)
-            diag.diagnosis = "The device does not declare telephony (Wi-Fi only); SIM/baseband not applicable."
+            diag.diagnosis = M("sim.no_telephony")
             return diag
         # Empty baseband only counts as a finding when the radio stack is up (it reports a SIM state);
         # if every property is empty nothing was really read.
         if diag.has_telephony_feature and not bb and states:
             diag.status = str(Status.FAIL)
             diag.is_rf_baseband_faulty = True
-            diag.diagnosis = "Telephony is declared but no baseband version is reported."
-            diag.possible_causes = ["Modem firmware not loaded / corrupted modem partition", "Radio interface (RIL) failure",
-                                    "Baseband/RF hardware fault"]
+            diag.diagnosis = M("sim.no_baseband")
+            diag.possible_causes = [M("sim.cause.modem_fw"), M("sim.cause.ril"), M("sim.cause.rf_hw")]
             return diag
         if any(s in ("CARD_IO_ERROR", "CARD_RESTRICTED") for s in states):
             diag.status = str(Status.FAIL)
-            diag.diagnosis = f"SIM state reported: {props['gsm.sim.state']}."
-            diag.possible_causes = ["Damaged or dirty SIM card", "Dirty/bent SIM tray contacts", "SIM reader circuit fault"]
+            diag.diagnosis = M("sim.state_error", state=props["gsm.sim.state"])
+            diag.possible_causes = [M("sim.cause.card"), M("sim.cause.tray"), M("sim.cause.reader")]
             return diag
         if any(s in ("READY", "LOADED") for s in states):
             diag.status = str(Status.PASS)
-            diag.diagnosis = f"SIM reported READY/LOADED (carrier: {diag.carrier_name}, network: {diag.network_type}, baseband: {bb[:40]})."
+            diag.diagnosis = M("sim.ready", carrier=diag.carrier_name, network=diag.network_type, baseband=bb[:40])
             return diag
         diag.status = str(Status.UNKNOWN)
         if any(s == "ABSENT" for s in states):
-            diag.diagnosis = "No SIM inserted: the SIM reader cannot be tested without a card."
+            diag.diagnosis = M("sim.absent")
         elif states:
-            diag.diagnosis = f"SIM state '{props['gsm.sim.state']}' does not allow a conclusion (e.g. airplane mode or PIN lock)."
+            diag.diagnosis = M("sim.inconclusive", state=props["gsm.sim.state"])
         else:
-            diag.diagnosis = "SIM state is not reported."
+            diag.diagnosis = M("sim.not_reported")
         return diag
 
     # ------------------------------------------------------------------
@@ -654,22 +654,22 @@ class HardwareTester:
         if hal_fail:
             diag.status = str(Status.FAIL)
             diag.is_hardware_faulty = True
-            diag.driver_status = "Vendor HAL / driver start failure"
-            diag.diagnosis = "Wi-Fi framework reports a vendor HAL / driver start failure."
-            diag.possible_causes = ["Wi-Fi firmware/driver failure", "Wi-Fi chip not powered or damaged", "Corrupted vendor partition"]
+            diag.driver_status = "HAL_FAILURE"
+            diag.diagnosis = M("wifi.hal_failure")
+            diag.possible_causes = [M("wifi.cause.driver"), M("wifi.cause.chip"), M("wifi.cause.vendor")]
         elif diag.state in ("ENABLED", "CONNECTED"):
             diag.status = str(Status.PASS)
-            diag.driver_status = "Enabled"
+            diag.driver_status = "ENABLED"
             if diag.state == "CONNECTED":
-                diag.diagnosis = f"Wi-Fi connected to '{diag.ssid}' (RSSI {diag.rssi_dbm} dBm, {diag.link_speed_mbps} Mbps)."
+                diag.diagnosis = M("wifi.connected", ssid=diag.ssid, rssi=diag.rssi_dbm, speed=diag.link_speed_mbps)
             else:
-                diag.diagnosis = "Wi-Fi is enabled (driver loaded)."
+                diag.diagnosis = M("wifi.enabled")
         elif diag.state == "DISABLED":
             diag.status = str(Status.UNKNOWN)
-            diag.diagnosis = "Wi-Fi is turned off; turn it on to test the adapter."
+            diag.diagnosis = M("wifi.disabled")
         else:
             diag.status = str(failure_status(reads))
-            diag.diagnosis = "Wi-Fi state could not be read."
+            diag.diagnosis = M("wifi.unreadable")
         return diag
 
     # ------------------------------------------------------------------
@@ -702,21 +702,21 @@ class HardwareTester:
 
         if declared is False:
             diag.status = str(Status.UNKNOWN)
-            diag.diagnosis = "The device does not declare Bluetooth."
+            diag.diagnosis = M("bt.not_declared")
         elif declared and bt.service_missing:
             diag.status = str(Status.FAIL)
             diag.is_hardware_faulty = True
-            diag.diagnosis = "Bluetooth is declared but the Bluetooth manager service is not running."
-            diag.possible_causes = ["Bluetooth stack crash", "Bluetooth firmware failure", "Bluetooth chip fault"]
+            diag.diagnosis = M("bt.service_missing")
+            diag.possible_causes = [M("bt.cause.stack"), M("bt.cause.firmware"), M("bt.cause.chip")]
         elif diag.state == "ON":
             diag.status = str(Status.PASS)
-            diag.diagnosis = f"Bluetooth is on (name: {diag.name}, address: {diag.mac_address})."
+            diag.diagnosis = M("bt.on", name=diag.name, address=diag.mac_address)
         elif diag.state == "OFF":
             diag.status = str(Status.UNKNOWN)
-            diag.diagnosis = "Bluetooth is turned off; turn it on to test the adapter."
+            diag.diagnosis = M("bt.off")
         else:
             diag.status = str(failure_status([bt]))
-            diag.diagnosis = "Bluetooth state could not be read."
+            diag.diagnosis = M("bt.unreadable")
         return diag
 
     # ------------------------------------------------------------------
@@ -734,14 +734,14 @@ class HardwareTester:
             diag.evidence.append(r.evidence(f"{feature}={values[key]}"))
 
         def label(v):
-            return "UNKNOWN" if v is None else ("Declared" if v else "Not declared")
+            return "UNKNOWN" if v is None else ("DECLARED" if v else "NOT_DECLARED")
 
         diag.gps_present, diag.nfc_present, diag.usb_otg_supported = values["gps"], values["nfc"], values["otg"]
         diag.gps_status, diag.nfc_status = label(values["gps"]), label(values["nfc"])
         # Declared features say what the system image claims, not that the hardware works: never PASS/FAIL.
         diag.status = str(Status.NEEDS_ROOT if failure_status(reads) == Status.NEEDS_ROOT and all(v is None for v in values.values()) else Status.UNKNOWN)
-        diag.diagnosis = (f"Declared by system (not hardware-tested) - GPS: {diag.gps_status} | NFC: {diag.nfc_status} | "
-                          f"USB host/OTG: {label(values['otg'])}")
+        diag.diagnosis = M("features.summary", gps=M(f"feature.{diag.gps_status}"), nfc=M(f"feature.{diag.nfc_status}"),
+                           otg=M(f"feature.{label(values['otg'])}"))
         return diag
 
     # ------------------------------------------------------------------
@@ -776,17 +776,17 @@ class HardwareTester:
             diag.status = str(Status.FAIL)
             diag.is_panel_disconnected = True
             diag.panel_detected = False
-            diag.diagnosis = "Kernel log contains display panel probe/DSI errors."
-            diag.possible_causes = ["Loose or damaged display flex connector", "Damaged display panel", "Wrong/incompatible replacement panel"]
+            diag.diagnosis = M("display.dsi_errors")
+            diag.possible_causes = [M("display.cause.flex"), M("display.cause.panel"), M("display.cause.replacement")]
         elif b_val is not None and b_val > 0:
             diag.status = str(Status.PASS)
-            diag.diagnosis = f"Backlight driver reports brightness {b_val}/{bm_val if bm_val is not None else 'UNKNOWN'}."
+            diag.diagnosis = M("display.brightness", value=b_val, max=bm_val)
         elif b_val == 0:
             diag.status = str(Status.UNKNOWN)
-            diag.diagnosis = "Backlight brightness is 0 (screen off?). Turn the screen on and retry."
+            diag.diagnosis = M("display.brightness_zero")
         else:
             diag.status = str(b.status)
-            diag.diagnosis = "Backlight brightness could not be read."
+            diag.diagnosis = M("display.brightness_unreadable")
         return diag
 
     def set_pointer_location(self, serial: str, enabled: bool) -> bool:
@@ -838,19 +838,19 @@ class HardwareTester:
         if report.audio_flinger_alive is False:
             report.status = str(Status.FAIL)
             report.is_codec_faulty = True
-            report.diagnosis = "The audio service (media.audio_flinger) is not running."
-            report.possible_causes = ["audioserver crash loop", "Audio HAL failed to start", "Audio codec not detected at boot"]
+            report.diagnosis = M("audio.service_missing")
+            report.possible_causes = [M("audio.cause.crash"), M("audio.cause.hal"), M("audio.cause.codec_boot")]
         elif no_cards:
             report.status = str(Status.FAIL)
             report.is_codec_faulty = True
-            report.diagnosis = "/proc/asound reports no sound cards."
-            report.possible_causes = ["Audio codec not detected by the kernel", "Codec power/I2C/SLIMbus fault", "Kernel driver issue"]
+            report.diagnosis = M("audio.no_cards")
+            report.possible_causes = [M("audio.cause.codec_kernel"), M("audio.cause.codec_bus"), M("audio.cause.driver")]
         elif report.cards_detected or report.output_threads > 0:
             report.status = str(Status.PASS)
-            report.diagnosis = f"{len(report.cards_detected)} sound card(s), {report.output_threads} open output thread(s) reported."
+            report.diagnosis = M("audio.ok", cards=len(report.cards_detected), threads=report.output_threads)
         else:
             report.status = str(failure_status([af, cards]))
-            report.diagnosis = "Audio subsystem state could not be read."
+            report.diagnosis = M("audio.unreadable")
         return report
 
     # ------------------------------------------------------------------
@@ -899,14 +899,14 @@ class HardwareTester:
 
         if found:
             report.status = str(Status.PASS)
-            report.diagnosis = f"Kernel-reported display controller: {report.panel_controller_name} (source: {report.driver_source})."
+            report.diagnosis = M("panel.found", name=report.panel_controller_name, source=report.driver_source)
         else:
             reads = [dm] + ([sysfs] if sysfs is not None else [])
             report.status = str(Status.NEEDS_ROOT if dm.status == Status.NEEDS_ROOT else failure_status(reads))
             if report.status == str(Status.NEEDS_ROOT):
-                report.diagnosis = "Kernel log (dmesg) is blocked without root; panel controller name not available."
+                report.diagnosis = M("panel.needs_root")
             else:
-                report.diagnosis = "Display controller name is not exposed in the kernel log or sysfs."
+                report.diagnosis = M("panel.not_exposed")
         return report
 
     COMPANION_PKG = "com.androiddoctor.companion"
@@ -917,12 +917,12 @@ class HardwareTester:
             apk_path = os.path.join(base_dir, "bin", "companion_diag.apk")
 
         if not os.path.exists(apk_path):
-            return False, f"Companion APK not found at {apk_path}. Zero-APK fallback suite is active."
+            return False, M("companion.apk_missing", path=apk_path)
 
         code, out, err = self.bridge.run_adb(["install", "-r", "-t", "-g", apk_path], serial=serial, timeout=45)
         if code == 0 and "Success" in out:
-            return True, "Companion Diagnostic APK installed successfully."
-        return False, f"APK installation failed: {err or out}"
+            return True, M("companion.installed")
+        return False, M("companion.install_failed", output=err or out)
 
     def run_companion_broadcast(self, serial: str, action: str = "TEST_ALL") -> Tuple[bool, str]:
         code, out, err = self.bridge.shell(
@@ -930,8 +930,8 @@ class HardwareTester:
             serial=serial, timeout=10
         )
         if code == 0:
-            return True, f"Broadcast sent: {out}"
-        return False, f"Broadcast failed: {err or out}"
+            return True, M("companion.broadcast_sent", output=out)
+        return False, M("companion.broadcast_failed", output=err or out)
 
     def read_companion_results(self, serial: str) -> Dict[str, Any]:
         code, out, _ = self.bridge.shell("logcat -d -s AndroidDoctorCompanion:I *:S", serial=serial, timeout=8)
@@ -945,8 +945,8 @@ class HardwareTester:
     def uninstall_companion_apk(self, serial: str) -> Tuple[bool, str]:
         code, out, err = self.bridge.shell(f"pm uninstall {self.COMPANION_PKG}", serial=serial, timeout=15)
         if "Success" in out:
-            return True, "Companion APK uninstalled cleanly."
-        return False, f"Uninstall status: {out or err}"
+            return True, M("companion.uninstalled")
+        return False, M("companion.uninstall_failed", output=out or err)
 
     def launch_screen_color_test(self, serial: str) -> Tuple[bool, str]:
         """
@@ -965,15 +965,15 @@ html, body { width:100%; height:100%; cursor:pointer; font-family:sans-serif; us
 </style>
 </head>
 <body onclick="nextColor()">
-<div id="canvas">TAP DISPLAY TO CYCLE COLORS<br><small style="font-size:14px; font-weight:normal; color:#aaa;">(Pure Red, Green, Blue, White, Black, Gray)</small></div>
+<div id="canvas">&#128070;</div>
 <script>
 var colors = [
-    {bg: '#FF0000', name: 'PURE RED (Check Subpixel / Red Burn-in)'},
-    {bg: '#00FF00', name: 'PURE GREEN (Check Green Pixels)'},
-    {bg: '#0000FF', name: 'PURE BLUE (Check Blue Pixels)'},
-    {bg: '#FFFFFF', name: 'PURE WHITE (Check Dead Pixels & Uniformity)'},
-    {bg: '#000000', name: 'PURE BLACK (Check Backlight Bleed / OLED Off)'},
-    {bg: '#808080', name: '50% NEUTRAL GRAY (Check DSE / Banding)'}
+    {bg: '#FF0000', name: '#FF0000'},
+    {bg: '#00FF00', name: '#00FF00'},
+    {bg: '#0000FF', name: '#0000FF'},
+    {bg: '#FFFFFF', name: '#FFFFFF'},
+    {bg: '#000000', name: '#000000'},
+    {bg: '#808080', name: '#808080'}
 ];
 var idx = -1;
 function nextColor() {
@@ -1002,10 +1002,10 @@ function nextColor() {
                 "am start -a android.intent.action.VIEW -d file:///data/local/tmp/screen_test.html -t text/html",
                 serial=serial, timeout=10
             )
-            return True, "LCD Color & Dead-Pixel test deployed. Tap display to cycle RGBW colors."
+            return True, M("colortest.started")
         except Exception as e:
             logger.error(f"Failed to launch color test: {e}")
-            return False, f"Failed to launch color test: {e}"
+            return False, M("colortest.failed", error=str(e))
 
     def stop_screen_color_test(self, serial: str) -> Tuple[bool, str]:
         """
@@ -1014,7 +1014,7 @@ function nextColor() {
         self.bridge.shell("settings put system pointer_location 0", serial=serial, timeout=5)
         self.bridge.shell("settings put system show_touches 0", serial=serial, timeout=5)
         self.bridge.shell("input keyevent 4", serial=serial, timeout=5)
-        return True, "Color test closed and touch digitizer overlays disabled."
+        return True, M("colortest.stopped")
 
     def play_speaker_test_tone(self, serial: str, freq: int = 1000, duration_sec: float = 3.0) -> Tuple[bool, str]:
         """
@@ -1052,10 +1052,10 @@ function nextColor() {
                 f"am start -a android.intent.action.VIEW -d file://{remote_path} -t audio/wav",
                 serial=serial, timeout=8
             )
-            return True, f"Generated and streaming {freq}Hz sine tone to loudspeaker."
+            return True, M("tone.playing", freq=freq)
         except Exception as e:
             logger.error(f"Error generating or playing test tone: {e}")
-            return False, f"Test tone error: {e}"
+            return False, M("tone.failed", error=str(e))
 
     def reset_battery_fuel_gauge_stats(self, serial: str) -> Tuple[bool, str]:
         """
@@ -1077,7 +1077,7 @@ function nextColor() {
         audio_codec = self.diagnose_audio_codec(serial)
         fp = self.diagnose_fingerprint(serial)
         btn = self.diagnose_physical_buttons(serial) if capture_buttons else PhysicalButtonsDiagnostics(
-            diagnosis="Key test not run (interactive: run it from the keys card).")
+            diagnosis=M("keys.not_run"))
         sim = self.diagnose_sim_and_baseband(serial)
         disp = self.diagnose_display_backlight(serial)
         disp_info = self.inspect_display_panel_info(serial)
@@ -1110,14 +1110,14 @@ function nextColor() {
         overall = aggregate_status(list(check_statuses.values()))
         fails = [k for k, v in check_statuses.items() if v == str(Status.FAIL)]
         if overall == Status.FAIL:
-            summary = f"FAIL: {', '.join(fails)}"
+            summary = M("hw.summary.fail", checks=[M(k) for k in fails])
         elif overall == Status.UNKNOWN:
             open_checks = [k for k, v in check_statuses.items() if v != str(Status.PASS)]
-            summary = f"UNKNOWN: not confirmed - {', '.join(open_checks)}"
+            summary = M("hw.summary.unknown", checks=[M(k) for k in open_checks])
         else:
-            summary = "PASS: all key hardware checks passed"
+            summary = M("hw.summary.pass")
         if not capture_buttons:
-            summary += " (key test not run)"
+            summary = M("hw.summary.keys_not_run", summary=summary)
 
         for item in [fp, btn, sim, disp, disp_info, wifi, bt, periph, audio_codec]:
             all_ev.extend(item.evidence)

@@ -6,6 +6,8 @@ from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, Optional, List, Tuple
 from core.adb_bridge import ADBBridge
 
+from core.result import Msg, M
+
 logger = logging.getLogger("BatchAPKManager")
 
 
@@ -15,7 +17,7 @@ class InstallResult:
     file_name: str
     size_mb: float
     success: bool
-    status_message: str
+    status_message: Any
     duration_sec: float
 
     def to_dict(self) -> Dict[str, Any]:
@@ -29,7 +31,7 @@ class ExtractResult:
     local_path: str
     size_mb: float
     success: bool
-    error_message: str
+    error_message: Any
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -54,7 +56,7 @@ class BatchAPKManager:
                 file_name=file_name,
                 size_mb=0.0,
                 success=False,
-                status_message="Local file not found.",
+                status_message=M("apk.file_missing"),
                 duration_sec=0.0
             )
 
@@ -78,7 +80,7 @@ class BatchAPKManager:
                 file_name=file_name,
                 size_mb=file_size_mb,
                 success=True,
-                status_message="Installed Successfully",
+                status_message=M("apk.installed"),
                 duration_sec=duration
             )
         else:
@@ -99,7 +101,7 @@ class BatchAPKManager:
                 file_name=file_name,
                 size_mb=file_size_mb,
                 success=False,
-                status_message=f"Failed: {fail_reason}",
+                status_message=M("apk.install_failed", reason=fail_reason),
                 duration_sec=duration
             )
 
@@ -149,7 +151,7 @@ class BatchAPKManager:
                 local_path="",
                 size_mb=0.0,
                 success=False,
-                error_message="Package not found or path unavailable."
+                error_message=M("apk.package_missing")
             )
 
         # If split APKs exist, take base.apk
@@ -177,5 +179,5 @@ class BatchAPKManager:
                 local_path="",
                 size_mb=0.0,
                 success=False,
-                error_message=f"Extraction failed: {msg}"
+                error_message=M("apk.extract_failed", output=msg)
             )

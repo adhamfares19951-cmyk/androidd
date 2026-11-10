@@ -38,7 +38,7 @@ from core.hardware_tester import (
 from core.storage_benchmark import StorageBenchmark, StorageHealthReport
 from database.db_manager import DatabaseManager
 from ui.report_exporter import DiagnosticReportExporter
-from ui.i18n import STRINGS
+from ui.i18n import STRINGS, render
 from tests.fakes import FakeBridge
 
 
@@ -193,11 +193,13 @@ class TestVerdictSystemAndNoFakeResults(unittest.TestCase):
 
         # USB Serial (no colon)
         pmic_usb = self.board_diag.analyze_pmic("usb_device_001")
-        self.assertIn("includes charging current while USB is connected", pmic_usb.current_note)
+        self.assertEqual(pmic_usb.current_note.key, "battery.current_note.usb")
+        self.assertIn("charging current while USB is connected", render(pmic_usb.current_note, "en"))
 
         # Wi-Fi Serial (contains colon)
         pmic_wifi = self.board_diag.analyze_pmic("192.168.1.100:5555")
-        self.assertIn("Wi-Fi connected (pure battery current without USB charger)", pmic_wifi.current_note)
+        self.assertEqual(pmic_wifi.current_note.key, "battery.current_note.wifi")
+        self.assertIn("no USB charging current", render(pmic_wifi.current_note, "en"))
 
     def test_bootrom_hypotheses_labeled_as_hypotheses(self):
         """Verify that dead phone diagnostic verdicts are structured hypotheses with possible causes."""
@@ -209,8 +211,9 @@ class TestVerdictSystemAndNoFakeResults(unittest.TestCase):
         }]
         report = self.board_diag.diagnose_dead_phone_bootrom(check_cycling=False)
         self.assertTrue(report.is_qualcomm_edl)
-        self.assertIn("Hypothesis (Possible Causes):", report.summary_diagnosis)
-        self.assertIn("Possible cause", report.summary_diagnosis)
+        self.assertEqual(report.summary_diagnosis.key, "bootrom.qualcomm_edl")
+        self.assertTrue(render(report.summary_diagnosis, "en").startswith("Hypothesis"))
+        self.assertGreaterEqual(len(report.possible_causes), 3, "Possible causes must be listed")
         for port in report.detected_ports:
             self.assertIn("Possible causes", port["diagnosis"])
 
@@ -319,7 +322,7 @@ class TestVerdictSystemAndNoFakeResults(unittest.TestCase):
         })).inspect_display_panel_info("serial_1")
         self.assertEqual(panel_root.check_id, "display.panel_info")
         self.assertEqual(panel_root.status, "NEEDS_ROOT", "Permission denied on dmesg must return NEEDS_ROOT")
-        self.assertNotIn("OEM Verified", panel_root.diagnosis, "Must not claim OEM authenticity")
+        self.assertNotIn("OEM Verified", render(panel_root.diagnosis, "en"), "Must not claim OEM authenticity")
 
         # Case B: Panel controller identified from dmesg -> PASS
         panel_pass = HardwareTester(FakeBridge({

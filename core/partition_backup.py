@@ -6,6 +6,8 @@ from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, Optional, List, Tuple
 from core.adb_bridge import ADBBridge
 
+from core.result import Msg, M
+
 logger = logging.getLogger("PartitionBackup")
 
 
@@ -30,7 +32,7 @@ class BackupResult:
     size_bytes: int = 0
     duration_sec: float = 0.0
     success: bool = False
-    error_message: str = ""
+    error_message: Any = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -192,7 +194,7 @@ class PartitionBackupManager:
         target = next((p for p in partitions if p.name.lower() == partition_name.lower()), None)
         if not target:
             res.success = False
-            res.error_message = f"Partition '{partition_name}' not found on device."
+            res.error_message = M("part.not_found", name=partition_name)
             return res
 
         remote_tmp = f"/data/local/tmp/{partition_name}_{timestamp}.img"
@@ -207,7 +209,7 @@ class PartitionBackupManager:
 
         if code != 0 and "permission denied" in (out + err).lower():
             res.success = False
-            res.error_message = "Permission Denied: Reading raw block partitions requires Root or Recovery Shell access."
+            res.error_message = M("part.needs_root")
             return res
 
         # 3. Pull image file from device to PC
@@ -224,7 +226,7 @@ class PartitionBackupManager:
             logger.info(f"Partition {partition_name} backed up successfully ({file_size} bytes) -> {local_dest}")
         else:
             res.success = False
-            res.error_message = f"Failed to pull image to PC: {pull_msg}"
+            res.error_message = M("part.pull_failed", output=pull_msg)
 
         return res
 

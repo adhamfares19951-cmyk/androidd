@@ -8,6 +8,8 @@ import time
 from typing import List, Dict, Tuple, Optional, Callable, Any
 from setup_bins import get_adb_path, get_fastboot_path, get_scrcpy_path, CREATE_NO_WINDOW
 
+from core.result import Msg, M
+
 logger = logging.getLogger("ADBBridge")
 
 
@@ -364,15 +366,15 @@ class ADBBridge:
                             k, v = p.split(":", 1)
                             info[k] = v
                     if state == "unauthorized" and not info["model"]:
-                        info["model"] = "Unauthorized (Awaiting RSA Approval on screen)"
+                        info["model"] = M("device.unauthorized")
                     elif state == "offline" and not info["model"]:
-                        info["model"] = "Offline (Replug USB Cable)"
+                        info["model"] = M("device.offline")
                     elif state == "recovery" and not info["model"]:
-                        info["model"] = "Android Recovery Mode"
+                        info["model"] = M("device.recovery")
                     elif state == "sideload" and not info["model"]:
-                        info["model"] = "Sideload / OTA Flashing Mode"
+                        info["model"] = M("device.sideload")
                     elif state == "device" and not info["model"]:
-                        info["model"] = "Android Device"
+                        info["model"] = M("device.generic")
                     devices.append(info)
 
         fb_code, fb_out, _ = self.run_fastboot(["devices"], timeout=10)
@@ -387,7 +389,7 @@ class ADBBridge:
                         "serial": parts[0],
                         "state": "fastboot",
                         "type": "fastboot",
-                        "model": "Fastboot Bootloader Mode",
+                        "model": M("device.fastboot"),
                         "product": "bootloader",
                         "device": "fastboot"
                     })
@@ -609,7 +611,7 @@ class ADBBridge:
                         "status": status,
                         "name": name or "Qualcomm HS-USB QDLoader 9008",
                         "instance_id": iid,
-                        "diagnosis": "Phone CPU is alive in Emergency Download Mode (EDL 9008). Indicates corrupted boot partition, dead boot, or damaged eMMC/UFS storage chip (Emergency unbricking required)."
+                        "diagnosis": M("port.edl")
                     })
                 # Qualcomm Diagnostics
                 elif "VID_05C6&PID_900E" in iid:
@@ -619,7 +621,7 @@ class ADBBridge:
                         "status": status,
                         "name": name or "Qualcomm HS-USB Diagnostics 900E",
                         "instance_id": iid,
-                        "diagnosis": "Phone in Qualcomm 900E diagnostic mode (Boot interrupted before kernel stage)."
+                        "diagnosis": M("port.qcom_900e")
                     })
                 # MediaTek Preloader / BROM
                 elif "VID_0E8D&PID_0003" in iid or "VID_0E8D&PID_2000" in iid or "PRELOADER" in name.upper() or "MTK USB" in name.upper():
@@ -629,7 +631,7 @@ class ADBBridge:
                         "status": status,
                         "name": name or "MediaTek USB Port (BROM/Preloader)",
                         "instance_id": iid,
-                        "diagnosis": "MediaTek SoC detected in BootROM / Preloader mode. Indicates bootloader corruption, storage IC communication failure, or power rail drop."
+                        "diagnosis": M("port.mtk_brom")
                     })
                 # Samsung Odin / Download Mode
                 elif "VID_04E8&PID_685D" in iid or "SAMSUNG MOBILE USB CDC COMPOSITE" in name.upper():
@@ -639,7 +641,7 @@ class ADBBridge:
                         "status": status,
                         "name": name or "Samsung Download / Odin Interface",
                         "instance_id": iid,
-                        "diagnosis": "Samsung device detected in Odin / Download mode. Ready for firmware flashing or emergency kernel recovery."
+                        "diagnosis": M("port.odin")
                     })
                 # Google Fastboot
                 elif "VID_18D1&PID_D00D" in iid:
@@ -649,7 +651,7 @@ class ADBBridge:
                         "status": status,
                         "name": name or "Android Bootloader Interface",
                         "instance_id": iid,
-                        "diagnosis": "Device in Fastboot bootloader mode."
+                        "diagnosis": M("port.fastboot")
                     })
                 # MTP / Media Device (USB Debugging Disabled)
                 elif cls in ["WPD", "PortableDevice"] or "MTP" in name.upper():
@@ -660,7 +662,7 @@ class ADBBridge:
                             "status": status,
                             "name": name,
                             "instance_id": iid,
-                            "diagnosis": "Device is recognized by Windows over USB in MTP mode, but USB Debugging is currently turned OFF on the phone."
+                            "diagnosis": M("port.mtp_no_adb")
                         })
 
             return detected_ports
@@ -681,12 +683,12 @@ class ADBBridge:
             return {
                 "is_cycling": True,
                 "cycled_devices": list(difference),
-                "diagnosis": "Power Management IC (PMIC) reset loop, shorted secondary power rail, or severely depleted battery (< 3.1V) causing rapid USB connection cycling."
+                "diagnosis": M("port.cycling")
             }
         return {
             "is_cycling": False,
             "cycled_devices": [],
-            "diagnosis": "USB port connection is stable (no reboot cycling detected)."
+            "diagnosis": M("port.stable")
         }
 
     def get_device_ip_address(self, serial: str) -> Optional[str]:
@@ -731,11 +733,11 @@ class ADBBridge:
         logger.info(f"Enabling Wireless ADB on {serial} (port {port})...")
         ip = self.get_device_ip_address(serial)
         if not ip:
-            return False, "", "Could not detect Wi-Fi IP address on device. Ensure phone is connected to Wi-Fi."
+            return False, "", M("wireless.no_ip")
 
         code, out, err = self.run_adb(["tcpip", str(port)], serial=serial, timeout=10)
         if code != 0:
-            return False, "", f"Failed to switch ADB to TCP/IP mode: {err or out}"
+            return False, "", M("wireless.tcpip_failed", output=err or out)
 
         target_addr = f"{ip}:{port}"
         time.sleep(1.0)

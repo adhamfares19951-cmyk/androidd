@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Any, Callable
 from core.adb_bridge import ADBBridge
-from core.result import Evidence, Status, CheckResult, status_from_read, aggregate_status
+from core.result import Evidence, Status, CheckResult, status_from_read, aggregate_status, Msg, M
 from core.readers import ReadResult, run_read, read_node, failure_status, parse_int
 from core import jedec
 from database.db_manager import DatabaseManager
@@ -52,7 +52,7 @@ class DiagnosticVerdict:
     status: str  # "PASS" | "FAIL" | "UNKNOWN" | "NEEDS_ROOT"
     value: Any = None
     evidence: List[Evidence] = field(default_factory=list)
-    diagnosis: str = ""
+    diagnosis: Any = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -70,7 +70,7 @@ class PMICStatus:
     current_ma: Optional[float] = None
     current_source: str = "UNKNOWN"
     current_status: str = "UNKNOWN"
-    current_note: str = ""
+    current_note: Any = None
     charge_full_uah: Optional[int] = None
     charge_full_design_uah: Optional[int] = None
     cycle_count: Optional[int] = None
@@ -83,7 +83,7 @@ class PMICStatus:
     health_verdict: str = "UNKNOWN"  # PASS / FAIL / UNKNOWN / NEEDS_ROOT for capacity vs design
     is_charging: bool = False
     is_ac_plugged: bool = False
-    fault_flags: List[str] = field(default_factory=list)
+    fault_flags: List[Msg] = field(default_factory=list)
     raw_details: Dict[str, Any] = field(default_factory=dict)
     evidence: List[Evidence] = field(default_factory=list)
 
@@ -129,8 +129,8 @@ class LeakageTestResult:
     avg_ma: Optional[float] = None
     max_ma: Optional[float] = None
     source: str = "UNKNOWN"
-    diagnosis: str = ""
-    possible_causes: List[str] = field(default_factory=list)
+    diagnosis: Any = None
+    possible_causes: List[Msg] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
 
     @property
@@ -171,8 +171,8 @@ class BlackboxReport:
     kernel_ramoops_status: str = "UNKNOWN"  # PASS / FAIL / UNKNOWN / NEEDS_ROOT
     kernel_log_snippets: List[str] = field(default_factory=list)
     status: str = "UNKNOWN"
-    diagnosis: str = ""
-    possible_causes: List[str] = field(default_factory=list)
+    diagnosis: Any = None
+    possible_causes: List[Msg] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -186,12 +186,12 @@ class PanicAnalysis:
     check_id: str = "board.kernel_log"
     has_critical_error: bool = False
     emmc_ufs_errors: List[str] = field(default_factory=list)
-    watchdog_resets: List[str] = field(default_factory=list)
-    thermal_shutdowns: List[str] = field(default_factory=list)
+    watchdog_resets: List[Any] = field(default_factory=list)
+    thermal_shutdowns: List[Any] = field(default_factory=list)
     kernel_panics: List[str] = field(default_factory=list)
     dmesg_status: str = "UNKNOWN"
     status: str = "UNKNOWN"
-    summary_verdict: str = ""
+    summary_verdict: Any = None
     blackbox: BlackboxReport = field(default_factory=BlackboxReport)
     evidence: List[Evidence] = field(default_factory=list)
 
@@ -200,12 +200,12 @@ class PanicAnalysis:
             "check_id": self.check_id,
             "has_critical_error": self.has_critical_error,
             "emmc_ufs_errors": self.emmc_ufs_errors,
-            "watchdog_resets": self.watchdog_resets,
-            "thermal_shutdowns": self.thermal_shutdowns,
             "kernel_panics": self.kernel_panics,
             "dmesg_status": self.dmesg_status,
             "status": self.status,
-            "summary_verdict": self.summary_verdict,
+            "summary_verdict": self.summary_verdict.to_dict() if isinstance(self.summary_verdict, Msg) else self.summary_verdict,
+            "watchdog_resets": [w.to_dict() if isinstance(w, Msg) else w for w in self.watchdog_resets],
+            "thermal_shutdowns": [w.to_dict() if isinstance(w, Msg) else w for w in self.thermal_shutdowns],
             "blackbox": self.blackbox.to_dict(),
             "evidence": [e.to_dict() for e in self.evidence],
         }
@@ -219,7 +219,8 @@ class DeadPhoneBootROMDiagnosis:
     is_samsung_odin: bool = False
     is_usb_cycling: bool = False
     cycling_details: str = ""
-    summary_diagnosis: str = "No BootROM / Emergency USB state detected."
+    summary_diagnosis: Any = field(default_factory=lambda: M("bootrom.none"))
+    possible_causes: List[Msg] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -238,13 +239,13 @@ class FastChargeDiagnostics:
     wattage_w: Optional[float] = None        # only when both voltage and current were measured
     max_charging_current_ma: Optional[float] = None  # reported maximum, not a measurement
     max_charging_voltage_mv: Optional[float] = None  # reported maximum, not a measurement
-    protocol_name: str = "UNKNOWN"
+    protocol_name: Any = "UNKNOWN"
     is_fast_charging: Optional[bool] = None
     battery_level: Optional[int] = None
     charge_status: str = "UNKNOWN"
     health_state: str = "UNKNOWN"
     status: str = "UNKNOWN"
-    diagnosis: str = ""
+    diagnosis: Any = None
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -258,9 +259,9 @@ class StorageLifeReport:
     check_id: str = "storage.jedec_life"
     storage_type: str = "UNKNOWN"
     device_model: str = ""
-    life_time_type_a: str = "UNKNOWN"
-    life_time_type_b: str = "UNKNOWN"
-    pre_eol_info: str = "UNKNOWN"
+    life_time_type_a: Any = "UNKNOWN"
+    life_time_type_b: Any = "UNKNOWN"
+    pre_eol_info: Any = "UNKNOWN"
     raw_hex_a: str = ""
     raw_hex_b: str = ""
     raw_pre_eol: str = ""
@@ -268,8 +269,8 @@ class StorageLifeReport:
     is_warning: bool = False
     is_critical: bool = False
     health_verdict: str = "UNKNOWN"
-    diagnosis: str = ""
-    possible_causes: List[str] = field(default_factory=list)
+    diagnosis: Any = None
+    possible_causes: List[Msg] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -309,7 +310,8 @@ class StressTestReport:
     samples: List[StressTestSnapshot] = field(default_factory=list)
     status: str = "UNKNOWN"
     verdict: str = "UNKNOWN"
-    diagnosis: str = ""
+    diagnosis: Any = None
+    throttling_note: Any = None
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -330,7 +332,8 @@ class StressTestReport:
             "samples": [s.to_dict() for s in self.samples],
             "status": self.status,
             "verdict": self.verdict,
-            "diagnosis": self.diagnosis,
+            "diagnosis": self.diagnosis.to_dict() if isinstance(self.diagnosis, Msg) else self.diagnosis,
+            "throttling_note": self.throttling_note.to_dict() if isinstance(self.throttling_note, Msg) else self.throttling_note,
             "evidence": [e.to_dict() for e in self.evidence],
         }
 
@@ -345,7 +348,7 @@ class BoardDiagnosticResult:
     thermal_evidence: List[Evidence] = field(default_factory=list)
     check_statuses: Dict[str, str] = field(default_factory=dict)
     overall_health: str = "UNKNOWN"
-    critical_findings: List[str] = field(default_factory=list)
+    critical_findings: List[Msg] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -357,7 +360,7 @@ class BoardDiagnosticResult:
             "panic_analysis": self.panic_analysis.to_dict(),
             "check_statuses": dict(self.check_statuses),
             "overall_health": self.overall_health,
-            "critical_findings": self.critical_findings
+            "critical_findings": [f.to_dict() if isinstance(f, Msg) else f for f in self.critical_findings]
         }
 
 
@@ -372,10 +375,11 @@ class RootForensicsReport:
     i2c_bus_errors: List[str] = field(default_factory=list)
     nand_exact_lifetime_a: str = ""
     nand_exact_lifetime_b: str = ""
-    nand_exact_pre_eol: str = ""
+    nand_exact_pre_eol: Any = ""
     nand_wear_status: str = "UNKNOWN"
     status: str = "UNKNOWN"
-    diagnosis: str = ""
+    diagnosis: Any = None
+    findings: List[Msg] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -392,7 +396,7 @@ class EFSBackupResult:
     backup_folder: str = ""
     total_bytes: int = 0
     hashes: Dict[str, str] = field(default_factory=dict)
-    message: str = ""
+    message: Any = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -459,9 +463,9 @@ class MotherboardDiagnostics:
         ev.extend(e)
 
         if ":" in serial:
-            pmic.current_note = "Wi-Fi connected (pure battery current without USB charger)"
+            pmic.current_note = M("battery.current_note.wifi")
         else:
-            pmic.current_note = "includes charging current while USB is connected"
+            pmic.current_note = M("battery.current_note.usb")
 
         # 3. Battery temperature: power_supply temp is in tenths of a degree C
         t_specs = [(f"{b}/temp", 10.0) for b in BATTERY_SYSFS_DIRS[:5]] + \
@@ -554,13 +558,9 @@ class MotherboardDiagnostics:
 
         # 8. Fault flags only from real readings
         if pmic.is_charging and pmic.voltage_mv is not None and pmic.voltage_mv < 3500.0:
-            pmic.fault_flags.append(
-                "Low battery voltage while charging (< 3500 mV). Possible causes: degraded battery cell, charging circuit fault."
-            )
+            pmic.fault_flags.append(M("battery.flag.low_voltage_charging", limit=3500))
         if pmic.is_ac_plugged and pmic.is_charging and pmic.current_ma is not None and 0 < abs(pmic.current_ma) < 200.0:
-            pmic.fault_flags.append(
-                "Low charging current (< 200 mA) on external power. Possible causes: dirty port, bad cable, weak charger, USB board damage."
-            )
+            pmic.fault_flags.append(M("battery.flag.low_charge_current", limit=200))
 
         raw["voltage_source"] = pmic.voltage_source
         raw["current_source"] = pmic.current_source
@@ -615,8 +615,7 @@ class MotherboardDiagnostics:
         if not self.is_wireless_adb(serial):
             result.status = str(Status.UNKNOWN)
             result.precondition = "usb_connection"
-            result.diagnosis = ("Not measured: the phone is connected over USB, which supplies current. "
-                                "Connect with wireless ADB and unplug the cable/charger, then run the test again.")
+            result.diagnosis = M("leak.not_measured.usb")
             result.evidence.append(Evidence(source="adb transport", raw_excerpt=f"serial={serial} (USB transport)", exit_code=None))
             return self._save_leakage(serial, result)
 
@@ -625,16 +624,16 @@ class MotherboardDiagnostics:
         if powered is None:
             result.status = str(pres.status)
             result.precondition = "power_state_unknown"
-            result.diagnosis = "Not measured: could not confirm that no charger is connected (dumpsys battery unreadable)."
+            result.diagnosis = M("leak.not_measured.power_unknown")
             return self._save_leakage(serial, result)
         if powered:
             result.status = str(Status.UNKNOWN)
             result.precondition = "charger_connected"
-            result.diagnosis = "Not measured: a charger / external power source is connected. Unplug it and run the test again."
+            result.diagnosis = M("leak.not_measured.charger")
             return self._save_leakage(serial, result)
 
         if progress_callback:
-            progress_callback(0, None, "Turning the screen off...")
+            progress_callback(0, None, M("leak.progress.screen_off"))
         self.bridge.shell("input keyevent 223", serial=serial, timeout=5)
         time.sleep(4.0)
 
@@ -648,7 +647,7 @@ class MotherboardDiagnostics:
                     failed_status = status
                     result.evidence.extend(ev)
                     if progress_callback:
-                        progress_callback(int(idx / sample_count * 100), None, f"Sample {idx}/{sample_count}: not readable")
+                        progress_callback(int(idx / sample_count * 100), None, M("leak.progress.sample_unreadable", idx=idx, total=sample_count))
                     break
                 ma = abs(value)
                 result.samples.append(ma)
@@ -656,7 +655,7 @@ class MotherboardDiagnostics:
                 if idx == 1:
                     result.evidence.extend(ev)
                 if progress_callback:
-                    progress_callback(int(idx / sample_count * 100), ma, f"Sample {idx}/{sample_count}: battery current = {ma} mA")
+                    progress_callback(int(idx / sample_count * 100), ma, M("leak.progress.sample", idx=idx, total=sample_count, value=ma))
                 if idx < sample_count:
                     time.sleep(sample_interval)
         finally:
@@ -668,13 +667,13 @@ class MotherboardDiagnostics:
         if failed_status is not None or len(result.samples) < sample_count:
             result.status = failed_status or str(Status.UNKNOWN)
             result.samples = []
-            result.diagnosis = "Battery current could not be read for every sample; no average is reported."
+            result.diagnosis = M("leak.incomplete_samples")
             return self._save_leakage(serial, result)
         if powered_after is not False:
             result.status = str(Status.UNKNOWN)
             result.precondition = "charger_connected"
             result.samples = []
-            result.diagnosis = "External power was connected (or unconfirmed) at the end of the test; result discarded."
+            result.diagnosis = M("leak.power_changed")
             return self._save_leakage(serial, result)
 
         result.avg_ma = round(sum(result.samples) / len(result.samples), 1)
@@ -684,17 +683,13 @@ class MotherboardDiagnostics:
                                         exit_code=None))
         if result.avg_ma > self.LEAK_AVG_LIMIT_MA or result.max_ma > self.LEAK_PEAK_LIMIT_MA:
             result.status = str(Status.FAIL)
-            result.diagnosis = (f"Screen-off battery current is high: average {result.avg_ma} mA, peak {result.max_ma} mA "
-                                f"(limits {self.LEAK_AVG_LIMIT_MA:g} / {self.LEAK_PEAK_LIMIT_MA:g} mA).")
-            result.possible_causes = [
-                "Apps or services keeping the phone awake (wakelocks, sync, updates)",
-                "Radio activity: weak mobile signal, Wi-Fi / wireless ADB traffic",
-                "A component drawing current on the board (only after software causes are excluded)",
-            ]
+            result.diagnosis = M("leak.high", avg=result.avg_ma, peak=result.max_ma,
+                                 avg_limit=self.LEAK_AVG_LIMIT_MA, peak_limit=self.LEAK_PEAK_LIMIT_MA)
+            result.possible_causes = [M("leak.cause.wakelocks"), M("leak.cause.radio"), M("leak.cause.board")]
         else:
             result.status = str(Status.PASS)
-            result.diagnosis = (f"Screen-off battery current: average {result.avg_ma} mA, peak {result.max_ma} mA "
-                                f"(below {self.LEAK_AVG_LIMIT_MA:g} / {self.LEAK_PEAK_LIMIT_MA:g} mA).")
+            result.diagnosis = M("leak.normal", avg=result.avg_ma, peak=result.max_ma,
+                                 avg_limit=self.LEAK_AVG_LIMIT_MA, peak_limit=self.LEAK_PEAK_LIMIT_MA)
         return self._save_leakage(serial, result)
 
     def _save_leakage(self, serial: str, result: LeakageTestResult) -> LeakageTestResult:
@@ -705,7 +700,7 @@ class MotherboardDiagnostics:
                 avg_leakage_ma=result.avg_ma,
                 max_leakage_ma=result.max_ma,
                 is_faulty=result.status == str(Status.FAIL),
-                verdict=f"{result.status}: {result.diagnosis}"
+                verdict=f"{result.status}: {result.diagnosis.key if isinstance(result.diagnosis, Msg) else result.diagnosis}"
             )
         except Exception as e:
             logger.warning(f"Could not store leakage result: {e}")
@@ -824,12 +819,12 @@ class MotherboardDiagnostics:
     # Boot reason, dropbox and pstore (ramoops)
     # ------------------------------------------------------------------
     _ABNORMAL_RULES = [
-        ("THERMAL", r"(thermal|overheat|crit_temp|tsens)",
-         ["Thermal shutdown recorded. Possible causes: blocked cooling, failing battery, heavy load, faulty thermal sensor."]),
-        ("UVLO", r"(uvlo|undervoltage|vbat_low|battery_pull|brownout)",
-         ["Under-voltage power loss recorded. Possible causes: worn battery, loose battery connector, power circuit fault."]),
-        ("WATCHDOG_PANIC", r"(watchdog|wdog|kernel_panic|subsys_restart|oops|softlockup|hardlockup)",
-         ["Watchdog / kernel panic reset recorded. Possible causes: software/kernel bug, unstable firmware, memory or SoC fault."]),
+        ("THERMAL", r"(thermal|overheat|crit_temp|tsens)", "bootreason.thermal",
+         ["bootreason.cause.cooling", "bootreason.cause.battery", "bootreason.cause.load", "bootreason.cause.sensor"]),
+        ("UVLO", r"(uvlo|undervoltage|vbat_low|battery_pull|brownout)", "bootreason.uvlo",
+         ["bootreason.cause.worn_battery", "bootreason.cause.connector", "bootreason.cause.power_circuit"]),
+        ("WATCHDOG_PANIC", r"(watchdog|wdog|kernel_panic|subsys_restart|oops|softlockup|hardlockup)", "bootreason.watchdog",
+         ["bootreason.cause.software", "bootreason.cause.firmware", "bootreason.cause.memory_soc"]),
     ]
 
     def run_blackbox_forensics(self, serial: str) -> BlackboxReport:
@@ -876,23 +871,23 @@ class MotherboardDiagnostics:
 
         # Categorise only from what was actually read
         combined = f"{b_reason} {b_history} {' '.join(bb.dropbox_events)} {' '.join(bb.kernel_log_snippets)}".lower()
-        for category, pattern, causes in self._ABNORMAL_RULES:
+        for category, pattern, diag_key, cause_keys in self._ABNORMAL_RULES:
             if re.search(pattern, combined):
                 bb.shutdown_category = category
                 bb.has_abnormal_shutdown = True
-                bb.possible_causes = causes
+                bb.possible_causes = [M(k) for k in cause_keys]
                 bb.status = str(Status.FAIL)
-                bb.diagnosis = causes[0]
+                bb.diagnosis = M(diag_key)
                 return bb
 
         if b_reason:
             bb.shutdown_category = "USER_REQUESTED" if re.search(r"(userrequested|power_menu|shell|recovery|reboot)", combined) else "NORMAL"
             bb.status = str(Status.PASS)
-            bb.diagnosis = f"Last boot reason '{b_reason}' does not indicate an abnormal shutdown."
+            bb.diagnosis = M("bootreason.normal", reason=b_reason)
         else:
             bb.shutdown_category = "UNKNOWN"
             bb.status = str(Status.UNKNOWN)
-            bb.diagnosis = "Boot reason is not reported by this device."
+            bb.diagnosis = M("bootreason.not_reported")
         return bb
 
     def inspect_panic_and_emmc(self, serial: str) -> PanicAnalysis:
@@ -936,15 +931,15 @@ class MotherboardDiagnostics:
 
         if analysis.has_critical_error:
             analysis.status = str(Status.FAIL)
-            analysis.summary_verdict = "Kernel/storage errors or abnormal resets were found in the logs (see evidence)."
+            analysis.summary_verdict = M("kernellog.errors_found")
         else:
             analysis.status = analysis.dmesg_status
             if analysis.dmesg_status == str(Status.PASS):
-                analysis.summary_verdict = "Kernel log was read: no panic or storage I/O error lines found."
+                analysis.summary_verdict = M("kernellog.clean")
             elif analysis.dmesg_status == str(Status.NEEDS_ROOT):
-                analysis.summary_verdict = "Kernel log (dmesg) is blocked without root."
+                analysis.summary_verdict = M("kernellog.needs_root")
             else:
-                analysis.summary_verdict = "Kernel log could not be read."
+                analysis.summary_verdict = M("kernellog.unreadable")
         return analysis
 
     def run_full_diagnostics(self, serial: str) -> BoardDiagnosticResult:
@@ -953,10 +948,10 @@ class MotherboardDiagnostics:
         thermal = self.read_thermal(serial)
         panic = self.inspect_panic_and_emmc(serial)
 
-        findings: List[str] = list(pmic.fault_flags)
+        findings: List[Msg] = list(pmic.fault_flags)
         hot = [f"{z.zone_type} [{z.category}] {z.temp_c}°C > {z.limit_c:g}°C" for z in thermal.zones if z.is_overheated]
         if hot:
-            findings.append(f"Thermal alert: {', '.join(hot)}")
+            findings.append(M("thermal.alert", zones=", ".join(hot)))
         if panic.status == str(Status.FAIL):
             findings.append(panic.summary_verdict)
 
@@ -1000,47 +995,26 @@ class MotherboardDiagnostics:
             diag.cycling_details = cycling.get("diagnosis", "")
 
         if diag.is_qualcomm_edl:
-            diag.summary_diagnosis = (
-                "Hypothesis (Possible Causes):\n"
-                "• Device enumerated in Qualcomm Emergency Download (EDL 9008) mode.\n"
-                "• Possible cause 1: Corrupted primary bootloader (PBL/XBL/ABOOT).\n"
-                "• Possible cause 2: Corrupted or unreadable eMMC / UFS partition table (GPT).\n"
-                "• Possible cause 3: Hardware damage or solder fatigue on NAND memory chip / CPU BGA.\n"
-                "• Possible cause 4: Hardware test-point (EDL TP) or volume-down key shorted to GND."
-            )
+            diag.summary_diagnosis = M("bootrom.qualcomm_edl")
+            diag.possible_causes = [M("bootrom.cause.edl_bootloader"), M("bootrom.cause.edl_gpt"),
+                                    M("bootrom.cause.edl_hardware"), M("bootrom.cause.edl_testpoint")]
         elif diag.is_mediatek_brom:
-            diag.summary_diagnosis = (
-                "Hypothesis (Possible Causes):\n"
-                "• Device enumerated in MediaTek BootROM (BROM / Preloader) mode.\n"
-                "• Possible cause 1: Corrupted Preloader or LK (Little Kernel) image.\n"
-                "• Possible cause 2: eMMC / UFS internal NAND Flash memory failure or unprogrammed state.\n"
-                "• Possible cause 3: Main PMIC power rails (VPROC, VCORE, VMEM) collapsing under early boot load.\n"
-                "• Possible cause 4: KCOL0 hardware download key line shorted to ground."
-            )
+            diag.summary_diagnosis = M("bootrom.mediatek_brom")
+            diag.possible_causes = [M("bootrom.cause.mtk_preloader"), M("bootrom.cause.mtk_flash"),
+                                    M("bootrom.cause.mtk_power"), M("bootrom.cause.mtk_key")]
         elif diag.is_samsung_odin:
-            diag.summary_diagnosis = (
-                "Hypothesis (Possible Causes):\n"
-                "• Device in Samsung Odin Download / Exynos BootROM mode.\n"
-                "• Possible cause 1: Bootloop / soft-brick from incomplete OTA update or system file corruption.\n"
-                "• Possible cause 2: FRP / Knox lock triggered download mode recovery.\n"
-                "• Possible cause 3: Faulty PIT (Partition Information Table) or bad storage blocks."
-            )
+            diag.summary_diagnosis = M("bootrom.samsung_odin")
+            diag.possible_causes = [M("bootrom.cause.odin_softbrick"), M("bootrom.cause.odin_lock"),
+                                    M("bootrom.cause.odin_pit")]
         elif diag.is_usb_cycling:
-            diag.summary_diagnosis = (
-                "Hypothesis (Possible Causes) — Rapid USB Connect/Disconnect Cycling:\n"
-                "• Possible cause 1: PMIC Watchdog Reset Loop / Bootloop due to battery voltage dropping below UVLO threshold.\n"
-                "• Possible cause 2: Short circuit on VBUS, CC1/CC2, or USB D+/D- data lines in the charging sub-board/flex.\n"
-                "• Possible cause 3: Cold solder joint or cracked BGA balls under SoC or PMIC.\n"
-                f"• Observed: {diag.cycling_details}"
-            )
+            diag.summary_diagnosis = M("bootrom.usb_cycling", observed=diag.cycling_details)
+            diag.possible_causes = [M("bootrom.cause.cycling_bootloop"), M("bootrom.cause.cycling_usb_lines"),
+                                    M("bootrom.cause.cycling_solder")]
         elif ports:
-            diag.summary_diagnosis = (
-                f"Hypothesis (Possible Causes):\n"
-                f"• Low-level USB interface detected: {ports[0].get('name')}.\n"
-                "• Possible cause: Device in vendor-specific recovery or factory diagnostic mode."
-            )
+            diag.summary_diagnosis = M("bootrom.other_port", name=ports[0].get("name"))
+            diag.possible_causes = [M("bootrom.cause.vendor_mode")]
         else:
-            diag.summary_diagnosis = "No emergency BootROM, EDL, or recovery USB interface detected on Windows PnP ports."
+            diag.summary_diagnosis = M("bootrom.none")
 
         return diag
 
@@ -1122,17 +1096,17 @@ class MotherboardDiagnostics:
 
         t_lower = parsed_type.lower() if parsed_type else ""
         if "pd" in t_lower:
-            result.protocol_name, result.is_fast_charging = "USB Power Delivery (USB-PD)", True
+            result.protocol_name, result.is_fast_charging = M("charging.protocol.pd"), True
         elif "hvdcp" in t_lower or "qc" in t_lower:
-            result.protocol_name, result.is_fast_charging = "Qualcomm Quick Charge (HVDCP)", True
+            result.protocol_name, result.is_fast_charging = M("charging.protocol.hvdcp"), True
         elif "dcp" in t_lower:
-            result.protocol_name, result.is_fast_charging = "Dedicated Charging Port (DCP)", None
+            result.protocol_name, result.is_fast_charging = M("charging.protocol.dcp"), None
         elif "cdp" in t_lower:
-            result.protocol_name, result.is_fast_charging = "Charging Downstream Port (CDP)", False
+            result.protocol_name, result.is_fast_charging = M("charging.protocol.cdp"), False
         elif "sdp" in t_lower:
-            result.protocol_name, result.is_fast_charging = "Standard Downstream Port (SDP)", False
+            result.protocol_name, result.is_fast_charging = M("charging.protocol.sdp"), False
         elif t_lower:
-            result.protocol_name = f"Reported type: {result.charger_type}"
+            result.protocol_name = M("charging.protocol.reported", type=result.charger_type)
         if result.is_fast_charging is None and result.wattage_w is not None:
             result.is_fast_charging = result.wattage_w >= 15.0
 
@@ -1141,17 +1115,12 @@ class MotherboardDiagnostics:
         else:
             result.status = str(failure_status(reads))
 
-        def fmt(v, unit):
-            return f"{v} {unit}" if v is not None else "UNKNOWN"
-
-        result.diagnosis = (
-            f"Type: {result.charger_type} | Protocol: {result.protocol_name} | "
-            f"Measured input: {fmt(result.voltage_v, 'V')} @ {fmt(result.current_a, 'A')} = {fmt(result.wattage_w, 'W')} | "
-            f"Battery: {fmt(result.battery_level, '%')} ({result.charge_status})"
-        )
+        result.diagnosis = M("charging.summary", type=result.charger_type, protocol=result.protocol_name,
+                             volts=result.voltage_v, amps=result.current_a, watts=result.wattage_w,
+                             level=result.battery_level, state=result.charge_status)
         return result
 
-    def reset_battery_fuel_gauge_stats(self, serial: str) -> Tuple[bool, str]:
+    def reset_battery_fuel_gauge_stats(self, serial: str) -> Tuple[bool, Msg]:
         """
         Reset battery statistics (dumpsys batterystats --reset).
         Clears Android's software battery usage history only; it does not touch the fuel gauge chip.
@@ -1159,12 +1128,11 @@ class MotherboardDiagnostics:
         logger.info(f"Resetting battery statistics on {serial}...")
         res = run_read(self.bridge, "dumpsys batterystats --reset", serial=serial, timeout=10)
         ok = res.exit_code == 0 and res.status != Status.NEEDS_ROOT
-        lines = [f"dumpsys batterystats --reset -> exit={res.exit_code}: {(res.text or res.stderr or '').strip()[:300]}"]
-        lines.append("Note: this only clears Android's battery usage history.")
-        return ok, "\n".join(lines)
+        output = (res.text or res.stderr or "").strip()[:300]
+        return ok, M("battery.reset_stats.result", exit=res.exit_code, output=output)
 
     # Alias for backwards compatibility
-    def reset_battery_stats_and_gauge(self, serial: str) -> Tuple[bool, str]:
+    def reset_battery_stats_and_gauge(self, serial: str) -> Tuple[bool, Msg]:
         return self.reset_battery_fuel_gauge_stats(serial)
 
     EMMC_LIFE_PATHS = [
@@ -1248,17 +1216,17 @@ class MotherboardDiagnostics:
 
         if status == Status.FAIL:
             report.is_critical = True
-            report.diagnosis = "Storage wear registers report high wear (see evidence)."
-            report.possible_causes = ["Flash memory near the end of its rated write endurance; back up user data."]
+            report.diagnosis = M("storage.wear.high")
+            report.possible_causes = [M("storage.cause.endurance")]
         elif status == Status.PASS:
-            report.diagnosis = f"Storage wear registers read: {report.life_time_type_a}; pre-EOL: {report.pre_eol_info}."
+            report.diagnosis = M("storage.wear.read", life=report.life_time_type_a, eol=report.pre_eol_info)
         elif status == Status.NEEDS_ROOT:
-            report.diagnosis = "Storage health registers are blocked without root."
+            report.diagnosis = M("storage.wear.needs_root")
         else:
-            report.diagnosis = "Storage health registers are not exposed on this device."
+            report.diagnosis = M("storage.wear.not_exposed")
         return report
 
-    def benchmark_storage_speed(self, serial: str, test_size_mb: int = 64) -> Tuple[Optional[float], Optional[float], str, str]:
+    def benchmark_storage_speed(self, serial: str, test_size_mb: int = 64) -> Tuple[Optional[float], Optional[float], str, Msg]:
         """
         Sequential write (dd conv=fsync) and read in /data/local/tmp. Returns (write MB/s, read MB/s, status, diagnosis).
         Speeds are None when dd output could not be parsed. Without root the page cache cannot be dropped,
@@ -1274,19 +1242,15 @@ class MotherboardDiagnostics:
         write_speed = parse_dd_speed_mb_s(f"{w.stdout}\n{w.stderr}") if w.exit_code in (0, None) else None
         read_speed = parse_dd_speed_mb_s(f"{r.stdout}\n{r.stderr}") if r.exit_code in (0, None) else None
 
-        def fmt(v):
-            return f"{v} MB/s" if v is not None else "UNKNOWN"
-
         if write_speed is None:
             status = Status.NEEDS_ROOT if w.status == Status.NEEDS_ROOT else Status.UNKNOWN
-            diag = f"Write benchmark output could not be parsed. Write={fmt(write_speed)} Read={fmt(read_speed)}."
+            diag = M("bench.unparsed", write=write_speed, read=read_speed)
         elif write_speed < 25.0:
             status = Status.FAIL
-            diag = (f"Write={fmt(write_speed)} is below 25 MB/s. Read={fmt(read_speed)}. Possible causes: worn flash, "
-                    f"nearly full storage, thermal throttling, heavy background I/O.")
+            diag = M("bench.slow", write=write_speed, read=read_speed, limit=25)
         else:
             status = Status.PASS
-            diag = f"Write={fmt(write_speed)} Read={fmt(read_speed)} (read may be served from page cache)."
+            diag = M("bench.ok", write=write_speed, read=read_speed)
         return write_speed, read_speed, str(status), diag
 
     def run_cpu_pmic_stress_test(
@@ -1355,8 +1319,8 @@ class MotherboardDiagnostics:
                 )
                 report.samples.append(snap)
                 if progress_callback:
-                    progress_callback(snap, f"[{snap.second}/{duration_sec}s] CPU avg: {snap.avg_freq_mhz} MHz | "
-                                            f"Voltage: {cur_v} mV | Temp: {cur_t}°C")
+                    progress_callback(snap, M("stress.progress", second=snap.second, total=duration_sec,
+                                              freq=snap.avg_freq_mhz, volts=cur_v, temp=cur_t))
         finally:
             self.bridge.shell(f"kill $(cat {pid_file}) 2>/dev/null; rm -f {pid_file}", serial=serial, timeout=5)
 
@@ -1381,20 +1345,18 @@ class MotherboardDiagnostics:
 
         if not freqs_all and not voltages:
             report.status = report.verdict = str(Status.UNKNOWN)
-            report.diagnosis = "No CPU frequency or battery voltage could be read during the test."
+            report.diagnosis = M("stress.no_data")
         elif report.severe_sag_detected:
             report.status = report.verdict = str(Status.FAIL)
-            report.diagnosis = (f"Battery voltage dropped {report.voltage_sag_mv} mV under load. "
-                                f"Possible causes: worn battery (high internal resistance), poor battery contact.")
+            report.diagnosis = M("stress.sag", sag=report.voltage_sag_mv)
         elif report.voltage_sag_mv is None:
             report.status = report.verdict = str(Status.UNKNOWN)
-            report.diagnosis = "Battery voltage under load could not be measured; only CPU frequencies were read."
+            report.diagnosis = M("stress.no_voltage")
         else:
             report.status = report.verdict = str(Status.PASS)
-            report.diagnosis = f"Voltage drop under load: {report.voltage_sag_mv} mV."
+            report.diagnosis = M("stress.ok", sag=report.voltage_sag_mv)
         if report.throttling_detected:
-            report.diagnosis += (f" CPU frequency varied from {report.max_freq_mhz} to {report.min_freq_mhz} MHz "
-                                 f"(throttling or normal frequency scaling).")
+            report.throttling_note = M("stress.freq_range", max=report.max_freq_mhz, min=report.min_freq_mhz)
         return report
 
     def load_fault_signatures(self) -> List[Dict[str, Any]]:
@@ -1462,7 +1424,7 @@ class MotherboardDiagnostics:
 
         if not is_rooted:
             rep.status = str(Status.NEEDS_ROOT)
-            rep.diagnosis = "Root (su) is not available; kernel log and raw register forensics need root."
+            rep.diagnosis = M("forensics.no_root")
             rep.evidence.append(Evidence(source="su -c id", raw_excerpt="su did not return uid=0", exit_code=None))
             return rep
 
@@ -1506,24 +1468,25 @@ class MotherboardDiagnostics:
         rep.evidence.extend(life.evidence)
 
         logs_read = ram.ok or dmesg.ok
-        problems = []
+        problems: List[Msg] = []
         crit = [m.get("id") for m in matched if m.get("severity") == "CRITICAL"]
         if crit:
-            problems.append(f"Critical fault signatures matched: {', '.join(map(str, crit))}")
+            problems.append(M("forensics.finding.signatures", ids=", ".join(map(str, crit))))
         if i2c_errors:
-            problems.append(f"{len(i2c_errors)} I2C error lines in the kernel log")
+            problems.append(M("forensics.finding.i2c", count=len(i2c_errors)))
         if life.status == str(Status.FAIL):
-            problems.append("Storage wear registers report high wear")
+            problems.append(M("forensics.finding.storage"))
+        rep.findings = problems
 
         if problems:
             rep.status = str(Status.FAIL)
-            rep.diagnosis = "Findings (possible causes, not a definitive diagnosis): " + " | ".join(problems)
+            rep.diagnosis = M("forensics.findings", items=problems)
         elif logs_read:
             rep.status = str(Status.PASS)
-            rep.diagnosis = f"Kernel logs were read with {root_type}: no matching fault signatures or I2C errors."
+            rep.diagnosis = M("forensics.clean", root_type=root_type)
         else:
             rep.status = str(Status.UNKNOWN)
-            rep.diagnosis = "Root is available but no kernel log could be read."
+            rep.diagnosis = M("forensics.no_logs")
         return rep
 
     def backup_efs_nvram_partitions(
@@ -1540,7 +1503,7 @@ class MotherboardDiagnostics:
         is_rooted, root_type = self.check_root_access(serial)
         if not is_rooted:
             result.success = False
-            result.message = "Root access required to dump raw hardware partitions."
+            result.message = M("efs.needs_root")
             return result
 
         if not dest_dir:
@@ -1551,7 +1514,7 @@ class MotherboardDiagnostics:
         result.backup_folder = dest_dir
 
         if progress_callback:
-            progress_callback(f"Root verified ({root_type}). Scanning block devices for EFS/NVRAM...")
+            progress_callback(M("efs.progress.scanning", root_type=root_type))
 
         by_name_dirs = [
             "/dev/block/bootdevice/by-name",
@@ -1569,13 +1532,13 @@ class MotherboardDiagnostics:
 
         if not found_by_name:
             result.success = False
-            result.message = "Could not locate partition by-name directory on device."
+            result.message = M("efs.no_by_name")
             return result
 
         code_ls, out_ls, _ = self.bridge.shell(f"ls -la {found_by_name} 2>/dev/null", serial=serial, timeout=10, root=True)
         if code_ls != 0 or not out_ls:
             result.success = False
-            result.message = f"Failed to list partitions in {found_by_name}."
+            result.message = M("efs.list_failed", path=found_by_name)
             return result
 
         target_names = ["efs", "sec_efs", "modemst1", "modemst2", "fsg", "fsc", "persist", "nvram", "nvdata"]
@@ -1590,11 +1553,11 @@ class MotherboardDiagnostics:
 
         if not discovered_targets:
             result.success = False
-            result.message = "No radio/EFS partitions matched (efs, modemst1, modemst2, persist, nvram)."
+            result.message = M("efs.none_matched")
             return result
 
         if progress_callback:
-            progress_callback(f"Discovered {len(discovered_targets)} radio partitions: {', '.join(discovered_targets)}")
+            progress_callback(M("efs.progress.found", count=len(discovered_targets), names=", ".join(discovered_targets)))
 
         backed_up = []
         total_size = 0
@@ -1606,7 +1569,7 @@ class MotherboardDiagnostics:
             local_file = os.path.join(dest_dir, f"{part}.img")
 
             if progress_callback:
-                progress_callback(f"Dumping {part} partition via dd...")
+                progress_callback(M("efs.progress.dumping", part=part))
 
             code_dd, out_dd, err_dd = self.bridge.shell(
                 f"dd if={remote_node} of={remote_tmp} bs=4096 2>/dev/null",
@@ -1629,7 +1592,7 @@ class MotherboardDiagnostics:
                 hashes[part] = hasher.hexdigest()
 
                 if progress_callback:
-                    progress_callback(f"✓ {part}.img pulled successfully ({f_size / 1024:.1f} KB) - SHA256: {hashes[part][:12]}...")
+                    progress_callback(M("efs.progress.pulled", part=part, kb=round(f_size / 1024, 1), sha=hashes[part][:12]))
 
         manifest_path = os.path.join(dest_dir, "manifest.json")
         manifest_data = {
@@ -1646,5 +1609,5 @@ class MotherboardDiagnostics:
         result.backed_up_partitions = backed_up
         result.total_bytes = total_size
         result.hashes = hashes
-        result.message = f"Successfully backed up {len(backed_up)} critical radio partitions ({total_size / (1024*1024):.2f} MB)."
+        result.message = M("efs.done", count=len(backed_up), mb=round(total_size / (1024 * 1024), 2))
         return result

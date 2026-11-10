@@ -48,12 +48,25 @@ from core.rescue_center import RescueCenter, FastbootVariables
 from core.provisioning_manager import ProvisioningManager, ProvisioningStatus
 from core.result import Evidence, Status, CheckResult
 from ui.report_exporter import DiagnosticReportExporter, REPORTS_DIR
-from ui.i18n import t
+from ui.i18n import t, render, set_current_language
 
 logger = logging.getLogger("MainWindow")
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"
+
+
+def _tri_key(value: Any) -> str:
+    """Translation key for a yes / no / unknown value."""
+    return "common.unknown" if value is None else ("common.yes" if value else "common.no")
+
+
+def _feature_key(value: Any) -> str:
+    return "feature.UNKNOWN" if value is None else ("feature.DECLARED" if value else "feature.NOT_DECLARED")
+
+
+def _flinger_key(value: Any) -> str:
+    return "audio.flinger.UNKNOWN" if value is None else ("audio.flinger.RUNNING" if value else "audio.flinger.NOT_RUNNING")
 
 
 def _fmt(value: Any, unit: str = "") -> str:
@@ -77,14 +90,14 @@ def format_evidence_for_display(evidence_items: Any, is_ar: bool = True) -> str:
     if not evidence_list:
         return ""
 
-    header = "\n[الأدلة التقنية المباشرة / Evidence]:" if is_ar else "\n[Technical Evidence]:"
+    header = t("ui.technical_evidence", ("ar" if is_ar else "en"))
     lines = [header]
     for ev in evidence_list:
         src = getattr(ev, "source", None) or (ev.get("source") if isinstance(ev, dict) else "")
         exc = getattr(ev, "raw_excerpt", None) or (ev.get("raw_excerpt") if isinstance(ev, dict) else "")
         code = getattr(ev, "exit_code", 0) if hasattr(ev, "exit_code") else (ev.get("exit_code") if isinstance(ev, dict) else 0)
         code_str = f" [exit {code}]" if code is not None and code != 0 else ""
-        lines.append(f"  • Source: {src}{code_str}")
+        lines.append(t("ui.source", ("ar" if is_ar else "en"), src=src, code_str=code_str))
         if exc:
             for eline in str(exc).strip().splitlines():
                 lines.append(f"    {eline}")
@@ -96,7 +109,8 @@ class AndroidDoctorApp(ctk.CTk):
         super().__init__()
 
         self.current_lang = lang
-        self.title("Android Doctor Pro — أندرويد دكتور برو")
+        set_current_language(lang)
+        self.title(self._tr("ui.android_doctor_pro"))
         self.geometry("1340x900")
         self.minsize(1100, 750)
 
@@ -142,8 +156,12 @@ class AndroidDoctorApp(ctk.CTk):
         self._setup_ui()
         self._start_device_monitor()
 
-    def _tr(self, key: str) -> str:
-        return t(key, self.current_lang)
+    def _tr(self, key: str, **kwargs: Any) -> str:
+        return t(key, self.current_lang, **kwargs)
+
+    def _m(self, value: Any) -> str:
+        """Render a core message (Msg), a list of them, or a plain value in the current language."""
+        return render(value, self.current_lang)
 
     def _setup_ui(self):
         self.grid_columnconfigure(1, weight=1)
@@ -165,7 +183,7 @@ class AndroidDoctorApp(ctk.CTk):
         # App Brand
         self.logo_label = ctk.CTkLabel(
             self.sidebar_frame,
-            text="ANDROID DOCTOR PRO",
+            text=self._tr("ui.android_doctor_pro_2"),
             font=ctk.CTkFont(size=17, weight="bold"),
             text_color="#58a6ff"
         )
@@ -173,7 +191,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.subtitle_label = ctk.CTkLabel(
             self.sidebar_frame,
-            text="فحص العتاد واللوحة الأم والصيانة" if self.current_lang == "ar" else "Hardware Diagnostics Suite",
+            text=self._tr("ui.hardware_diagnostics_suite"),
             font=ctk.CTkFont(size=12),
             text_color="#8b949e"
         )
@@ -185,7 +203,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.btn_lang_ar = ctk.CTkButton(
             lang_bar,
-            text="عربي",
+            text=self._tr("ui.text"),
             width=80,
             height=26,
             font=ctk.CTkFont(size=12, weight="bold"),
@@ -196,7 +214,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.btn_lang_en = ctk.CTkButton(
             lang_bar,
-            text="English",
+            text=self._tr("ui.english"),
             width=80,
             height=26,
             font=ctk.CTkFont(size=12, weight="bold"),
@@ -312,6 +330,7 @@ class AndroidDoctorApp(ctk.CTk):
         if self.current_lang == lang:
             return
         self.current_lang = lang
+        set_current_language(lang)
         self.btn_lang_ar.configure(fg_color="#1f6feb" if lang == "ar" else "#21262d")
         self.btn_lang_en.configure(fg_color="#1f6feb" if lang == "en" else "#21262d")
         
@@ -385,10 +404,10 @@ class AndroidDoctorApp(ctk.CTk):
         alert_btns = ctk.CTkFrame(self.alert_card, fg_color="transparent")
         alert_btns.pack(fill="x", padx=15, pady=(0, 10))
 
-        self.btn_alert_action = ctk.CTkButton(alert_btns, text="إعادة الفحص الآن", height=28, fg_color="#b91c1c", hover_color="#dc2626", command=self.refresh_devices_async)
+        self.btn_alert_action = ctk.CTkButton(alert_btns, text=self._tr("ui.rescan_now"), height=28, fg_color="#b91c1c", hover_color="#dc2626", command=self.refresh_devices_async)
         self.btn_alert_action.pack(side="left", padx=(0, 8))
 
-        ctk.CTkButton(alert_btns, text="إعادة تشغيل خادم الاتصال", height=28, fg_color="#21262d", hover_color="#30363d", command=self._restart_adb_service).pack(side="left")
+        ctk.CTkButton(alert_btns, text=self._tr("ui.restart_the_adb_server"), height=28, fg_color="#21262d", hover_color="#30363d", command=self._restart_adb_service).pack(side="left")
 
         # Connection Help Banner (Shown when no device is connected)
         self.guide_card = ctk.CTkFrame(tab, fg_color="#221c10", border_color="#d97706", border_width=1, corner_radius=8)
@@ -469,27 +488,27 @@ class AndroidDoctorApp(ctk.CTk):
         ctk.CTkLabel(self.gauges_card, text=self._tr("live_gauges"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(12, 10))
 
         # RAM Gauge
-        self.ram_title_lbl = ctk.CTkLabel(self.gauges_card, text="RAM: —", font=ctk.CTkFont(size=12), text_color="#c9d1d9")
+        self.ram_title_lbl = ctk.CTkLabel(self.gauges_card, text=self._tr("ui.ram"), font=ctk.CTkFont(size=12), text_color="#c9d1d9")
         self.ram_title_lbl.pack(anchor="w", padx=15, pady=(5, 2))
         self.ram_bar = ctk.CTkProgressBar(self.gauges_card, height=12, progress_color="#1f6feb")
         self.ram_bar.set(0)
         self.ram_bar.pack(fill="x", padx=15, pady=(0, 15))
 
         # Storage Gauge
-        self.storage_title_lbl = ctk.CTkLabel(self.gauges_card, text="Internal Storage: —", font=ctk.CTkFont(size=12), text_color="#c9d1d9")
+        self.storage_title_lbl = ctk.CTkLabel(self.gauges_card, text=self._tr("ui.internal_storage"), font=ctk.CTkFont(size=12), text_color="#c9d1d9")
         self.storage_title_lbl.pack(anchor="w", padx=15, pady=(5, 2))
         self.storage_bar = ctk.CTkProgressBar(self.gauges_card, height=12, progress_color="#238636")
         self.storage_bar.set(0)
         self.storage_bar.pack(fill="x", padx=15, pady=(0, 15))
 
         # Battery Gauge
-        self.batt_title_lbl = ctk.CTkLabel(self.gauges_card, text="Battery: —", font=ctk.CTkFont(size=12), text_color="#c9d1d9")
+        self.batt_title_lbl = ctk.CTkLabel(self.gauges_card, text=self._tr("ui.battery"), font=ctk.CTkFont(size=12), text_color="#c9d1d9")
         self.batt_title_lbl.pack(anchor="w", padx=15, pady=(5, 2))
         self.batt_bar = ctk.CTkProgressBar(self.gauges_card, height=12, progress_color="#e3b341")
         self.batt_bar.set(0)
         self.batt_bar.pack(fill="x", padx=15, pady=(0, 15))
 
-        self.batt_quick_lbl = ctk.CTkLabel(self.gauges_card, text="Voltage: — | Temp: — | Health: —", font=ctk.CTkFont(size=12), text_color="#8b949e")
+        self.batt_quick_lbl = ctk.CTkLabel(self.gauges_card, text=self._tr("ui.voltage_temp_health"), font=ctk.CTkFont(size=12), text_color="#8b949e")
         self.batt_quick_lbl.pack(anchor="w", padx=15, pady=(0, 10))
 
     def _restart_adb_service(self):
@@ -497,9 +516,9 @@ class AndroidDoctorApp(ctk.CTk):
             ok, msg = self.bridge.restart_server()
             def done():
                 if ok:
-                    messagebox.showinfo("ADB Server", "تمت إعادة تشغيل خادم الاتصال بنجاح. جاري الفحص..." if self.current_lang == "ar" else "ADB server restarted successfully.")
+                    messagebox.showinfo(self._tr("ui.adb_server"), self._tr("ui.adb_server_restarted_successfully"))
                 else:
-                    messagebox.showwarning("ADB Notice", f"تمت إعادة التشغيل: {msg}" if self.current_lang == "ar" else f"ADB result: {msg}")
+                    messagebox.showwarning(self._tr("ui.adb_notice"), self._tr("ui.adb_result", msg=msg))
                 self.refresh_devices_sync()
             self.after(0, done)
         threading.Thread(target=task, daemon=True).start()
@@ -583,28 +602,28 @@ class AndroidDoctorApp(ctk.CTk):
         # Voltage
         box_v = ctk.CTkFrame(telem_grid, fg_color="#0d1117", corner_radius=6)
         box_v.grid(row=0, column=0, padx=4, sticky="nsew")
-        ctk.CTkLabel(box_v, text="جهد البطارية (مقياس الوقود)" if self.current_lang == "ar" else "Battery voltage (fuel gauge)", font=ctk.CTkFont(size=11), text_color="#8b949e").pack(padx=8, pady=(8, 2))
-        self.lbl_telem_volt = ctk.CTkLabel(box_v, text="— mV", font=ctk.CTkFont(size=16, weight="bold"), text_color="#58a6ff")
+        ctk.CTkLabel(box_v, text=self._tr("ui.battery_voltage_fuel_gauge"), font=ctk.CTkFont(size=11), text_color="#8b949e").pack(padx=8, pady=(8, 2))
+        self.lbl_telem_volt = ctk.CTkLabel(box_v, text=self._tr("ui.mv"), font=ctk.CTkFont(size=16, weight="bold"), text_color="#58a6ff")
         self.lbl_telem_volt.pack(padx=8, pady=(0, 8))
 
         # Current Draw
         box_c = ctk.CTkFrame(telem_grid, fg_color="#0d1117", corner_radius=6)
         box_c.grid(row=0, column=1, padx=4, sticky="nsew")
-        ctk.CTkLabel(box_c, text="تيار البطارية (يشمل تيار الشحن)" if self.current_lang == "ar" else "Battery current (incl. USB charging)", font=ctk.CTkFont(size=11), text_color="#8b949e").pack(padx=8, pady=(8, 2))
-        self.lbl_telem_curr = ctk.CTkLabel(box_c, text="— mA", font=ctk.CTkFont(size=16, weight="bold"), text_color="#f59e0b")
+        ctk.CTkLabel(box_c, text=self._tr("ui.battery_current_incl_usb_charging"), font=ctk.CTkFont(size=11), text_color="#8b949e").pack(padx=8, pady=(8, 2))
+        self.lbl_telem_curr = ctk.CTkLabel(box_c, text=self._tr("ui.ma"), font=ctk.CTkFont(size=16, weight="bold"), text_color="#f59e0b")
         self.lbl_telem_curr.pack(padx=8, pady=(0, 8))
 
         # Battery Temp
         box_bt = ctk.CTkFrame(telem_grid, fg_color="#0d1117", corner_radius=6)
         box_bt.grid(row=0, column=2, padx=4, sticky="nsew")
-        ctk.CTkLabel(box_bt, text="حرارة البطارية" if self.current_lang == "ar" else "Battery Temp", font=ctk.CTkFont(size=11), text_color="#8b949e").pack(padx=8, pady=(8, 2))
+        ctk.CTkLabel(box_bt, text=self._tr("ui.battery_temp"), font=ctk.CTkFont(size=11), text_color="#8b949e").pack(padx=8, pady=(8, 2))
         self.lbl_telem_batt_temp = ctk.CTkLabel(box_bt, text="— °C", font=ctk.CTkFont(size=16, weight="bold"), text_color="#10b981")
         self.lbl_telem_batt_temp.pack(padx=8, pady=(0, 8))
 
         # CPU Temp
         box_ct = ctk.CTkFrame(telem_grid, fg_color="#0d1117", corner_radius=6)
         box_ct.grid(row=0, column=3, padx=4, sticky="nsew")
-        ctk.CTkLabel(box_ct, text="ذروة حرارة المعالج" if self.current_lang == "ar" else "Peak CPU Temp", font=ctk.CTkFont(size=11), text_color="#8b949e").pack(padx=8, pady=(8, 2))
+        ctk.CTkLabel(box_ct, text=self._tr("ui.peak_cpu_temp"), font=ctk.CTkFont(size=11), text_color="#8b949e").pack(padx=8, pady=(8, 2))
         self.lbl_telem_cpu_temp = ctk.CTkLabel(box_ct, text="— °C", font=ctk.CTkFont(size=16, weight="bold"), text_color="#f87171")
         self.lbl_telem_cpu_temp.pack(padx=8, pady=(0, 8))
 
@@ -615,7 +634,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.pmic_text = ctk.CTkTextbox(self.pmic_card, height=130, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.pmic_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.pmic_text.insert("end", "اضغط على 'فحص آيسي الشحن (PMIC)' لقراءة الفولت الحقيقي والأمبير...\n" if self.current_lang == "ar" else "Click 'Analyze PMIC & Charging IC' to inspect live hardware values...\n")
+        self.pmic_text.insert("end", self._tr("ui.click_analyze_pmic_charging_ic_to"))
 
         # Fast Charge Protocol & Power Card
         self.fast_charge_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
@@ -624,7 +643,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.fast_charge_text = ctk.CTkTextbox(self.fast_charge_card, height=110, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.fast_charge_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.fast_charge_text.insert("end", "انقر فوق 'فحص بروتوكول الشحن السريع' لقياس قدرة الواط الحقيقية وبروتوكول الشاحن (USB-PD / QC)...\n" if self.current_lang == "ar" else "Click 'Diagnose Fast Charge Protocol' to measure live wattage and fast charging protocol...\n")
+        self.fast_charge_text.insert("end", self._tr("ui.click_diagnose_fast_charge_protocol_to"))
 
         # NAND Flash Wear & Speed Benchmark Card
         self.nand_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
@@ -633,7 +652,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.nand_text = ctk.CTkTextbox(self.nand_card, height=115, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.nand_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.nand_text.insert("end", "انقر فوق 'عمر واستهلاك خلايا الذاكرة' أو 'اختبار سرعة الذاكرة (64MB)' لفحص كفاءة شريحة الـ eMMC/UFS...\n" if self.current_lang == "ar" else "Click 'eMMC/UFS Lifespan & Wear' or 'Storage Speed Benchmark (64MB)' to evaluate internal storage IC health...\n")
+        self.nand_text.insert("end", self._tr("ui.click_emmc_ufs_lifespan_wear_or"))
 
         # 30-Second CPU & PMIC Load / Stress Test Card
         self.stress_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
@@ -644,7 +663,7 @@ class AndroidDoctorApp(ctk.CTk):
         self.stress_progress.set(0)
         self.stress_progress.pack(fill="x", padx=15, pady=(5, 8))
 
-        self.stress_lbl = ctk.CTkLabel(self.stress_card, text="جاهز للاختبار (سيتم تشغيل حمل معالجة لمدة 30 ثانية لمراقبة هبوط الفولت والحرارة)" if self.current_lang == "ar" else "Ready (Will apply a 30s multi-core load to monitor voltage sag and thermal throttling)", font=ctk.CTkFont(size=12), text_color="#8b949e")
+        self.stress_lbl = ctk.CTkLabel(self.stress_card, text=self._tr("ui.ready_will_apply_a_30s_multi"), font=ctk.CTkFont(size=12), text_color="#8b949e")
         self.stress_lbl.pack(anchor="w", padx=15, pady=(0, 5))
 
         self.stress_text = ctk.CTkTextbox(self.stress_card, height=115, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
@@ -657,7 +676,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.bootrom_text = ctk.CTkTextbox(self.bootrom_card, height=110, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.bootrom_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.bootrom_text.insert("end", "انقر فوق 'فحص منافذ BootROM والأجهزة الميتة' لفحص منافذ كوالكوم EDL 9008 وميديا تيك BROM ودورة ريستارت الـ PMIC...\n" if self.current_lang == "ar" else "Click 'Dead Phone / BootROM USB Scanner' to inspect Qualcomm EDL 9008, MediaTek BROM, and PMIC cycling...\n")
+        self.bootrom_text.insert("end", self._tr("ui.click_dead_phone_bootrom_usb_scanner"))
 
         # Leakage Test Live Output Card
         self.leakage_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
@@ -668,7 +687,7 @@ class AndroidDoctorApp(ctk.CTk):
         self.leakage_progress.set(0)
         self.leakage_progress.pack(fill="x", padx=15, pady=(5, 8))
 
-        self.leakage_lbl = ctk.CTkLabel(self.leakage_card, text="جاهز (يتطلب ADB لاسلكي وفصل الشاحن؛ تُطفأ الشاشة مؤقتاً)", font=ctk.CTkFont(size=12), text_color="#8b949e")
+        self.leakage_lbl = ctk.CTkLabel(self.leakage_card, text=self._tr("ui.ready_needs_wireless_adb_and_no"), font=ctk.CTkFont(size=12), text_color="#8b949e")
         self.leakage_lbl.pack(anchor="w", padx=15, pady=(0, 5))
 
         self.leakage_text = ctk.CTkTextbox(self.leakage_card, height=110, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
@@ -702,7 +721,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.blackbox_text = ctk.CTkTextbox(self.blackbox_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.blackbox_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.blackbox_text.insert("end", "انقر فوق 'تشخيص أسباب إعادة التشغيل المفاجئ' لفحص سجلات DropBox والـ Kernel Panics وأسباب انطفاء المعالج...\n" if self.current_lang == "ar" else "Click 'Run Blackbox Forensics' to parse DropBox logs, reboot history, and kernel ramoops crash reasons...\n")
+        self.blackbox_text.insert("end", self._tr("ui.click_run_blackbox_forensics_to_parse"))
 
         # Root Forensics Pro & EFS Backup Card
         self.root_forensics_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
@@ -718,7 +737,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.root_forensics_text = ctk.CTkTextbox(self.root_forensics_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.root_forensics_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.root_forensics_text.insert("end", "انقر فوق 'التحليل الجنائي للكيرنل (Root)' لفحص سجلات الانهيار المحفوظة في Ramoops وناقل I2C وعمر خلايا الذاكرة عبر su...\n" if self.current_lang == "ar" else "Click 'Kernel & Ramoops Forensics (Root)' to inspect persistent ramoops crash logs, I2C bus faults, and exact wear via su...\n")
+        self.root_forensics_text.insert("end", self._tr("ui.click_kernel_ramoops_forensics_root_to"))
 
     # =========================================================================
     # TAB 3: HARDWARE, SENSORS & PERIPHERALS TESTER
@@ -746,7 +765,7 @@ class AndroidDoctorApp(ctk.CTk):
         self.btn_audit_hw = ctk.CTkButton(btn_row1, text=self._tr("btn_audit_hw"), command=self.run_hardware_audit_async, fg_color="#1f6feb", hover_color="#388bfd")
         self.btn_audit_hw.pack(side="left", padx=4)
 
-        self.btn_test_keys = ctk.CTkButton(btn_row1, text="فحص الأزرار الحية (5 ثوانٍ)" if self.current_lang == "ar" else "Test Physical Keys Live", command=self.run_buttons_test_async, fg_color="#21262d", hover_color="#30363d")
+        self.btn_test_keys = ctk.CTkButton(btn_row1, text=self._tr("ui.test_physical_keys_live"), command=self.run_buttons_test_async, fg_color="#21262d", hover_color="#30363d")
         self.btn_test_keys.pack(side="left", padx=4)
 
         self.btn_test_vib = ctk.CTkButton(btn_row1, text=self._tr("btn_test_vib"), command=self._trigger_vibration, fg_color="#21262d", hover_color="#30363d")
@@ -868,7 +887,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.storage_text = ctk.CTkTextbox(self.storage_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.storage_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        self.storage_text.insert("end", "انقر فوق 'فحص عمر وسرعة الذاكرة' لاختبار سرعة القراءة والكتابة واستهلاك الخلايا (Wear Out)...\n" if self.current_lang == "ar" else "Click 'Test Storage Wear & Speed' to benchmark read/write speeds and JEDEC life time...\n")
+        self.storage_text.insert("end", self._tr("ui.click_test_storage_wear_speed_to"))
 
         # Touch Matrix Digitizer Card
         self.touch_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
@@ -877,7 +896,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.touch_text = ctk.CTkTextbox(self.touch_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.touch_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        self.touch_text.insert("end", "انقر فوق 'اختبار شبكة اللمس' لنشر شبكة فحص الديجيتيزر على شاشة الهاتف بالكامل...\n" if self.current_lang == "ar" else "Click 'Interactive Touch Digitizer Grid Test' to deploy the full-screen touch grid on the phone...\n")
+        self.touch_text.insert("end", self._tr("ui.click_interactive_touch_digitizer_grid_test"))
 
         # Audio Codec IC & ALSA Soundcards Card
         self.audio_codec_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
@@ -886,7 +905,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.audio_codec_text = ctk.CTkTextbox(self.audio_codec_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.audio_codec_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        self.audio_codec_text.insert("end", "فحص بطاقة الصوت ALSA ومتحكم الصوت الداخلي (WCD/ALC/MTK) وحالة AudioFlinger...\n" if self.current_lang == "ar" else "Inspects ALSA soundcards, Audio Codec IC chip, and AudioFlinger HAL state...\n")
+        self.audio_codec_text.insert("end", self._tr("ui.inspects_alsa_soundcards_audio_codec_ic"))
 
         # Display panel info & verified boot state card
         self.panel_info_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
@@ -895,7 +914,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.panel_info_text = ctk.CTkTextbox(self.panel_info_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.panel_info_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        self.panel_info_text.insert("end", "استخراج اسم شريحة تعريف شاشة العرض (DSI Controller) وحالة حماية البوت لودر (VerifiedBootState)...\n" if self.current_lang == "ar" else "Reads the kernel-reported display controller name and VerifiedBootState / vbmeta state...\n")
+        self.panel_info_text.insert("end", self._tr("ui.reads_the_kernel_reported_display_controller"))
 
     # =========================================================================
     # TAB 4: MALWARE HUNTER & SPYWARE AUDITOR
@@ -936,7 +955,7 @@ class AndroidDoctorApp(ctk.CTk):
         self.sec_progress.set(0)
         self.sec_progress.pack(fill="x", padx=15, pady=(0, 5))
 
-        self.sec_status_lbl = ctk.CTkLabel(tab, text="جاهز للفحص" if self.current_lang == "ar" else "Scanner Ready", font=ctk.CTkFont(size=12), text_color="#8b949e")
+        self.sec_status_lbl = ctk.CTkLabel(tab, text=self._tr("ui.scanner_ready"), font=ctk.CTkFont(size=12), text_color="#8b949e")
         self.sec_status_lbl.pack(anchor="w", padx=15, pady=(0, 15))
 
         # Flagged Threats Box
@@ -974,7 +993,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.bloat_text = ctk.CTkTextbox(self.bloat_card, height=150, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.bloat_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        self.bloat_text.insert("end", "انقر فوق 'فحص تطبيقات النظام الزائدة' للتعرف التلقائي على تطبيقات المصنع الدعائية (Xiaomi / Samsung / Oppo) وفق قاعدة UAD-ng...\n" if self.current_lang == "ar" else "Click 'Scan OEM Bloatware' to audit manufacturer pre-installed bloatware packages using UAD-ng database...\n")
+        self.bloat_text.insert("end", self._tr("ui.click_scan_oem_bloatware_to_audit"))
 
     # =========================================================================
     # TAB 5: SYSTEM OPTIMIZER
@@ -1000,7 +1019,7 @@ class AndroidDoctorApp(ctk.CTk):
         self.opt_progress.set(0)
         self.opt_progress.pack(fill="x", padx=15, pady=(0, 5))
 
-        self.opt_status_lbl = ctk.CTkLabel(tab, text="جاهز للتنظيف والصيانة" if self.current_lang == "ar" else "Optimizer Idle", font=ctk.CTkFont(size=12), text_color="#8b949e")
+        self.opt_status_lbl = ctk.CTkLabel(tab, text=self._tr("ui.optimizer_idle"), font=ctk.CTkFont(size=12), text_color="#8b949e")
         self.opt_status_lbl.pack(anchor="w", padx=15, pady=(0, 15))
 
         # Before & After Comparison Cards
@@ -1012,21 +1031,21 @@ class AndroidDoctorApp(ctk.CTk):
         self.card_ram_gain = ctk.CTkFrame(comp_grid, fg_color="#161b22", corner_radius=8)
         self.card_ram_gain.grid(row=0, column=0, padx=(0, 6), sticky="nsew")
         ctk.CTkLabel(self.card_ram_gain, text=self._tr("gain_ram"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(padx=10, pady=(10, 2))
-        self.lbl_ram_gain = ctk.CTkLabel(self.card_ram_gain, text="+0.0 MB", font=ctk.CTkFont(size=22, weight="bold"), text_color="#58a6ff")
+        self.lbl_ram_gain = ctk.CTkLabel(self.card_ram_gain, text=self._tr("ui.0_0_mb"), font=ctk.CTkFont(size=22, weight="bold"), text_color="#58a6ff")
         self.lbl_ram_gain.pack(padx=10, pady=(0, 10))
 
         # Storage Cleaned Card
         self.card_storage_gain = ctk.CTkFrame(comp_grid, fg_color="#161b22", corner_radius=8)
         self.card_storage_gain.grid(row=0, column=1, padx=6, sticky="nsew")
         ctk.CTkLabel(self.card_storage_gain, text=self._tr("gain_storage"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(padx=10, pady=(10, 2))
-        self.lbl_storage_gain = ctk.CTkLabel(self.card_storage_gain, text="+0.0 MB", font=ctk.CTkFont(size=22, weight="bold"), text_color="#238636")
+        self.lbl_storage_gain = ctk.CTkLabel(self.card_storage_gain, text=self._tr("ui.0_0_mb"), font=ctk.CTkFont(size=22, weight="bold"), text_color="#238636")
         self.lbl_storage_gain.pack(padx=10, pady=(0, 10))
 
         # Standby Current Reduced Card
         self.card_drain_gain = ctk.CTkFrame(comp_grid, fg_color="#161b22", corner_radius=8)
         self.card_drain_gain.grid(row=0, column=2, padx=(6, 0), sticky="nsew")
         ctk.CTkLabel(self.card_drain_gain, text=self._tr("gain_drain"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(padx=10, pady=(10, 2))
-        self.lbl_drain_gain = ctk.CTkLabel(self.card_drain_gain, text="-0.0 mA", font=ctk.CTkFont(size=22, weight="bold"), text_color="#f59e0b")
+        self.lbl_drain_gain = ctk.CTkLabel(self.card_drain_gain, text=self._tr("ui.0_0_ma"), font=ctk.CTkFont(size=22, weight="bold"), text_color="#f59e0b")
         self.lbl_drain_gain.pack(padx=10, pady=(0, 10))
 
         # Live Execution Terminal
@@ -1103,7 +1122,7 @@ class AndroidDoctorApp(ctk.CTk):
         w_row1 = ctk.CTkFrame(self.wireless_card, fg_color="transparent")
         w_row1.pack(fill="x", padx=15, pady=(5, 8))
         ctk.CTkButton(w_row1, text=self._tr("btn_enable_wireless"), command=self._enable_wireless_adb, fg_color="#059669", hover_color="#047857").pack(side="left", padx=(0, 10))
-        self.lbl_wireless_ip = ctk.CTkLabel(w_row1, text="IP: —", font=ctk.CTkFont(size=12, weight="bold"), text_color="#34d399")
+        self.lbl_wireless_ip = ctk.CTkLabel(w_row1, text=self._tr("ui.ip"), font=ctk.CTkFont(size=12, weight="bold"), text_color="#34d399")
         self.lbl_wireless_ip.pack(side="left", padx=10)
 
         # Row 2: Connect / Disconnect
@@ -1128,7 +1147,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.wireless_log_text = ctk.CTkTextbox(self.wireless_card, height=80, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.wireless_log_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.wireless_log_text.insert("end", "لتفعيل ADB اللاسلكي: وصل الهاتف بالـ USB أولاً واضغط 'تفعيل وضع ADB اللاسلكي'، ثم يمكنك فصل السلك!\n" if self.current_lang == "ar" else "To enable Wireless ADB: Connect device via USB first, click 'Enable Wireless ADB', then you can unplug the cable!\n")
+        self.wireless_log_text.insert("end", self._tr("ui.to_enable_wireless_adb_connect_device"))
 
         # Setup Wizard & System Provisioning Card
         prov_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
@@ -1144,7 +1163,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.prov_log_text = ctk.CTkTextbox(prov_card, height=90, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.prov_log_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.prov_log_text.insert("end", "انقر فوق 'فحص حالة معالج التهيئة' لقراءة إعدادات device_provisioned و user_setup_complete..." if self.current_lang == "ar" else "Click 'Inspect Setup Flags' to verify device_provisioned and user_setup_complete...")
+        self.prov_log_text.insert("end", self._tr("ui.click_inspect_setup_flags_to_verify"))
 
         # Fastboot Rescue Card
         fb_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
@@ -1166,7 +1185,7 @@ class AndroidDoctorApp(ctk.CTk):
         self.part_combo = ctk.CTkComboBox(flash_bar, values=["boot", "recovery", "vbmeta", "dtbo", "system"], width=120)
         self.part_combo.pack(side="left", padx=(0, 10))
 
-        self.img_path_entry = ctk.CTkEntry(flash_bar, placeholder_text="Path to image (.img)...", width=260)
+        self.img_path_entry = ctk.CTkEntry(flash_bar, placeholder_text=self._tr("ui.path_to_image_img"), width=260)
         self.img_path_entry.pack(side="left", padx=(0, 6))
 
         ctk.CTkButton(flash_bar, text=self._tr("btn_browse"), width=80, command=self._browse_image_file, fg_color="#21262d", hover_color="#30363d").pack(side="left", padx=(0, 10))
@@ -1186,19 +1205,7 @@ class AndroidDoctorApp(ctk.CTk):
         ctk.CTkLabel(data_bar, text=self._tr("lbl_category")).pack(side="left", padx=(0, 6))
         self.data_cat_combo = ctk.CTkComboBox(
             data_bar,
-            values=[
-                "all_photos (جميع الصور والفيديوهات)",
-                "full_storage (سحب كل ملفات الهاتف)",
-                "whatsapp (وسائط واتساب فقط - المحادثات مشفرة)",
-                "downloads (التنزيلات)",
-                "documents (المستندات)"
-            ] if self.current_lang == "ar" else [
-                "all_photos (All Photos & DCIM)",
-                "full_storage (Full Storage Dump)",
-                "whatsapp (WhatsApp media only - chats are encrypted)",
-                "downloads (Downloads)",
-                "documents (Documents)"
-            ],
+            values=[self._tr("ui.all_photos_all_photos_dcim"), self._tr("ui.full_storage_full_storage_dump"), self._tr("ui.whatsapp_whatsapp_media_only_chats_are"), self._tr("ui.downloads_downloads"), self._tr("ui.documents_documents")],
             width=240
         )
         self.data_cat_combo.pack(side="left", padx=(0, 10))
@@ -1207,7 +1214,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         ctk.CTkButton(
             data_bar,
-            text="سحب كل الصور فوراً (1-Click)" if self.current_lang == "ar" else "1-Click Full Photos Pull",
+            text=self._tr("ui.1_click_full_photos_pull"),
             command=self._pull_all_photos_quick,
             fg_color="#059669",
             hover_color="#047857"
@@ -1223,7 +1230,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.data_log_text = ctk.CTkTextbox(data_card, height=110, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.data_log_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.data_log_text.insert("end", "سحب ملفات وصور الشاشات المكسورة مباشرة إلى سطح المكتب عبر كابل USB...\n" if self.current_lang == "ar" else "Emergency data and photo pull from broken/dark screen devices...\n")
+        self.data_log_text.insert("end", self._tr("ui.emergency_data_and_photo_pull_from"))
 
         # ADB Sideload OTA ROM Flasher Card
         sideload_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
@@ -1233,7 +1240,7 @@ class AndroidDoctorApp(ctk.CTk):
         sideload_bar = ctk.CTkFrame(sideload_card, fg_color="transparent")
         sideload_bar.pack(fill="x", padx=15, pady=(0, 10))
 
-        self.sideload_entry = ctk.CTkEntry(sideload_bar, placeholder_text="Path to OTA update package (.zip)...", width=380)
+        self.sideload_entry = ctk.CTkEntry(sideload_bar, placeholder_text=self._tr("ui.path_to_ota_update_package_zip"), width=380)
         self.sideload_entry.pack(side="left", padx=(0, 8))
 
         ctk.CTkButton(sideload_bar, text=self._tr("btn_browse_ota"), width=120, command=self._browse_ota_file, fg_color="#21262d", hover_color="#30363d").pack(side="left", padx=(0, 8))
@@ -1243,12 +1250,12 @@ class AndroidDoctorApp(ctk.CTk):
         self.sideload_progress.set(0)
         self.sideload_progress.pack(fill="x", padx=15, pady=(5, 5))
 
-        self.sideload_lbl = ctk.CTkLabel(sideload_card, text="جاهز للتفليش (ادخل الهاتف في وضع Recovery واضغط Apply Update from ADB)" if self.current_lang == "ar" else "Ready (Put device in Recovery Mode > Apply update from ADB)", font=ctk.CTkFont(size=12), text_color="#8b949e")
+        self.sideload_lbl = ctk.CTkLabel(sideload_card, text=self._tr("ui.ready_put_device_in_recovery_mode"), font=ctk.CTkFont(size=12), text_color="#8b949e")
         self.sideload_lbl.pack(anchor="w", padx=15, pady=(0, 5))
 
         self.sideload_text = ctk.CTkTextbox(sideload_card, height=100, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.sideload_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.sideload_text.insert("end", "تثبيت تحديثات الروم الرسمي بصيغة ZIP من خلال وضع الريكفري الرسمي عبر بروتوكول ADB Sideload...\n" if self.current_lang == "ar" else "Stream official OTA/ROM update zip packages directly via ADB Sideload protocol...\n")
+        self.sideload_text.insert("end", self._tr("ui.stream_official_ota_rom_update_zip"))
 
         # Fastboot Active Slot (A/B) & Anti-Rollback (ARB) Card
         slot_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
@@ -1264,7 +1271,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.slot_log_text = ctk.CTkTextbox(slot_card, height=90, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.slot_log_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.slot_log_text.insert("end", "في وضع الفاست بوت: بدّل بين سلوت A وسلوت B لحل التعليق على الشعار، أو افحص مؤشر حماية الرجوع (ARB)...\n" if self.current_lang == "ar" else "In Fastboot: Switch between Slot A & B to unbrick OTA loops, or check Anti-Rollback fuse index...\n")
+        self.slot_log_text.insert("end", self._tr("ui.in_fastboot_switch_between_slot_a"))
 
         # Critical Partitions & Radio Backup Card
         part_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
@@ -1280,7 +1287,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.part_backup_text = ctk.CTkTextbox(part_card, height=110, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.part_backup_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.part_backup_text.insert("end", "سحب احتياطي حقيقي لملفات الشبكة ومعايرة المودم (EFS / FSG / Modem / Persist) وحفظها على الكمبيوتر...\n" if self.current_lang == "ar" else "Dump and backup critical radio calibration partitions (EFS / FSG / Modem / Persist) to PC...\n")
+        self.part_backup_text.insert("end", self._tr("ui.dump_and_backup_critical_radio_calibration"))
 
         # Batch APK Installer & Extractor Card
         apk_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
@@ -1295,7 +1302,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         self.apk_log_text = ctk.CTkTextbox(apk_card, height=110, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
         self.apk_log_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.apk_log_text.insert("end", "تثبيت حزم APK متعددة دفعة واحدة (-r -d -g) أو سحب تطبيقات المستخدم المثبتة إلى مجلد سطح المكتب...\n" if self.current_lang == "ar" else "Batch install multiple APK files (-r -d -g) or pull installed user apps to PC...\n")
+        self.apk_log_text.insert("end", self._tr("ui.batch_install_multiple_apk_files_r"))
 
     # =========================================================================
     # TAB 7: REPORTS & CERTIFICATE EXPORTER
@@ -1320,17 +1327,17 @@ class AndroidDoctorApp(ctk.CTk):
 
         # Field 1: Customer Name
         ctk.CTkLabel(t_grid, text=self._tr("lbl_cust_name"), font=ctk.CTkFont(size=12), text_color="#8b949e").grid(row=0, column=0, padx=6, pady=2, sticky="w")
-        self.cust_name_entry = ctk.CTkEntry(t_grid, placeholder_text="أحمد محمد" if self.current_lang == "ar" else "John Doe")
+        self.cust_name_entry = ctk.CTkEntry(t_grid, placeholder_text=self._tr("ui.john_doe"))
         self.cust_name_entry.grid(row=1, column=0, padx=6, pady=(0, 8), sticky="ew")
 
         # Field 2: Customer Phone
         ctk.CTkLabel(t_grid, text=self._tr("lbl_cust_phone"), font=ctk.CTkFont(size=12), text_color="#8b949e").grid(row=0, column=1, padx=6, pady=2, sticky="w")
-        self.cust_phone_entry = ctk.CTkEntry(t_grid, placeholder_text="+970 59-xxxxxxx")
+        self.cust_phone_entry = ctk.CTkEntry(t_grid, placeholder_text=self._tr("ui.970_59_xxxxxxx"))
         self.cust_phone_entry.grid(row=1, column=1, padx=6, pady=(0, 8), sticky="ew")
 
         # Field 3: Reported Fault
         ctk.CTkLabel(t_grid, text=self._tr("lbl_cust_fault"), font=ctk.CTkFont(size=12), text_color="#8b949e").grid(row=0, column=2, padx=6, pady=2, sticky="w")
-        self.cust_fault_entry = ctk.CTkEntry(t_grid, placeholder_text="شاشة مكسورة / فحص شامل" if self.current_lang == "ar" else "Screen / Charging issue")
+        self.cust_fault_entry = ctk.CTkEntry(t_grid, placeholder_text=self._tr("ui.screen_charging_issue"))
         self.cust_fault_entry.grid(row=1, column=2, padx=6, pady=(0, 8), sticky="ew")
 
         # Field 4: Estimated Repair Cost
@@ -1344,7 +1351,7 @@ class AndroidDoctorApp(ctk.CTk):
 
         ctk.CTkLabel(btn_row, text=self._tr("lbl_tech_name"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(side="left", padx=(0, 8))
         self.tech_name_entry = ctk.CTkEntry(btn_row, width=220)
-        self.tech_name_entry.insert(0, "كبير مهندسي الصيانة" if self.current_lang == "ar" else "Chief Hardware Technician")
+        self.tech_name_entry.insert(0, self._tr("ui.chief_hardware_technician"))
         self.tech_name_entry.pack(side="left", padx=(0, 15))
 
         self.btn_export_cert = ctk.CTkButton(btn_row, text=self._tr("btn_gen_signed_cert"), command=self._generate_and_open_certificate, fg_color="#238636", hover_color="#2ea043")
@@ -1401,7 +1408,7 @@ class AndroidDoctorApp(ctk.CTk):
                 if hasattr(self, "alert_card"):
                     self.alert_card.configure(fg_color="#331414", border_color="#ef4444")
                     self.alert_title_lbl.configure(
-                        text=f"⚠️ هاتف متصل غير مصرح (Unauthorized): {serials_str}" if is_ar else f"⚠️ Device is UNAUTHORIZED: {serials_str}",
+                        text=self._tr("ui.device_is_unauthorized", serials_str=serials_str),
                         text_color="#f87171"
                     )
                     self.alert_desc_lbl.configure(
@@ -1413,7 +1420,7 @@ class AndroidDoctorApp(ctk.CTk):
                     self.guide_card.pack_forget()
 
                 self.adb_status_label.configure(
-                    text=f"ADB: غير مصرح ({serials_str}) | افتح شاشة الهاتف واضغط موافق" if is_ar else f"ADB: Unauthorized ({serials_str}) | Accept RSA Prompt",
+                    text=self._tr("ui.adb_unauthorized_accept_rsa_prompt", serials_str=serials_str),
                     text_color="#ef4444"
                 )
 
@@ -1423,7 +1430,7 @@ class AndroidDoctorApp(ctk.CTk):
                 if hasattr(self, "alert_card"):
                     self.alert_card.configure(fg_color="#2e1a05", border_color="#f59e0b")
                     self.alert_title_lbl.configure(
-                        text=f"⚠️ تم رصد هاتف متصل عبر USB ({phone_names}) ولكن تصحيح USB مغلق!" if is_ar else f"⚠️ Phone detected on USB ({phone_names}), but USB Debugging is OFF!",
+                        text=self._tr("ui.phone_detected_on_usb_but_usb", phone_names=phone_names),
                         text_color="#fbbf24"
                     )
                     desc_text = self._tr("alert_pnp_desc").replace("{names}", phone_names)
@@ -1436,7 +1443,7 @@ class AndroidDoctorApp(ctk.CTk):
                     self.guide_card.pack_forget()
 
                 self.adb_status_label.configure(
-                    text=f"USB: {phone_names} | فعّل خيارات المطور وتصحيح USB" if is_ar else f"USB: {phone_names} | Enable USB Debugging",
+                    text=self._tr("ui.usb_enable_usb_debugging", phone_names=phone_names),
                     text_color="#f59e0b"
                 )
 
@@ -1446,7 +1453,7 @@ class AndroidDoctorApp(ctk.CTk):
                 if hasattr(self, "alert_card"):
                     self.alert_card.configure(fg_color="#2b1a10", border_color="#ea580c")
                     self.alert_title_lbl.configure(
-                        text=f"⚠️ هاتف متصل بوضع غير متصل (Offline): {serials_str}" if is_ar else f"⚠️ Device is OFFLINE: {serials_str}",
+                        text=self._tr("ui.device_is_offline", serials_str=serials_str),
                         text_color="#fb923c"
                     )
                     self.alert_desc_lbl.configure(
@@ -1458,7 +1465,7 @@ class AndroidDoctorApp(ctk.CTk):
                     self.guide_card.pack_forget()
 
                 self.adb_status_label.configure(
-                    text=f"ADB: غير متصل (Offline) | أعد توصيل كابل USB" if is_ar else f"ADB: Offline | Replug USB cable",
+                    text=self._tr("ui.adb_offline_replug_usb_cable"),
                     text_color="#ea580c"
                 )
 
@@ -1480,7 +1487,7 @@ class AndroidDoctorApp(ctk.CTk):
             # Update Dropdown items
             if not options:
                 if pnp_phones:
-                    options = [f"USB: {pnp_phones[0]['name']} (تصحيح USB غير مفعل)" if is_ar else f"USB: {pnp_phones[0]['name']} (No ADB)"]
+                    options = [self._tr("ui.usb_no_adb", name=pnp_phones[0]['name'])]
                 else:
                     options = [self._tr("no_devices")]
 
@@ -1493,11 +1500,11 @@ class AndroidDoctorApp(ctk.CTk):
                 chosen = (authorized_devs or fastboot_devs)[0]
                 self.current_serial.set(chosen["serial"])
                 self.device_combo.set(f"{chosen['serial']} ({chosen.get('model') or chosen.get('state')})")
-                self.adb_status_label.configure(text=f"ADB: {chosen['state'].upper()} | {chosen['serial']}", text_color="#238636")
+                self.adb_status_label.configure(text=self._tr("ui.adb", upper=chosen['state'].upper(), serial=chosen['serial']), text_color="#238636")
                 self.run_profile_async()
             elif cur in ready_serials:
                 cur_dev = next(d for d in devices if d["serial"] == cur)
-                self.adb_status_label.configure(text=f"ADB: {cur_dev['state'].upper()} | {cur}", text_color="#238636")
+                self.adb_status_label.configure(text=self._tr("ui.adb_2", upper=cur_dev['state'].upper(), cur=cur), text_color="#238636")
             elif not ready_serials:
                 self.current_serial.set("")
 
@@ -1516,7 +1523,7 @@ class AndroidDoctorApp(ctk.CTk):
     def _exec_reboot(self, mode: str):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه" if self.current_lang == "ar" else "Warning", "الرجاء توصيل واختيار هاتف مصرح أولاً." if self.current_lang == "ar" else "No target device selected.")
+            messagebox.showwarning(self._tr("ui.warning"), self._tr("ui.no_target_device_selected"))
             return
         threading.Thread(target=lambda: self.bridge.reboot(mode, serial), daemon=True).start()
 
@@ -1536,14 +1543,14 @@ class AndroidDoctorApp(ctk.CTk):
                 self.spec_labels["model"].configure(text=f"{profile.brand} {profile.model}")
                 self.spec_labels["serial"].configure(text=profile.serial)
                 self.spec_labels["soc"].configure(text=f"{profile.soc_chipset} ({profile.hardware})")
-                self.spec_labels["cores"].configure(text=f"{profile.cpu_cores} Cores ({profile.cpu_architecture})")
-                self.spec_labels["android"].configure(text=f"Android {profile.android_version} (API {profile.sdk_version})")
+                self.spec_labels["cores"].configure(text=self._tr("ui.cores", cpu_cores=profile.cpu_cores, cpu_architecture=profile.cpu_architecture))
+                self.spec_labels["android"].configure(text=self._tr("ui.android_api", android_version=profile.android_version, sdk_version=profile.sdk_version))
                 self.spec_labels["build_id"].configure(text=profile.build_id[:32])
                 self.spec_labels["security"].configure(text=profile.security_patch)
                 self.spec_labels["kernel"].configure(text=profile.kernel_version[:36] if profile.kernel_version else "Standard")
                 
-                root_str = "يوجد روت (معدل)" if self.current_lang == "ar" else "ROOTED"
-                no_root_str = "لا يوجد روت (نظام أصلي)" if self.current_lang == "ar" else "NO (Standard OEM)"
+                root_str = self._tr("ui.rooted")
+                no_root_str = self._tr("ui.no_standard_oem")
                 self.spec_labels["root"].configure(text=root_str if profile.is_rooted else no_root_str, text_color="#da3633" if profile.is_rooted else "#238636")
                 
                 self.spec_labels["selinux"].configure(text=profile.selinux_mode)
@@ -1553,16 +1560,16 @@ class AndroidDoctorApp(ctk.CTk):
                 if profile.ram_total_mb > 0:
                     pct = profile.ram_used_pct / 100.0
                     self.ram_bar.set(pct)
-                    self.ram_title_lbl.configure(text=f"الرام: {profile.ram_free_mb:.0f} MB متاح من {profile.ram_total_mb:.0f} MB ({profile.ram_used_pct}%)" if self.current_lang == "ar" else f"RAM: {profile.ram_free_mb:.0f} MB Free / {profile.ram_total_mb:.0f} MB ({profile.ram_used_pct}%)")
+                    self.ram_title_lbl.configure(text=self._tr("ui.ram_mb_free_mb", ram_free_mb=profile.ram_free_mb, ram_total_mb=profile.ram_total_mb, ram_used_pct=profile.ram_used_pct))
 
                 if profile.storage_total_gb > 0:
                     pct = profile.storage_used_pct / 100.0
                     self.storage_bar.set(pct)
-                    self.storage_title_lbl.configure(text=f"الذاكرة: {profile.storage_free_gb:.1f} GB فارغ من {profile.storage_total_gb:.1f} GB ({profile.storage_used_pct}%)" if self.current_lang == "ar" else f"Storage: {profile.storage_free_gb:.1f} GB Free / {profile.storage_total_gb:.1f} GB ({profile.storage_used_pct}%)")
+                    self.storage_title_lbl.configure(text=self._tr("ui.storage_gb_free_gb", storage_free_gb=profile.storage_free_gb, storage_total_gb=profile.storage_total_gb, storage_used_pct=profile.storage_used_pct))
 
                 self.batt_bar.set(profile.battery_level_pct / 100.0)
-                self.batt_title_lbl.configure(text=f"البطارية: {profile.battery_level_pct}% ({profile.battery_status})" if self.current_lang == "ar" else f"Battery: {profile.battery_level_pct}% ({profile.battery_status})")
-                self.batt_quick_lbl.configure(text=f"الجهد: {profile.battery_voltage_mv} mV | الحرارة: {profile.battery_temp_c} °C | الكفاءة: {profile.battery_health}" if self.current_lang == "ar" else f"Voltage: {profile.battery_voltage_mv} mV | Temp: {profile.battery_temp_c} °C | Health: {profile.battery_health}")
+                self.batt_title_lbl.configure(text=self._tr("ui.battery_2", battery_level_pct=profile.battery_level_pct, battery_status=profile.battery_status))
+                self.batt_quick_lbl.configure(text=self._tr("ui.voltage_mv_temp_c_health", battery_voltage_mv=profile.battery_voltage_mv, battery_temp_c=profile.battery_temp_c, battery_health=profile.battery_health))
 
             self.after(0, update_ui)
 
@@ -1571,7 +1578,7 @@ class AndroidDoctorApp(ctk.CTk):
     def run_pmic_diag_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
         def task():
@@ -1585,22 +1592,22 @@ class AndroidDoctorApp(ctk.CTk):
             h_display = f"{pmic.true_health_pct:.1f}% ({pmic.health_verdict})" if pmic.true_health_pct is not None else pmic.health_verdict
 
             out_lines = [
-                f"=== فحص بطارية ومقياس الوقود وآيسي الشحن (الجهاز: {serial}) ===" if is_ar else f"=== BATTERY VOLTAGE (FUEL GAUGE) & CHARGING IC (Device: {serial}) ===",
-                f"جهد البطارية (مقياس الوقود):    {v_display}" if is_ar else f"Battery voltage (fuel gauge): {v_display}",
-                f"تيار البطارية:                  {c_display}" if is_ar else f"Battery current:              {c_display}",
-                f"حرارة البطارية الحالية:         {t_display}" if is_ar else f"Battery temperature:          {t_display}",
-                f"حالة الشحن:                     {pmic.status}" if is_ar else f"Charging Status:               {pmic.status}",
-                f"صحة البطارية المعلنة بالنظام:  {pmic.health}" if is_ar else f"Reported Health (OS):         {pmic.health}",
-                f"صحة الخلية المحسوبة:          {h_display}" if is_ar else f"True Calculated Health:       {h_display}",
-                f"السعة التصميمية للخلية:         {f'{pmic.charge_full_design_uah} uAh' if pmic.charge_full_design_uah else 'UNKNOWN'}" if is_ar else f"Design Capacity:               {f'{pmic.charge_full_design_uah} uAh' if pmic.charge_full_design_uah else 'UNKNOWN'}",
-                f"عدد دورات الشحن السابقة:        {pmic.cycle_count if pmic.cycle_count is not None else 'UNKNOWN'}" if is_ar else f"Charge Cycle Count:            {pmic.cycle_count if pmic.cycle_count is not None else 'UNKNOWN'}",
+                self._tr("ui.battery_voltage_fuel_gauge_charging_ic", serial=serial),
+                self._tr("ui.battery_voltage_fuel_gauge_2", v_display=v_display),
+                self._tr("ui.battery_current", c_display=c_display),
+                self._tr("ui.battery_temperature", t_display=t_display),
+                self._tr("ui.charging_status", status=pmic.status),
+                self._tr("ui.reported_health_os", health=pmic.health),
+                self._tr("ui.true_calculated_health", h_display=h_display),
+                self._tr("ui.design_capacity", unknown=f'{pmic.charge_full_design_uah} uAh' if pmic.charge_full_design_uah else 'UNKNOWN'),
+                self._tr("ui.charge_cycle_count", unknown=pmic.cycle_count if pmic.cycle_count is not None else 'UNKNOWN'),
             ]
             if pmic.fault_flags:
-                out_lines.append("\n⚠️ مؤشرات أعطال محتملة تم رصدها:" if is_ar else "\n⚠️ POTENTIAL FAULT INDICATORS:")
+                out_lines.append(self._tr("ui.potential_fault_indicators"))
                 for f in pmic.fault_flags:
                     out_lines.append(f"  [!] {f}")
             elif pmic.voltage_status == "PASS":
-                out_lines.append("\nلا توجد مؤشرات أعطال في القيم التي تمت قراءتها." if is_ar else "\nNo fault indicators in the values that were read.")
+                out_lines.append(self._tr("ui.no_fault_indicators_in_the_values"))
             else:
                 out_lines.append(f"\n[{pmic.voltage_status}]")
 
@@ -1618,23 +1625,23 @@ class AndroidDoctorApp(ctk.CTk):
     def run_bootrom_scan_async(self):
         is_ar = self.current_lang == "ar"
         self.bootrom_text.delete("1.0", "end")
-        self.bootrom_text.insert("end", "جاري فحص منافذ USB PnP للكشف عن أجهزة Qualcomm EDL و MediaTek BROM وريستارت الباور...\n" if is_ar else "Scanning Windows PnP ports for Qualcomm EDL, MediaTek BROM, and PMIC reset loops...\n")
+        self.bootrom_text.insert("end", self._tr("ui.scanning_windows_pnp_ports_for_qualcomm"))
 
         def task():
             diag = self.board_diag.diagnose_dead_phone_bootrom(check_cycling=True)
             self.last_bootrom_diag = diag
 
             lines = [
-                "=== تقرير فحص الأجهزة الميتة ومنافذ الطوارئ (BootROM) ===" if is_ar else "=== NON-BOOTING DEVICE & BOOTROM USB DIAGNOSIS ===",
-                f"التشخيص النهائي: {diag.summary_diagnosis}",
-                f"Qualcomm EDL 9008:    {'نعم (تم الرصد)' if diag.is_qualcomm_edl else 'لا'}" if is_ar else f"Qualcomm EDL 9008:    {'YES (Detected)' if diag.is_qualcomm_edl else 'No'}",
-                f"MediaTek BROM:        {'نعم (تم الرصد)' if diag.is_mediatek_brom else 'لا'}" if is_ar else f"MediaTek BROM:        {'YES (Detected)' if diag.is_mediatek_brom else 'No'}",
-                f"Samsung Odin Mode:    {'نعم (تم الرصد)' if diag.is_samsung_odin else 'لا'}" if is_ar else f"Samsung Odin Mode:    {'YES (Detected)' if diag.is_samsung_odin else 'No'}",
-                f"دورة ريستارت الباور:   {'⚠️ ريستارت مستمر (PMIC Cycling)' if diag.is_usb_cycling else 'مستقر (لا يوجد ريستارت)'}" if is_ar else f"USB Disconnect Loop:  {'WARNING (PMIC Cycling)' if diag.is_usb_cycling else 'Stable (No Cycling)'}",
+                self._tr("ui.non_booting_device_bootrom_usb_diagnosis"),
+                self._tr("ui.hypothesis", summary_diagnosis=diag.summary_diagnosis),
+                self._tr("ui.qualcomm_edl_9008", no=self._tr("ui.yes_detected") if diag.is_qualcomm_edl else self._tr("ui.no")),
+                self._tr("ui.mediatek_brom", no=self._tr("ui.yes_detected") if diag.is_mediatek_brom else self._tr("ui.no")),
+                self._tr("ui.samsung_odin_mode", no=self._tr("ui.yes_detected") if diag.is_samsung_odin else self._tr("ui.no")),
+                self._tr("ui.usb_disconnect_loop", stable_no_reconnect_cycling=self._tr("ui.usb_reconnect_cycling") if diag.is_usb_cycling else self._tr("ui.stable_no_reconnect_cycling")),
                 ""
             ]
             if diag.detected_ports:
-                lines.append("المنافذ المكتشفة:" if is_ar else "Detected USB Interfaces:")
+                lines.append(self._tr("ui.detected_usb_interfaces"))
                 for p in diag.detected_ports:
                     lines.append(f"  • {p.get('mode')}: {p.get('name')} [{p.get('status')}]")
                     lines.append(f"    {p.get('diagnosis')}")
@@ -1649,20 +1656,20 @@ class AndroidDoctorApp(ctk.CTk):
     def run_leakage_test_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
         is_ar = self.current_lang == "ar"
         self.leakage_progress.set(0)
         self.leakage_text.delete("1.0", "end")
-        self.leakage_text.insert("end", "اختبار تيار البطارية والشاشة مطفأة...\nيعمل فقط عبر ADB اللاسلكي ومع فصل الشاحن، لأن كابل USB يغذي الهاتف بالتيار.\n" if is_ar else "Screen-off battery current test...\nOnly runs over wireless ADB with no charger connected, because a USB cable supplies current.\n")
+        self.leakage_text.insert("end", self._tr("ui.screen_off_battery_current_test_only"))
 
         def progress(pct, val, msg):
             def upd():
                 self.leakage_progress.set(pct / 100.0)
                 val_txt = f"{val} mA" if val is not None else "UNKNOWN"
-                ar_msg = f"عينة {int(pct/10)}/10: تيار البطارية = {val_txt}" if is_ar else f"Sample {int(pct/10)}/10: battery current = {val_txt}"
-                self.leakage_lbl.configure(text=ar_msg)
+                ar_msg = self._tr("ui.sample_10_battery_current", pct=int(pct/10), val_txt=val_txt)
+                self.leakage_lbl.configure(text=self._m(ar_msg))
                 self.leakage_text.insert("end", f"{ar_msg}\n")
                 self.leakage_text.see("end")
             self.after(0, upd)
@@ -1677,14 +1684,14 @@ class AndroidDoctorApp(ctk.CTk):
             self.last_leakage = res
             lines = [f"\n[{res.status}] {res.diagnosis}"]
             for cause in res.possible_causes:
-                lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
+                lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if res.evidence:
                 lines.append(format_evidence_for_display(res.evidence, is_ar=is_ar))
             verdict = "\n".join(lines)
             def done():
                 self.leakage_text.insert("end", verdict + "\n")
                 self.leakage_text.see("end")
-                title = "نتيجة فحص تيار البطارية" if is_ar else "Battery current test result"
+                title = self._tr("ui.battery_current_test_result")
                 if res.status == "FAIL":
                     messagebox.showwarning(title, f"[{res.status}] {res.diagnosis}")
                 else:
@@ -1702,14 +1709,14 @@ class AndroidDoctorApp(ctk.CTk):
             thermal = self.board_diag.read_thermal(serial)
             zones = thermal.zones
             is_ar = self.current_lang == "ar"
-            out = [f"=== خريطة الحرارة ({len(zones)} منطقة) [{thermal.status}] ===" if is_ar else f"=== THERMAL ZONES ({len(zones)} zones) [{thermal.status}] ==="]
+            out = [self._tr("ui.thermal_zones_zones", zones=len(zones), status=thermal.status)]
             for z in zones:
                 if z.limit_c is None:
-                    status = "غير مصنفة - لا يوجد حد" if is_ar else "unclassified - not judged"
+                    status = self._tr("ui.unclassified_not_judged")
                 elif z.is_overheated:
-                    status = f"أعلى من حد {z.limit_c:g}°C ⚠️" if is_ar else f"ABOVE {z.limit_c:g}°C limit ⚠️"
+                    status = self._tr("ui.above_c_limit", limit_c=z.limit_c)
                 else:
-                    status = f"ضمن حد {z.limit_c:g}°C" if is_ar else f"within {z.limit_c:g}°C limit"
+                    status = self._tr("ui.within_c_limit", limit_c=z.limit_c)
                 out.append(f"{z.zone_id:02d} [{z.zone_type} / {z.category}]: {z.temp_c:.1f}°C — {status}")
             
             def upd():
@@ -1728,21 +1735,21 @@ class AndroidDoctorApp(ctk.CTk):
             panics = self.board_diag.inspect_panic_and_emmc(serial)
             is_ar = self.current_lang == "ar"
             out = [
-                "=== فحص سجلات انهيار النظام والذاكرة ===" if is_ar else "=== STORAGE & KERNEL PANIC AUDIT ===",
+                self._tr("ui.storage_kernel_panic_audit"),
                 f"[{panics.status}] {panics.summary_verdict}",
                 f"dmesg: {panics.dmesg_status} | pstore: {panics.blackbox.kernel_ramoops_status} | boot reason: {panics.blackbox.boot_reason}",
-                f"أخطاء قراءة وكتابة ذاكرة UFS/eMMC: {len(panics.emmc_ufs_errors)}",
-                f"إعادة تشغيل الحماية (Watchdog):     {len(panics.watchdog_resets)}",
-                f"انهيارات الكيرنل (Kernel Panic):     {len(panics.kernel_panics)}",
-                f"إطفاء الطوارئ بسبب الحرارة:          {len(panics.thermal_shutdowns)}",
+                self._tr("ui.ufs_emmc_read_write_errors", emmc_ufs_errors=len(panics.emmc_ufs_errors)),
+                self._tr("ui.watchdog_resets", watchdog_resets=len(panics.watchdog_resets)),
+                self._tr("ui.kernel_panics", kernel_panics=len(panics.kernel_panics)),
+                self._tr("ui.thermal_shutdowns", thermal_shutdowns=len(panics.thermal_shutdowns)),
                 ""
             ]
             if panics.emmc_ufs_errors:
-                out.append("أخطاء الذاكرة التخزينية:" if is_ar else "eMMC / UFS I/O Error Traces:")
+                out.append(self._tr("ui.emmc_ufs_i_o_error_traces"))
                 for err in panics.emmc_ufs_errors:
                     out.append(f"  {err}")
             if panics.kernel_panics:
-                out.append("\nسجلات الكيرنل:" if is_ar else "\nKernel Panic Traces:")
+                out.append(self._tr("ui.kernel_panic_traces"))
                 for p in panics.kernel_panics:
                     out.append(f"  {p}")
 
@@ -1756,12 +1763,12 @@ class AndroidDoctorApp(ctk.CTk):
     def run_blackbox_forensics_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
         is_ar = self.current_lang == "ar"
         self.blackbox_text.delete("1.0", "end")
-        self.blackbox_text.insert("end", "جاري تحليل الصندوق الأسود (DropBox / Boot Reason / Watchdog / Kernel Panics)...\n" if is_ar else "Analyzing Blackbox Forensics (DropBox / Boot Reason / Watchdog / Kernel Panics)...\n")
+        self.blackbox_text.insert("end", self._tr("ui.analyzing_blackbox_forensics_dropbox_boot_reason"))
 
         def task():
             result = self.board_diag.run_blackbox_forensics(serial)
@@ -1775,28 +1782,28 @@ class AndroidDoctorApp(ctk.CTk):
             events = result.dropbox_events
 
             lines = [
-                "=== تحليل الصندوق الأسود وأسباب الانطفاء المفاجئ ===" if is_ar else "=== BLACKBOX FORENSICS & REBOOT ANALYSIS ===",
-                f"تصنيف الانهيار:        {cat}",
-                f"سبب الإقلاع الأخير:    {reason}",
-                f"تشخيص الصندوق الأسود: {diag}",
-                f"سجل الكيرنل (Ramoops): {ramoops}",
+                self._tr("ui.blackbox_forensics_reboot_analysis"),
+                self._tr("ui.shutdown_category", cat=cat),
+                self._tr("ui.last_boot_reason", reason=reason),
+                self._tr("ui.boot_records_diagnosis", diag=diag),
+                self._tr("ui.kernel_log_ramoops", ramoops=ramoops),
                 ""
             ]
 
             if history:
-                lines.append("سجل أسباب الإقلاع السابقة:" if is_ar else "Boot Reason History:")
+                lines.append(self._tr("ui.boot_reason_history"))
                 for h in history[:5]:
                     lines.append(f"  • {h}")
                 lines.append("")
 
             if events:
-                lines.append(f"أحداث DropBox الحرجة المسجلة ({len(events)} حدث):" if is_ar else f"DropBox Critical Crash Events ({len(events)} logged):")
+                lines.append(self._tr("ui.dropbox_critical_crash_events_logged", events=len(events)))
                 for ev in events:
                     lines.append(f"  • {ev}")
             else:
-                lines.append("لا توجد إدخالات DropBox ذات صلة في القائمة المقروءة." if is_ar else "No relevant DropBox entries in the list that was read.")
+                lines.append(self._tr("ui.no_relevant_dropbox_entries_in_the"))
             for cause in result.possible_causes:
-                lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
+                lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if result.evidence:
                 lines.append(format_evidence_for_display(result.evidence, is_ar=is_ar))
 
@@ -1811,14 +1818,14 @@ class AndroidDoctorApp(ctk.CTk):
         is_ar = self.current_lang == "ar"
         if self._telemetry_running:
             self._telemetry_running = False
-            self.btn_toggle_telemetry.configure(text="المراقبة اللحظية: معطلة" if is_ar else "Live Telemetry: Off", fg_color="#21262d")
+            self.btn_toggle_telemetry.configure(text=self._tr("ui.live_telemetry_off"), fg_color="#21262d")
         else:
             serial = self.current_serial.get()
             if not serial:
-                messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+                messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
                 return
             self._telemetry_running = True
-            self.btn_toggle_telemetry.configure(text="المراقبة اللحظية: نشطة (1.5s)" if is_ar else "Live Telemetry: Active (1.5s)", fg_color="#059669")
+            self.btn_toggle_telemetry.configure(text=self._tr("ui.live_telemetry_active_1_5s"), fg_color="#059669")
             self._telemetry_thread = threading.Thread(target=self._poll_live_telemetry_loop, daemon=True)
             self._telemetry_thread.start()
 
@@ -1864,136 +1871,136 @@ class AndroidDoctorApp(ctk.CTk):
             is_ar = self.current_lang == "ar"
 
             # Sensors
-            s_lines = [f"=== المستشعرات المسجلة (حسب نظام Sensor HAL) ({len(report.sensors)} مستشعر) ===" if is_ar else f"=== REPORTED SENSORS ({len(report.sensors)} Registered) ==="]
+            s_lines = [self._tr("ui.reported_sensors_registered", sensors=len(report.sensors))]
             for s in report.sensors:
                 power_txt = f" | {s.power_ma} mA" if s.power_ma is not None else ""
                 s_lines.append(f"• {s.name} ({s.vendor}) | {s.sensor_type}{power_txt}")
             if not report.sensors:
                 s_lines.append(f"[{report.sensors_status}]")
             if report.missing_critical_sensors:
-                s_lines.append(("\nحساسات شائعة غير مسجلة في هذا الجهاز (ليس عطلاً بالضرورة): " if is_ar else "\nCommon sensors not reported (not necessarily a fault): ") + ", ".join(report.missing_critical_sensors))
+                s_lines.append((self._tr("ui.common_sensors_not_reported_not_necessarily")) + ", ".join(report.missing_critical_sensors))
 
             # Cameras & Audio
-            c_lines = [f"=== كاميرات الهاتف ({len(report.cameras)} عدسة) ===" if is_ar else f"=== CAMERA MODULES ({len(report.cameras)} Detected) ==="]
+            c_lines = [self._tr("ui.camera_modules_detected", cameras=len(report.cameras))]
             for c in report.cameras:
-                flash_txt = "UNKNOWN" if c.flash_available is None else (("متوفر" if is_ar else "yes") if c.flash_available else ("غير متوفر" if is_ar else "no"))
-                c_lines.append(f"• Camera {c.camera_id}: {c.facing} (flash: {flash_txt})")
+                flash_txt = "UNKNOWN" if c.flash_available is None else ((self._tr("ui.yes")) if c.flash_available else (self._tr("ui.no_2")))
+                c_lines.append(self._tr("ui.camera_flash", camera_id=c.camera_id, facing=self._tr(f"camera.facing.{c.facing}"), flash_txt=flash_txt))
             if not report.cameras:
                 c_lines.append(f"[{report.cameras_status}]")
 
-            c_lines.append("\n=== نظام الصوت ومكبر السماعة ===" if is_ar else "\n=== AUDIO SUBSYSTEM ===")
-            c_lines.append(f"الوضع: {report.audio.mode} | الرنين: {report.audio.ringer_mode}")
+            c_lines.append(self._tr("ui.audio_subsystem"))
+            c_lines.append(self._tr("ui.mode_ringer", mode=report.audio.mode, ringer_mode=report.audio.ringer_mode))
 
             # Fingerprint
             fp_lines = [
-                f"الحالة المعتمدة: [{report.fingerprint.status}]" if is_ar else f"Verified Status: [{report.fingerprint.status}]",
-                f"الشركة المصنعة لآيسي البصمة: {report.fingerprint.vendor}",
-                f"التشخيص الفني: {report.fingerprint.diagnosis}"
+                self._tr("ui.verified_status", status=report.fingerprint.status),
+                self._tr("ui.fingerprint_sensor_vendor", vendor=report.fingerprint.vendor),
+                self._tr("ui.diagnosis", diagnosis=report.fingerprint.diagnosis)
             ]
             for cause in report.fingerprint.possible_causes:
-                fp_lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
+                fp_lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if report.fingerprint.evidence:
                 fp_lines.append(format_evidence_for_display(report.fingerprint.evidence, is_ar=is_ar))
 
             # Physical Keys
             key_lines = [
-                f"الحالة المعتمدة: [{report.buttons.status}]" if is_ar else f"Verified Status: [{report.buttons.status}]",
-                f"زر خفض الصوت (Vol-): {report.buttons.vol_down_status}",
-                f"زر رفع الصوت (Vol+): {report.buttons.vol_up_status}",
-                f"زر التشغيل (Power):  {report.buttons.power_status}",
-                f"التشخيص: {report.buttons.diagnosis}"
+                self._tr("ui.verified_status", status=report.buttons.status),
+                self._tr("ui.volume_down_vol", vol_down_status=self._tr(f"keys.state.{report.buttons.vol_down_status}")),
+                self._tr("ui.volume_up_vol", vol_up_status=self._tr(f"keys.state.{report.buttons.vol_up_status}")),
+                self._tr("ui.power", power_status=self._tr(f"keys.state.{report.buttons.power_status}")),
+                self._tr("ui.diagnosis_2", diagnosis=report.buttons.diagnosis)
             ]
             if report.buttons.evidence:
                 key_lines.append(format_evidence_for_display(report.buttons.evidence, is_ar=is_ar))
 
             # SIM & Baseband
             sim_lines = [
-                f"الحالة المعتمدة: [{report.sim_baseband.status}]" if is_ar else f"Verified Status: [{report.sim_baseband.status}]",
-                f"حالة الشريحة الأولى (SIM 1): {report.sim_baseband.sim1_state}" if is_ar else f"SIM 1 State: {report.sim_baseband.sim1_state}",
-                f"حالة الشريحة الثانية (SIM 2): {report.sim_baseband.sim2_state}" if is_ar else f"SIM 2 State: {report.sim_baseband.sim2_state}",
-                f"شركة الاتصال (Operator): {report.sim_baseband.carrier_name}" if is_ar else f"Carrier Operator: {report.sim_baseband.carrier_name}",
-                f"نوع شبكة البيانات (Network): {report.sim_baseband.network_type}" if is_ar else f"Network Type: {report.sim_baseband.network_type}",
-                f"قوة الإشارة (Signal): {report.sim_baseband.signal_strength}" if is_ar else f"Signal Strength: {report.sim_baseband.signal_strength}",
-                f"إصدار معالج المودم (Baseband): {report.sim_baseband.baseband_version}" if is_ar else f"Baseband Version: {report.sim_baseband.baseband_version}",
-                f"التشخيص: {report.sim_baseband.diagnosis}" if is_ar else f"Diagnosis: {report.sim_baseband.diagnosis}"
+                self._tr("ui.verified_status", status=report.sim_baseband.status),
+                self._tr("ui.sim_1_state", sim1_state=report.sim_baseband.sim1_state),
+                self._tr("ui.sim_2_state", sim2_state=report.sim_baseband.sim2_state),
+                self._tr("ui.carrier_operator", carrier_name=report.sim_baseband.carrier_name),
+                self._tr("ui.network_type", network_type=report.sim_baseband.network_type),
+                self._tr("ui.signal_strength", signal_strength=report.sim_baseband.signal_strength),
+                self._tr("ui.baseband_version", baseband_version=report.sim_baseband.baseband_version),
+                self._tr("ui.diagnosis_2", diagnosis=report.sim_baseband.diagnosis)
             ]
             for cause in report.sim_baseband.possible_causes:
-                sim_lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
+                sim_lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if report.sim_baseband.evidence:
                 sim_lines.append(format_evidence_for_display(report.sim_baseband.evidence, is_ar=is_ar))
 
             # Display Backlight
             disp_lines = [
-                f"الحالة المعتمدة: [{report.display_backlight.status}]" if is_ar else f"Verified Status: [{report.display_backlight.status}]",
-                f"مستوى إضاءة الشاشة الخلفية: {report.display_backlight.brightness_now} / {report.display_backlight.max_brightness}" if is_ar else f"Backlight Level: {report.display_backlight.brightness_now} / {report.display_backlight.max_brightness}",
-                f"التشخيص: {report.display_backlight.diagnosis}" if is_ar else f"Diagnosis: {report.display_backlight.diagnosis}"
+                self._tr("ui.verified_status", status=report.display_backlight.status),
+                self._tr("ui.backlight_level", brightness_now=report.display_backlight.brightness_now, max_brightness=report.display_backlight.max_brightness),
+                self._tr("ui.diagnosis_2", diagnosis=report.display_backlight.diagnosis)
             ]
             for cause in report.display_backlight.possible_causes:
-                disp_lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
+                disp_lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if report.display_backlight.evidence:
                 disp_lines.append(format_evidence_for_display(report.display_backlight.evidence, is_ar=is_ar))
 
             # Wi-Fi Chipset
             wifi_lines = [
-                f"الحالة المعتمدة: [{report.wifi.status}]" if is_ar else f"Verified Status: [{report.wifi.status}]",
-                f"حالة الواي فاي (Wi-Fi State): {report.wifi.state}" if is_ar else f"Wi-Fi State: {report.wifi.state}",
-                f"عنوان الماك (MAC Address): {report.wifi.mac_address}" if is_ar else f"MAC Address: {report.wifi.mac_address}",
-                f"الشبكة المتصل بها (SSID): {report.wifi.ssid or ('غير متصل' if is_ar else 'Disconnected')}",
-                f"قوة الإشارة (RSSI): {report.wifi.rssi_dbm} dBm" if report.wifi.rssi_dbm else ("قوة الإشارة: —" if is_ar else "Signal: —"),
-                f"سرعة النقل والتردد: {report.wifi.link_speed_mbps} Mbps | {report.wifi.frequency_mhz} MHz" if report.wifi.link_speed_mbps else ("السرعة والتردد: —" if is_ar else "Speed & Freq: —"),
-                f"حالة التعريف والرقاقة: {report.wifi.driver_status}" if is_ar else f"Driver Status: {report.wifi.driver_status}",
-                f"التشخيص: {report.wifi.diagnosis}" if is_ar else f"Diagnosis: {report.wifi.diagnosis}"
+                self._tr("ui.verified_status", status=report.wifi.status),
+                self._tr("ui.wi_fi_state", state=report.wifi.state),
+                self._tr("ui.mac_address", mac_address=report.wifi.mac_address),
+                self._tr("ui.connected_network_ssid", disconnected=report.wifi.ssid or (self._tr("ui.disconnected"))),
+                self._tr("ui.signal_rssi_dbm", rssi_dbm=report.wifi.rssi_dbm) if report.wifi.rssi_dbm else (self._tr("ui.signal")),
+                self._tr("ui.link_speed_and_frequency_mbps_mhz", link_speed_mbps=report.wifi.link_speed_mbps, frequency_mhz=report.wifi.frequency_mhz) if report.wifi.link_speed_mbps else (self._tr("ui.speed_freq")),
+                self._tr("ui.driver_status", driver_status=self._tr(f"wifi.driver.{report.wifi.driver_status}")),
+                self._tr("ui.diagnosis_2", diagnosis=report.wifi.diagnosis)
             ]
             if report.wifi.evidence:
                 wifi_lines.append(format_evidence_for_display(report.wifi.evidence, is_ar=is_ar))
 
             # Bluetooth Controller
             bt_lines = [
-                f"الحالة المعتمدة: [{report.bluetooth.status}]" if is_ar else f"Verified Status: [{report.bluetooth.status}]",
-                f"حالة البلوتوث (Bluetooth): {report.bluetooth.state}" if is_ar else f"Bluetooth State: {report.bluetooth.state}",
-                f"عنوان المحول (MAC Address): {report.bluetooth.mac_address}" if is_ar else f"MAC Address: {report.bluetooth.mac_address}",
-                f"اسم الجهاز الظاهر: {report.bluetooth.name}" if is_ar else f"Device Name: {report.bluetooth.name}",
-                f"BLE: {'UNKNOWN' if report.bluetooth.ble_supported is None else report.bluetooth.ble_supported}",
-                f"التشخيص: {report.bluetooth.diagnosis}" if is_ar else f"Diagnosis: {report.bluetooth.diagnosis}"
+                self._tr("ui.verified_status", status=report.bluetooth.status),
+                self._tr("ui.bluetooth_state", state=report.bluetooth.state),
+                self._tr("ui.mac_address_2", mac_address=report.bluetooth.mac_address),
+                self._tr("ui.device_name", name=report.bluetooth.name),
+                self._tr("ui.ble", ble_supported=self._tr(_tri_key(report.bluetooth.ble_supported))),
+                self._tr("ui.diagnosis_2", diagnosis=report.bluetooth.diagnosis)
             ]
             for cause in report.bluetooth.possible_causes:
-                bt_lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
+                bt_lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if report.bluetooth.evidence:
                 bt_lines.append(format_evidence_for_display(report.bluetooth.evidence, is_ar=is_ar))
 
             # Peripheral Chips (GPS, NFC, OTG)
             chip_lines = [
-                f"الحالة المعتمدة: [{report.peripherals.status}]" if is_ar else f"Verified Status: [{report.peripherals.status}]",
-                f"GPS: {report.peripherals.gps_status}",
-                f"NFC: {report.peripherals.nfc_status}",
-                f"USB host / OTG: {'UNKNOWN' if report.peripherals.usb_otg_supported is None else ('Declared' if report.peripherals.usb_otg_supported else 'Not declared')}",
-                f"التشخيص: {report.peripherals.diagnosis}" if is_ar else f"Diagnosis: {report.peripherals.diagnosis}"
+                self._tr("ui.verified_status", status=report.peripherals.status),
+                self._tr("ui.gps", gps_status=self._tr(f'feature.{report.peripherals.gps_status}')),
+                self._tr("ui.nfc", nfc_status=self._tr(f'feature.{report.peripherals.nfc_status}')),
+                self._tr("ui.usb_host_otg", usb_otg_supported=self._tr(_feature_key(report.peripherals.usb_otg_supported))),
+                self._tr("ui.diagnosis_2", diagnosis=report.peripherals.diagnosis)
             ]
             if report.peripherals.evidence:
                 chip_lines.append(format_evidence_for_display(report.peripherals.evidence, is_ar=is_ar))
 
             # Audio Codec IC (ALSA Soundcards)
             codec_lines = [
-                f"الحالة المعتمدة: [{report.audio_codec.status}]" if is_ar else f"Verified Status: [{report.audio_codec.status}]",
-                f"شريحة معالج الصوت (Codec IC): {report.audio_codec.codec_chip_name}" if is_ar else f"Audio Codec IC: {report.audio_codec.codec_chip_name}",
-                f"بطاقات الصوت ALSA المكتشفة ({len(report.audio_codec.cards_detected)}): {', '.join(report.audio_codec.cards_detected) if report.audio_codec.cards_detected else ('لا توجد بطاقات!' if is_ar else 'None')}",
-                f"قنوات الصوت المسجلة (PCM): {len(report.audio_codec.pcm_devices)} قناة" if is_ar else f"ALSA PCM Channels: {len(report.audio_codec.pcm_devices)}",
-                f"AudioFlinger: {'UNKNOWN' if report.audio_codec.audio_flinger_alive is None else ('running' if report.audio_codec.audio_flinger_alive else 'NOT running')} | output threads: {report.audio_codec.output_threads}",
-                f"التشخيص: {report.audio_codec.diagnosis}" if is_ar else f"Diagnosis: {report.audio_codec.diagnosis}"
+                self._tr("ui.verified_status", status=report.audio_codec.status),
+                self._tr("ui.audio_codec_ic", codec_chip_name=report.audio_codec.codec_chip_name),
+                self._tr("ui.alsa_sound_cards_found", cards_detected=len(report.audio_codec.cards_detected), none=', '.join(report.audio_codec.cards_detected) if report.audio_codec.cards_detected else (self._tr("ui.none"))),
+                self._tr("ui.alsa_pcm_channels", pcm_devices=len(report.audio_codec.pcm_devices)),
+                self._tr("ui.audioflinger_output_threads", audio_flinger_alive=self._tr(_flinger_key(report.audio_codec.audio_flinger_alive)), output_threads=report.audio_codec.output_threads),
+                self._tr("ui.diagnosis_2", diagnosis=report.audio_codec.diagnosis)
             ]
             for cause in report.audio_codec.possible_causes:
-                codec_lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
+                codec_lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if report.audio_codec.evidence:
                 codec_lines.append(format_evidence_for_display(report.audio_codec.evidence, is_ar=is_ar))
 
             # Display Controller & Panel Info
             panel_lines = [
-                f"الحالة المعتمدة: [{report.display_panel_info.status}]" if is_ar else f"Verified Status: [{report.display_panel_info.status}]",
-                f"شريحة تعريف الشاشة (DSI Controller): {report.display_panel_info.panel_controller_name}" if is_ar else f"DSI Panel Controller: {report.display_panel_info.panel_controller_name}",
-                f"مصدر التعريف (Source): {report.display_panel_info.driver_source}" if is_ar else f"Driver Source: {report.display_panel_info.driver_source}",
-                f"حالة حماية الإقلاع (VerifiedBootState): {report.display_panel_info.verified_boot_state}" if is_ar else f"Verified Boot State: {report.display_panel_info.verified_boot_state}",
-                f"حالة أمان VBMeta: {report.display_panel_info.vbmeta_device_state}" if is_ar else f"VBMeta Device State: {report.display_panel_info.vbmeta_device_state}",
-                f"التشخيص: {report.display_panel_info.diagnosis}" if is_ar else f"Diagnosis: {report.display_panel_info.diagnosis}"
+                self._tr("ui.verified_status", status=report.display_panel_info.status),
+                self._tr("ui.dsi_panel_controller", panel_controller_name=report.display_panel_info.panel_controller_name),
+                self._tr("ui.driver_source", driver_source=report.display_panel_info.driver_source),
+                self._tr("ui.verified_boot_state", verified_boot_state=report.display_panel_info.verified_boot_state),
+                self._tr("ui.vbmeta_device_state", vbmeta_device_state=report.display_panel_info.vbmeta_device_state),
+                self._tr("ui.diagnosis_2", diagnosis=report.display_panel_info.diagnosis)
             ]
             if report.display_panel_info.evidence:
                 panel_lines.append(format_evidence_for_display(report.display_panel_info.evidence, is_ar=is_ar))
@@ -2038,25 +2045,25 @@ class AndroidDoctorApp(ctk.CTk):
     def run_buttons_test_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
         is_ar = self.current_lang == "ar"
         self.keys_text.delete("1.0", "end")
-        self.keys_text.insert("end", "جاري فحص الأزرار الحية... اضغط الآن على زر الصوت أو الباور على الهاتف...\n" if is_ar else "Listening for physical key presses... Press Vol+, Vol-, or Power now...\n")
+        self.keys_text.insert("end", self._tr("ui.listening_for_physical_key_presses_press"))
 
         def task():
             btn_diag = self.hardware_tester.diagnose_physical_buttons(serial)
             lines = [
-                "=== نتيجة فحص أزرار الصوت والباور ===" if is_ar else "=== PHYSICAL BUTTONS TEST RESULT ===",
-                f"زر خفض الصوت: {btn_diag.vol_down_status}",
-                f"زر رفع الصوت: {btn_diag.vol_up_status}",
-                f"زر الباور:     {btn_diag.power_status}",
-                f"التشخيص:      {btn_diag.diagnosis}",
+                self._tr("ui.physical_buttons_test_result"),
+                self._tr("ui.volume_down", vol_down_status=self._tr(f"keys.state.{btn_diag.vol_down_status}")),
+                self._tr("ui.volume_up", vol_up_status=self._tr(f"keys.state.{btn_diag.vol_up_status}")),
+                self._tr("ui.power_2", power_status=self._tr(f"keys.state.{btn_diag.power_status}")),
+                self._tr("ui.diagnosis_3", diagnosis=btn_diag.diagnosis),
                 ""
             ]
             if btn_diag.captured_events:
-                lines.append("الأحداث الملتقطة:" if is_ar else "Captured Input Events:")
+                lines.append(self._tr("ui.captured_input_events"))
                 for ev in btn_diag.captured_events:
                     lines.append(f"  {ev}")
 
@@ -2086,7 +2093,7 @@ class AndroidDoctorApp(ctk.CTk):
     def run_security_audit_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
         self.sec_progress.set(0)
@@ -2096,7 +2103,7 @@ class AndroidDoctorApp(ctk.CTk):
         def progress(pct, msg):
             def upd():
                 self.sec_progress.set(pct / 100.0)
-                self.sec_status_lbl.configure(text=msg)
+                self.sec_status_lbl.configure(text=self._m(msg))
             self.after(0, upd)
 
         def task():
@@ -2104,10 +2111,9 @@ class AndroidDoctorApp(ctk.CTk):
             self.last_sec_scan = scan
 
             t_lines = [
-                f"=== التطبيقات ذات الأذونات الحساسة (للمراجعة وليست حكماً) ===" if is_ar else "=== APPS WITH SENSITIVE PERMISSIONS (for review, not a verdict) ===",
-                f"إجمالي التطبيقات: {scan.total_packages_scanned} | تطبيقات المستخدم: {scan.third_party_count} | تطبيقات النظام: {scan.system_count}" if is_ar
-                else f"Packages: {scan.total_packages_scanned} | third-party: {scan.third_party_count} | system: {scan.system_count}",
-                scan.summary,
+                self._tr("ui.apps_with_sensitive_permissions_for_review"),
+                self._tr("ui.packages_third_party_system", total_packages_scanned=scan.total_packages_scanned, third_party_count=scan.third_party_count, system_count=scan.system_count),
+                self._m(scan.summary),
                 ""
             ]
             for app in scan.sensitive_apps:
@@ -2118,11 +2124,11 @@ class AndroidDoctorApp(ctk.CTk):
                     t_lines.append(f"   ! {note}")
                 t_lines.append("")
             if not scan.sensitive_apps:
-                t_lines.append("لم يتم العثور على تطبيقات مستخدم تملك أذونات حساسة ممنوحة." if is_ar else "No third-party app holds a granted sensitive permission.")
+                t_lines.append(self._tr("ui.no_third_party_app_holds_a"))
             if scan.accessibility_services:
-                t_lines.append(("خدمات إمكانية الوصول المفعلة: " if is_ar else "Enabled accessibility services: ") + ", ".join(scan.accessibility_services))
+                t_lines.append((self._tr("ui.enabled_accessibility_services")) + ", ".join(scan.accessibility_services))
             if scan.device_admins:
-                t_lines.append(("مديرو الجهاز النشطون: " if is_ar else "Active device admins: ") + ", ".join(scan.device_admins))
+                t_lines.append((self._tr("ui.active_device_admins")) + ", ".join(scan.device_admins))
             t_lines.append(f"\n[{scan.user_ca_status}] {scan.user_ca_diagnosis}")
             for cert in scan.user_certificates:
                 t_lines.append(f"   • {cert}")
@@ -2144,11 +2150,11 @@ class AndroidDoctorApp(ctk.CTk):
         def task():
             conns = self.malware_hunter.scan_network_connections(serial)
             is_ar = self.current_lang == "ar"
-            lines = [f"=== الاتصالات الشبكية النشطة للخارج ({len(conns)} اتصال) ===" if is_ar else f"=== ACTIVE NETWORK CONNECTIONS ({len(conns)} Sockets) ==="]
+            lines = [self._tr("ui.active_network_connections_sockets", conns=len(conns))]
             for c in conns:
                 lines.append(f"{c.protocol:4s} {c.local_address}:{c.local_port} -> {c.remote_address}:{c.remote_port} [{c.state}] | {c.package_name}")
             if not conns:
-                lines.append("لم تتم قراءة أي اتصال خارجي نشط." if is_ar else "No active external connection was read.")
+                lines.append(self._tr("ui.no_active_external_connection_was_read"))
 
             def upd():
                 self.net_text.delete("1.0", "end")
@@ -2161,16 +2167,16 @@ class AndroidDoctorApp(ctk.CTk):
         serial = self.current_serial.get()
         pkg = self.neutral_pkg_entry.get().strip()
         if not serial or not pkg:
-            messagebox.showwarning("تنبيه", "أدخل اسم حزمة التطبيق أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.enter_the_app_package_name_first"))
             return
 
         def task():
             success, msg = self.malware_hunter.neutralize_app(serial, pkg, action=action)
             def upd():
                 if success:
-                    messagebox.showinfo("تم الإجراء بنجاح", msg)
+                    messagebox.showinfo(self._tr("ui.done"), self._m(msg))
                 else:
-                    messagebox.showerror("خطأ", msg)
+                    messagebox.showerror(self._tr("ui.error"), self._m(msg))
             self.after(0, upd)
 
         threading.Thread(target=task, daemon=True).start()
@@ -2180,22 +2186,22 @@ class AndroidDoctorApp(ctk.CTk):
         history = self.db.get_rollback_history(serial)
 
         dialog = ctk.CTkToplevel(self)
-        dialog.title("سجل استرجاع التطبيقات — Rollback")
+        dialog.title(self._tr("ui.app_rollback_history"))
         dialog.geometry("700x480")
 
-        ctk.CTkLabel(dialog, text="التطبيقات المحذوفة والمعطلة القابلة للاسترجاع", font=ctk.CTkFont(size=14, weight="bold"), text_color="#58a6ff").pack(padx=20, pady=(15, 5))
+        ctk.CTkLabel(dialog, text=self._tr("ui.removed_and_disabled_apps_that_can"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#58a6ff").pack(padx=20, pady=(15, 5))
 
         txt = ctk.CTkTextbox(dialog, height=300, font=ctk.CTkFont(family="Consolas", size=12))
         txt.pack(fill="both", expand=True, padx=20, pady=10)
 
         for h in history:
-            status = f"تم الاسترجاع في {h['restored_at']}" if h.get("restored_at") else "متاح للاسترجاع الفوري"
-            txt.insert("end", f"#{h['id']} [{h['action_type'].upper()}] {h['package_name']} | الوقت: {h['timestamp']} | الحالة: {status}\n")
+            status = self._tr("ui.restored_at", restored_at=h['restored_at']) if h.get("restored_at") else self._tr("ui.available_to_restore")
+            txt.insert("end", self._tr("ui.time_status", id=h['id'], upper=h['action_type'].upper(), package_name=h['package_name'], timestamp=h['timestamp'], status=status))
 
         restore_bar = ctk.CTkFrame(dialog, fg_color="transparent")
         restore_bar.pack(fill="x", padx=20, pady=15)
 
-        entry = ctk.CTkEntry(restore_bar, placeholder_text="اسم الحزمة المراد استرجاعها...", width=260)
+        entry = ctk.CTkEntry(restore_bar, placeholder_text=self._tr("ui.package_name_to_restore"), width=260)
         entry.pack(side="left", padx=(0, 10))
 
         def restore_now():
@@ -2204,39 +2210,39 @@ class AndroidDoctorApp(ctk.CTk):
                 return
             def t_task():
                 success, msg = self.malware_hunter.rollback_package(serial, target_pkg)
-                self.after(0, lambda: messagebox.showinfo("الاسترجاع", msg))
+                self.after(0, lambda: messagebox.showinfo(self._tr("ui.restore"), self._m(msg)))
             threading.Thread(target=t_task, daemon=True).start()
 
-        ctk.CTkButton(restore_bar, text="استرجاع التطبيق الآن", command=restore_now, fg_color="#238636").pack(side="left")
+        ctk.CTkButton(restore_bar, text=self._tr("ui.restore_app_now"), command=restore_now, fg_color="#238636").pack(side="left")
 
     def run_oem_bloat_scan_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
         is_ar = self.current_lang == "ar"
         self.bloat_text.delete("1.0", "end")
-        self.bloat_text.insert("end", "جاري فحص تطبيقات المصنع الدعائية المثبتة وفق قاعدة بيانات UAD-ng...\n" if is_ar else "Scanning installed OEM bloatware packages matching UAD-ng database...\n")
+        self.bloat_text.insert("end", self._tr("ui.scanning_installed_oem_bloatware_packages_matchi"))
 
         def task():
             bloat_list = self.malware_hunter.scan_oem_bloatware(serial)
             self.last_bloat_scan = bloat_list
 
             lines = [
-                f"=== فحص تطبيقات المصنع الزائدة UAD-ng ({len(bloat_list)} تطبيق تم رصده) ===" if is_ar else f"=== UAD-ng OEM BLOATWARE SCAN ({len(bloat_list)} Packages Found) ===",
+                self._tr("ui.uad_ng_oem_bloatware_scan_packages", bloat_list=len(bloat_list)),
                 ""
             ]
 
             if bloat_list:
                 for b in bloat_list:
                     lines.append(f"• [{b.get('oem')}] {b.get('package_name')} ({b.get('category')})")
-                    lines.append(f"   الوصف: {b.get('description')}")
-                    lines.append(f"   مستوى الأمان: {b.get('removal_safety')}")
+                    lines.append(self._tr("ui.description", current_lang=render(b.get('description'), self.current_lang)))
+                    lines.append(self._tr("ui.removal_safety", removal_safety=b.get('removal_safety')))
                     lines.append("")
-                lines.append("لإلغاء تثبيت هذه التطبيقات بأمان وبدون روت، اضغط على زر 'حذف التطبيقات المحددة بأمان'.")
+                lines.append(self._tr("ui.to_uninstall_these_apps_for_user"))
             else:
-                lines.append("✓ ممتاز: لم يتم العثور على أي تطبيقات نظام زائدة من قائمة UAD-ng على هذا الهاتف." if is_ar else "✓ Clean: No active OEM bloatware packages from UAD-ng database found on this device.")
+                lines.append(self._tr("ui.clean_no_active_oem_bloatware_packages"))
 
             def upd():
                 self.bloat_text.delete("1.0", "end")
@@ -2248,7 +2254,7 @@ class AndroidDoctorApp(ctk.CTk):
     def run_safe_debloat_all_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
         is_ar = self.current_lang == "ar"
@@ -2257,20 +2263,18 @@ class AndroidDoctorApp(ctk.CTk):
             self.last_bloat_scan = bloat_list
 
         if not self.last_bloat_scan:
-            messagebox.showinfo("نظيف", "لم يتم العثور على أي تطبيقات زائدة لحذفها." if is_ar else "No bloatware packages found to remove.")
+            messagebox.showinfo(self._tr("ui.nothing_found"), self._tr("ui.no_bloatware_packages_found_to_remove"))
             return
 
         confirm = messagebox.askyesno(
-            "تأكيد الحذف الآمن" if is_ar else "Confirm Safe Debloat",
-            f"سيتم تعطيل {len(self.last_bloat_scan)} تطبيق دعائي للمستخدم الحالي (User 0) بأمان.\nيمكن التراجع واستعادة التطبيقات في أي وقت بدون روت.\n\nهل تريد المتابعة؟"
-            if is_ar else
-            f"Safe Debloat will disable {len(self.last_bloat_scan)} OEM bloatware packages for User 0.\nApps can be restored at any time.\n\nProceed?"
+            self._tr("ui.confirm_safe_debloat"),
+            self._tr("ui.safe_debloat_will_disable_oem_bloatware", last_bloat_scan=len(self.last_bloat_scan))
         )
         if not confirm:
             return
 
         self.bloat_text.delete("1.0", "end")
-        self.bloat_text.insert("end", "جاري حذف تطبيقات المصنع بأمان...\n" if is_ar else "Safely debloating OEM packages...\n")
+        self.bloat_text.insert("end", self._tr("ui.safely_debloating_oem_packages"))
 
         def task():
             success_count = 0
@@ -2286,9 +2290,9 @@ class AndroidDoctorApp(ctk.CTk):
                 time.sleep(0.05)
 
             def done():
-                res_txt = f"\nتم تعطيل {success_count} من أصل {len(self.last_bloat_scan)} تطبيق بنجاح!" if is_ar else f"\nSuccessfully debloated {success_count}/{len(self.last_bloat_scan)} packages!"
+                res_txt = self._tr("ui.successfully_debloated_packages", success_count=success_count, last_bloat_scan=len(self.last_bloat_scan))
                 self.bloat_text.insert("end", res_txt)
-                messagebox.showinfo("اكتمل التنظيف" if is_ar else "Debloat Complete", res_txt)
+                messagebox.showinfo(self._tr("ui.debloat_complete"), res_txt)
             self.after(0, done)
 
         threading.Thread(target=task, daemon=True).start()
@@ -2296,19 +2300,19 @@ class AndroidDoctorApp(ctk.CTk):
     def run_restore_all_debloated_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
         is_ar = self.current_lang == "ar"
         self.bloat_text.delete("1.0", "end")
-        self.bloat_text.insert("end", "جاري استرجاع التطبيقات المحذوفة وإعادة تفعيلها...\n" if is_ar else "Restoring debloated packages...\n")
+        self.bloat_text.insert("end", self._tr("ui.restoring_debloated_packages"))
 
         def task():
             history = self.db.get_rollback_history(serial)
             if not history:
                 def none_found():
-                    self.bloat_text.insert("end", "لا توجد سجلات تطبيقات محذوفة لاسترجاعها.\n" if is_ar else "No neutralized packages found in rollback history.\n")
-                    messagebox.showinfo("تنبيه", "لا توجد تطبيقات محذوفة لاسترجاعها." if is_ar else "No debloated packages to restore.")
+                    self.bloat_text.insert("end", self._tr("ui.no_neutralized_packages_found_in_rollback"))
+                    messagebox.showinfo(self._tr("ui.notice"), self._tr("ui.no_debloated_packages_to_restore"))
                 self.after(0, none_found)
                 return
 
@@ -2319,15 +2323,15 @@ class AndroidDoctorApp(ctk.CTk):
                 if ok:
                     restored += 1
                 def log_one(p=pkg, s=ok):
-                    self.bloat_text.insert("end", f"{'✓ تم الاسترجاع' if s else '✗ فشل'}: {p}\n")
+                    self.bloat_text.insert("end", self._tr("ui.text_3", failed=self._tr("ui.restored") if s else self._tr("ui.failed"), p=p))
                     self.bloat_text.see("end")
                 self.after(0, log_one)
                 time.sleep(0.05)
 
             def done():
-                res_txt = f"\nتم استرجاع {restored} تطبيق بنجاح!" if is_ar else f"\nSuccessfully restored {restored} packages!"
+                res_txt = self._tr("ui.successfully_restored_packages", restored=restored)
                 self.bloat_text.insert("end", res_txt)
-                messagebox.showinfo("اكتملت الاستعادة" if is_ar else "Restore Complete", res_txt)
+                messagebox.showinfo(self._tr("ui.restore_complete"), res_txt)
             self.after(0, done)
 
         threading.Thread(target=task, daemon=True).start()
@@ -2335,7 +2339,7 @@ class AndroidDoctorApp(ctk.CTk):
     def run_optimizer_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
         self.opt_progress.set(0)
@@ -2344,7 +2348,7 @@ class AndroidDoctorApp(ctk.CTk):
         def progress(pct, msg):
             def upd():
                 self.opt_progress.set(pct / 100.0)
-                self.opt_status_lbl.configure(text=msg)
+                self.opt_status_lbl.configure(text=self._m(msg))
                 self.opt_log_text.insert("end", f"[{time.strftime('%H:%M:%S')}] {msg}\n")
                 self.opt_log_text.see("end")
             self.after(0, upd)
@@ -2357,9 +2361,9 @@ class AndroidDoctorApp(ctk.CTk):
             lines = []
             for a in res.actions:
                 if a.measured:
-                    lines.append(f"[{a.status}] {a.command}: {_fmt(a.before, 'MB')} -> {_fmt(a.after, 'MB')} ({'التغير' if is_ar else 'change'}: {_fmt(a.delta, 'MB')})")
+                    lines.append(self._tr("ui.text_4", status=a.status, command=a.command, mb=_fmt(a.before, 'MB'), mb2=_fmt(a.after, 'MB'), change=self._tr("ui.change"), mb3=_fmt(a.delta, 'MB')))
                 else:
-                    lines.append(f"[{a.status}] {a.command}: {'لا يمكن قياس أثره' if is_ar else 'effect not measurable'}")
+                    lines.append(self._tr("ui.text_5", status=a.status, command=a.command, effect_not_measurable=self._tr("ui.effect_not_measurable")))
                 lines.append(f"    {a.note}")
 
             def done():
@@ -2368,9 +2372,8 @@ class AndroidDoctorApp(ctk.CTk):
                 self.lbl_drain_gain.configure(text="—")
                 self.opt_log_text.insert("end", "\n" + "\n".join(lines) + "\n")
                 self.opt_log_text.see("end")
-                messagebox.showinfo("اكتملت الصيانة" if is_ar else "Maintenance finished",
-                                    (f"التغير المقاس في مساحة التخزين الحرة بعد تنظيف الكاش: {_fmt(res.storage_freed_mb, 'MB')}" if is_ar
-                                     else f"Measured change in free storage after cache trim: {_fmt(res.storage_freed_mb, 'MB')}"))
+                messagebox.showinfo(self._tr("ui.maintenance_finished"),
+                                    (self._tr("ui.measured_change_in_free_storage_after", mb=_fmt(res.storage_freed_mb, 'MB'))))
             self.after(0, done)
 
         threading.Thread(target=task, daemon=True).start()
@@ -2388,7 +2391,7 @@ class AndroidDoctorApp(ctk.CTk):
         is_ar = self.current_lang == "ar"
         threading.Thread(target=lambda: self.rescue_center.launch_otg_mode(serial), daemon=True).start()
         if hasattr(self, "wireless_log_text"):
-            self.wireless_log_text.insert("end", "تم تشغيل وضع محاكاة الماوس والكيبورد (USB HID OTG) بنجاح!\n" if is_ar else "OTG USB HID Mouse/Keyboard Mode launched successfully!\n")
+            self.wireless_log_text.insert("end", self._tr("ui.otg_usb_hid_mouse_keyboard_mode"))
             self.wireless_log_text.see("end")
 
     def _send_virtual_pin(self):
@@ -2413,11 +2416,11 @@ class AndroidDoctorApp(ctk.CTk):
     def _enable_wireless_adb(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف متصل بـ USB أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_phone_connected_over_usb"))
             return
         is_ar = self.current_lang == "ar"
         self.wireless_log_text.delete("1.0", "end")
-        self.wireless_log_text.insert("end", "جاري تحويل اتصال ADB إلى وضع TCP/IP واستخراج عنوان الـ IP...\n" if is_ar else "Switching ADB to TCP/IP mode and discovering device IP...\n")
+        self.wireless_log_text.insert("end", self._tr("ui.switching_adb_to_tcp_ip_mode"))
 
         def task():
             ok, msg = self.bridge.enable_wireless_adb(serial, 5555)
@@ -2426,17 +2429,15 @@ class AndroidDoctorApp(ctk.CTk):
                 self.wireless_log_text.insert("end", f"{msg}\n")
                 if ip:
                     ip_port = f"{ip}:5555"
-                    self.lbl_wireless_ip.configure(text=f"IP: {ip_port}")
+                    self.lbl_wireless_ip.configure(text=self._tr("ui.ip_2", ip_port=ip_port))
                     self.entry_wireless_addr.delete(0, "end")
                     self.entry_wireless_addr.insert(0, ip_port)
                     info_msg = (
-                        f"تم تفعيل وضع ADB اللاسلكي بنجاح على العنوان:\n{ip_port}\n\nيمكنك الآن فصل كابل الـ USB واستخدام البرنامج لاسلكياً بالكامل!"
-                        if is_ar else
-                        f"Wireless ADB enabled on:\n{ip_port}\n\nYou can now unplug the USB cable!"
+                        self._tr("ui.wireless_adb_enabled_on_you_can", ip_port=ip_port)
                     )
-                    messagebox.showinfo("ADB اللاسلكي مفعل" if is_ar else "Wireless ADB Ready", info_msg)
+                    messagebox.showinfo(self._tr("ui.wireless_adb_ready"), self._m(info_msg))
                 else:
-                    messagebox.showwarning("تنبيه", "تم تفعيل المنفذ 5555 ولكن تعذر قراءة عنوان الـ IP تلقائياً. تأكد من اتصال الهاتف بنفس شبكة الواي فاي.")
+                    messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.port_5555_was_enabled_but_the"))
                 self.refresh_devices_sync()
             self.after(0, done)
         threading.Thread(target=task, daemon=True).start()
@@ -2444,18 +2445,18 @@ class AndroidDoctorApp(ctk.CTk):
     def _connect_wireless_adb(self):
         addr = self.entry_wireless_addr.get().strip()
         if not addr:
-            messagebox.showwarning("تنبيه", "أدخل عنوان IP والمنفذ (مثال: 192.168.1.50:5555)")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.enter_the_ip_address_and_port"))
             return
         is_ar = self.current_lang == "ar"
         def task():
             ok, msg = self.bridge.connect_wireless_adb(addr)
             def done():
-                self.wireless_log_text.insert("end", f"الاتصال اللاسلكي ({addr}): {msg}\n")
+                self.wireless_log_text.insert("end", self._tr("ui.wireless_connection", addr=addr, msg=msg))
                 self.wireless_log_text.see("end")
                 if ok:
-                    messagebox.showinfo("تم الاتصال", f"تم الاتصال بالجهاز اللاسلكي:\n{addr}")
+                    messagebox.showinfo(self._tr("ui.connected"), self._tr("ui.connected_to_the_wireless_device", addr=addr))
                 else:
-                    messagebox.showerror("فشل الاتصال", msg)
+                    messagebox.showerror(self._tr("ui.connection_failed"), self._m(msg))
                 self.refresh_devices_sync()
             self.after(0, done)
         threading.Thread(target=task, daemon=True).start()
@@ -2465,7 +2466,7 @@ class AndroidDoctorApp(ctk.CTk):
         def task():
             ok, msg = self.bridge.disconnect_wireless_adb(addr)
             def done():
-                self.wireless_log_text.insert("end", f"فصل الاتصال اللاسلكي: {msg}\n")
+                self.wireless_log_text.insert("end", self._tr("ui.wireless_disconnect", msg=msg))
                 self.wireless_log_text.see("end")
                 self.refresh_devices_sync()
             self.after(0, done)
@@ -2475,17 +2476,17 @@ class AndroidDoctorApp(ctk.CTk):
         addr = self.entry_pair_addr.get().strip()
         code = self.entry_pair_code.get().strip()
         if not addr or not code:
-            messagebox.showwarning("تنبيه", "أدخل عنوان IP الاقتران والمنفذ ورمز الاقتران المكون من 6 أرقام من خيارات المطور.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.enter_the_pairing_ip_address_and"))
             return
         def task():
             ok, msg = self.bridge.pair_wireless_adb(addr, code)
             def done():
-                self.wireless_log_text.insert("end", f"اقتران أندرويد 11+ ({addr}): {msg}\n")
+                self.wireless_log_text.insert("end", self._tr("ui.android_11_pairing", addr=addr, msg=msg))
                 self.wireless_log_text.see("end")
                 if ok:
-                    messagebox.showinfo("نجاح الاقتران", "تم اقتران الجهاز لاسلكياً بنجاح! يمكنك الآن الاتصال به عبر زر الاتصال.")
+                    messagebox.showinfo(self._tr("ui.pairing_succeeded"), self._tr("ui.the_device_was_paired_wirelessly_you"))
                 else:
-                    messagebox.showerror("فشل الاقتران", msg)
+                    messagebox.showerror(self._tr("ui.pairing_failed"), self._m(msg))
                 self.refresh_devices_sync()
             self.after(0, done)
         threading.Thread(target=task, daemon=True).start()
@@ -2493,16 +2494,16 @@ class AndroidDoctorApp(ctk.CTk):
     def _check_provisioning(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
         def task():
             p_status = self.provisioning.get_provisioning_status(serial)
             is_ar = self.current_lang == "ar"
             lines = [
-                "=== حالة معالج التهيئة الأولي (Provisioning Status) ===" if is_ar else "=== PROVISIONING STATUS ===",
-                f"حالة تهيئة الجهاز (device_provisioned):    {p_status.raw_provisioned_val} ({'نعم مكتمل' if p_status.is_device_provisioned else 'غير مكتمل'})",
-                f"اكتمال إعداد المستخدم (user_setup_complete): {p_status.raw_setup_complete_val} ({'نعم مكتمل' if p_status.is_user_setup_complete else 'غير مكتمل'})",
-                f"التقييم: {p_status.status_summary}"
+                self._tr("ui.provisioning_status"),
+                self._tr("ui.device_provisioned", raw_provisioned_val=p_status.raw_provisioned_val, not_completed=self._tr("ui.yes_completed") if p_status.is_device_provisioned else self._tr("ui.not_completed")),
+                self._tr("ui.user_setup_complete", raw_setup_complete_val=p_status.raw_setup_complete_val, not_completed=self._tr("ui.yes_completed") if p_status.is_user_setup_complete else self._tr("ui.not_completed")),
+                self._tr("ui.result", status_summary=p_status.status_summary)
             ]
             def upd():
                 self.prov_log_text.delete("1.0", "end")
@@ -2513,17 +2514,17 @@ class AndroidDoctorApp(ctk.CTk):
     def _fix_provisioning(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
         def task():
             ok, msg = self.provisioning.complete_setup_wizard_flags(serial)
             def upd():
                 self.prov_log_text.delete("1.0", "end")
-                self.prov_log_text.insert("end", f"إصلاح معالج التهيئة:\n{msg}\n")
+                self.prov_log_text.insert("end", self._tr("ui.setup_wizard_flags", msg=msg))
                 if ok:
-                    messagebox.showinfo("تم التخطي", "تم تعيين أعلام اكتمال الإعداد وإطلاق واجهة الشاشة الرئيسية بنجاح.")
+                    messagebox.showinfo(self._tr("ui.skipped"), self._tr("ui.setup_complete_flags_were_set_and"))
                 else:
-                    messagebox.showerror("خطأ", msg)
+                    messagebox.showerror(self._tr("ui.error"), self._m(msg))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
@@ -2545,16 +2546,16 @@ class AndroidDoctorApp(ctk.CTk):
             fb = self.rescue_center.read_fastboot_variables(serial)
             is_ar = self.current_lang == "ar"
             lines = [
-                "=== معلومات وبيانات وضع الفاست بوت ===" if is_ar else "=== FASTBOOT DEVICE VARIABLES ===",
-                f"نوع الجهاز:           {fb.product}",
-                f"إصدار البوت لودر:     {fb.bootloader_version}",
-                f"إصدار المودم:         {fb.baseband_version}",
-                f"حماية الإقلاع (Secure): {'مفعلة' if fb.is_secure else 'معطلة'}",
-                f"حالة فتح البوت لودر:  {'مفتوح (Unlocked)' if fb.is_unlocked else 'مغلق (Locked)'}",
-                f"السلوت الحالي (Slot): {fb.current_slot}",
-                f"فولتية البطارية:       {fb.battery_voltage}",
-                f"معمارية المعالج:       {fb.cpu_abi}",
-                "\nجميع المتغيرات الخام:"
+                self._tr("ui.fastboot_device_variables"),
+                self._tr("ui.product", product=fb.product),
+                self._tr("ui.bootloader_version", bootloader_version=fb.bootloader_version),
+                self._tr("ui.baseband_version_2", baseband_version=fb.baseband_version),
+                self._tr("ui.secure_boot", disabled=self._tr("ui.enabled") if fb.is_secure else self._tr("ui.disabled")),
+                self._tr("ui.bootloader_lock", locked=self._tr("ui.unlocked") if fb.is_unlocked else self._tr("ui.locked")),
+                self._tr("ui.current_slot", current_slot=fb.current_slot),
+                self._tr("ui.battery_voltage_bootloader", battery_voltage=fb.battery_voltage),
+                self._tr("ui.cpu_abi", cpu_abi=fb.cpu_abi),
+                self._tr("ui.all_raw_variables")
             ]
             for k, v in fb.raw_vars.items():
                 lines.append(f"  {k}: {v}")
@@ -2576,17 +2577,15 @@ class AndroidDoctorApp(ctk.CTk):
                 def no_cache():
                     self.rescue_log_text.delete("1.0", "end")
                     self.rescue_log_text.insert("end", f"{check_msg}\n")
-                    messagebox.showinfo("مسح الكاش" if is_ar else "Erase cache",
-                                        ("هذا الجهاز لا يحتوي قسم cache (أو تعذر التحقق)، لذلك لن يتم تنفيذ المسح." if is_ar
-                                         else "This device has no cache partition (or it could not be confirmed); nothing was erased."))
+                    messagebox.showinfo(self._tr("ui.erase_cache"),
+                                        (self._tr("ui.this_device_has_no_cache_partition")))
                 self.after(0, no_cache)
                 return
             confirm = {"ok": False}
             def ask():
                 confirm["ok"] = messagebox.askyesno(
-                    "مسح الكاش" if is_ar else "Erase cache",
-                    ("سيتم مسح قسم cache فقط (لا يمس بيانات المستخدم). قد يساعد في بعض حالات التعليق على الشعار ولا يضمن الإصلاح. متابعة؟" if is_ar
-                     else "This erases the cache partition only (user data is not touched). It can help with some bootloops but is not a guaranteed fix. Continue?"))
+                    self._tr("ui.erase_cache"),
+                    (self._tr("ui.this_erases_the_cache_partition_only")))
                 if confirm["ok"]:
                     threading.Thread(target=run_erase, daemon=True).start()
             def run_erase():
@@ -2595,10 +2594,10 @@ class AndroidDoctorApp(ctk.CTk):
                     self.rescue_log_text.delete("1.0", "end")
                     self.rescue_log_text.insert("end", f"{check_msg}\n{msg}\n")
                     if ok:
-                        messagebox.showinfo("مسح الكاش" if is_ar else "Erase cache",
-                                            "تم مسح قسم cache. أعد تشغيل الجهاز للتحقق." if is_ar else "Cache partition erased. Reboot to check.")
+                        messagebox.showinfo(self._tr("ui.erase_cache"),
+                                            self._tr("ui.cache_partition_erased_reboot_to_check"))
                     else:
-                        messagebox.showerror("خطأ" if is_ar else "Error", msg)
+                        messagebox.showerror(self._tr("ui.error"), self._m(msg))
                 self.after(0, upd)
             self.after(0, ask)
         threading.Thread(target=task, daemon=True).start()
@@ -2614,25 +2613,25 @@ class AndroidDoctorApp(ctk.CTk):
         part = self.part_combo.get().strip()
         path = self.img_path_entry.get().strip()
         if not path or not os.path.exists(path):
-            messagebox.showwarning("تنبيه", "اختر ملف .img صالح للتفليش.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.choose_a_valid_img_file_to"))
             return
 
         def task():
             ok, msg = self.rescue_center.flash_partition(part, path, serial)
             def upd():
                 self.rescue_log_text.delete("1.0", "end")
-                self.rescue_log_text.insert("end", f"تفليش {part}:\n{msg}\n")
+                self.rescue_log_text.insert("end", self._tr("ui.flash", part=part, msg=msg))
                 if ok:
-                    messagebox.showinfo("نجاح التفليش", f"تم تفليش القسم {part} بنجاح.")
+                    messagebox.showinfo(self._tr("ui.flash_succeeded"), self._tr("ui.partition_was_flashed", part=part))
                 else:
-                    messagebox.showerror("فشل التفليش", msg)
+                    messagebox.showerror(self._tr("ui.flash_failed"), self._m(msg))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
     def _pull_emergency_data(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار الهاتف أولاً أو توصيله عبر USB.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_the_phone_first_or_connect"))
             return
 
         raw_cat = self.data_cat_combo.get()
@@ -2644,7 +2643,7 @@ class AndroidDoctorApp(ctk.CTk):
         is_ar = self.current_lang == "ar"
 
         self.data_log_text.delete("1.0", "end")
-        self.data_log_text.insert("end", f"جاري بدء سحب البيانات ({cat}) إلى مجلد سطح المكتب...\n" if is_ar else f"Starting data extraction ({cat}) to Desktop folder...\n")
+        self.data_log_text.insert("end", self._tr("ui.starting_data_extraction_to_desktop_folder", cat=cat))
 
         def task():
             def prog(txt):
@@ -2652,27 +2651,27 @@ class AndroidDoctorApp(ctk.CTk):
             ok, msg = self.rescue_center.emergency_data_pull(serial, cat, desktop, progress_callback=prog)
             def upd():
                 if ok:
-                    messagebox.showinfo("اكتمل السحب", f"تم سحب الملفات بنجاح وحفظها على سطح المكتب في مجلد:\n{desktop}")
+                    messagebox.showinfo(self._tr("ui.copy_finished"), self._tr("ui.files_were_copied_to_the_desktop", desktop=desktop))
                     try:
                         webbrowser.open(desktop)
                     except Exception:
                         pass
                 else:
-                    messagebox.showwarning("تنبيه", f"نتيجة سحب البيانات:\n{msg}")
+                    messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.data_copy_result", msg=msg))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
     def _pull_all_photos_quick(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار الهاتف أولاً أو توصيله عبر USB.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_the_phone_first_or_connect"))
             return
 
         desktop = os.path.join(os.path.expanduser("~"), "Desktop", f"Android_All_Photos_{int(time.time())}")
         is_ar = self.current_lang == "ar"
 
         self.data_log_text.delete("1.0", "end")
-        self.data_log_text.insert("end", "جاري فحص وسحب جميع الصور والفيديوهات من مجلدي DCIM و Pictures إلى سطح المكتب...\n" if is_ar else "Scanning and pulling all photos & videos from DCIM and Pictures...\n")
+        self.data_log_text.insert("end", self._tr("ui.scanning_and_pulling_all_photos_videos"))
 
         def task():
             def prog(txt):
@@ -2680,13 +2679,13 @@ class AndroidDoctorApp(ctk.CTk):
             ok, msg = self.rescue_center.emergency_data_pull(serial, "all_photos", desktop, progress_callback=prog)
             def upd():
                 if ok:
-                    messagebox.showinfo("اكتمل سحب الصور", f"تم سحب جميع الصور والفيديوهات بنجاح وحفظها على سطح المكتب في:\n{desktop}")
+                    messagebox.showinfo(self._tr("ui.photo_copy_finished"), self._tr("ui.all_photos_and_videos_were_copied", desktop=desktop))
                     try:
                         webbrowser.open(desktop)
                     except Exception:
                         pass
                 else:
-                    messagebox.showwarning("تنبيه", f"نتيجة سحب الصور:\n{msg}")
+                    messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.photo_copy_result", msg=msg))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
@@ -2701,12 +2700,12 @@ class AndroidDoctorApp(ctk.CTk):
         path = self.sideload_entry.get().strip()
         is_ar = self.current_lang == "ar"
         if not path or not os.path.exists(path):
-            messagebox.showwarning("تنبيه", "الرجاء اختيار ملف روم صالح (.zip) للتفليش.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.choose_a_valid_rom_file_zip"))
             return
 
         self.sideload_progress.set(0)
         self.sideload_text.delete("1.0", "end")
-        self.sideload_text.insert("end", f"جاري بدء تفليش حزمة Sideload: {os.path.basename(path)}...\n" if is_ar else f"Starting ADB Sideload: {os.path.basename(path)}...\n")
+        self.sideload_text.insert("end", self._tr("ui.starting_adb_sideload", path=os.path.basename(path)))
 
         def task():
             def prog(pct, msg):
@@ -2720,21 +2719,21 @@ class AndroidDoctorApp(ctk.CTk):
             ok, out_msg = self.rescue_center.sideload_firmware(path, serial, progress_callback=prog)
             def done():
                 if ok:
-                    messagebox.showinfo("اكتمل التفليش" if is_ar else "Sideload Complete", "تم تفليش الروم الرسمي وتحديث الجهاز بنجاح عبر Sideload!" if is_ar else "OTA Firmware package flashed successfully via Sideload!")
+                    messagebox.showinfo(self._tr("ui.sideload_complete"), self._tr("ui.ota_firmware_package_flashed_successfully_via"))
                 else:
-                    messagebox.showerror("فشل التفليش" if is_ar else "Sideload Failed", out_msg)
+                    messagebox.showerror(self._tr("ui.sideload_failed"), self._m(out_msg))
             self.after(0, done)
         threading.Thread(target=task, daemon=True).start()
 
     def _one_click_customer_backup(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً أو توصيله عبر USB.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first_or"))
             return
 
         is_ar = self.current_lang == "ar"
         self.data_log_text.delete("1.0", "end")
-        self.data_log_text.insert("end", "جاري بدء النسخ الشامل لبيانات العميل (الصور + الفيديوهات + جهات الاتصال + الرسائل)...\n" if is_ar else "Starting 1-Click Customer Backup (Media + Contacts + SMS)...\n")
+        self.data_log_text.insert("end", self._tr("ui.starting_1_click_customer_backup_media"))
 
         def task():
             def prog(txt):
@@ -2743,38 +2742,38 @@ class AndroidDoctorApp(ctk.CTk):
             def done():
                 if ok:
                     messagebox.showinfo(
-                        "اكتمل النسخ الشامل" if is_ar else "Customer Backup Complete",
-                        f"تم سحب جميع بيانات العميل بنجاح في مجلد سطح المكتب:\n{b_dir}" if is_ar else f"Customer data backup saved to Desktop:\n{b_dir}"
+                        self._tr("ui.customer_backup_complete"),
+                        self._tr("ui.customer_data_backup_saved_to_desktop", b_dir=b_dir)
                     )
                     try:
                         webbrowser.open(b_dir)
                     except Exception:
                         pass
                 else:
-                    messagebox.showwarning("تنبيه" if is_ar else "Notice", summary)
+                    messagebox.showwarning(self._tr("ui.notice"), self._m(summary))
             self.after(0, done)
         threading.Thread(target=task, daemon=True).start()
 
     def run_nand_lifespan_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_phone_first"))
             return
         is_ar = self.current_lang == "ar"
         self.nand_text.delete("1.0", "end")
-        self.nand_text.insert("end", "جاري قراءة سجلات JEDEC (Life Time & Pre-EOL) لشريحة الذاكرة...\n" if is_ar else "Reading JEDEC eMMC/UFS wear-level registers from hardware...\n")
+        self.nand_text.insert("end", self._tr("ui.reading_jedec_emmc_ufs_wear_level"))
 
         def task():
             rep = self.board_diag.read_emmc_ufs_lifespan(serial)
             self.last_storage_life = rep
             lines = [
-                "=== تقرير استهلاك وعمر شريحة التخزين (JEDEC Lifespan) ===" if is_ar else "=== eMMC / UFS NAND WEAR-LEVEL & LIFESPAN REPORT ===",
-                f"نوع الذاكرة (Storage Type):    {rep.storage_type}",
-                f"استهلاك خلايا SLC (Type A):    {rep.life_time_type_a} [{rep.raw_hex_a}]",
-                f"استهلاك خلايا MLC (Type B):    {rep.life_time_type_b} [{rep.raw_hex_b}]",
-                f"حالة الكتل الاحتياطية (Pre-EOL): {rep.pre_eol_info} [{rep.raw_pre_eol}]",
-                f"تقييم الصحة النهائي:           {rep.health_verdict}",
-                f"التشخيص الفني:                 {rep.diagnosis}"
+                self._tr("ui.emmc_ufs_nand_wear_level_lifespan"),
+                self._tr("ui.storage_type", storage_type=rep.storage_type),
+                self._tr("ui.life_time_estimate_a", life_time_type_a=rep.life_time_type_a, raw_hex_a=rep.raw_hex_a),
+                self._tr("ui.life_time_estimate_b", life_time_type_b=rep.life_time_type_b, raw_hex_b=rep.raw_hex_b),
+                self._tr("ui.reserved_blocks_pre_eol", pre_eol_info=rep.pre_eol_info, raw_pre_eol=rep.raw_pre_eol),
+                self._tr("ui.status", health_verdict=rep.health_verdict),
+                self._tr("ui.diagnosis_4", diagnosis=rep.diagnosis)
             ]
             def upd():
                 self.nand_text.delete("1.0", "end")
@@ -2785,20 +2784,20 @@ class AndroidDoctorApp(ctk.CTk):
     def run_speed_bench_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_phone_first"))
             return
         is_ar = self.current_lang == "ar"
         self.nand_text.delete("1.0", "end")
-        self.nand_text.insert("end", "جاري تشغيل اختبار سرعة القراءة والكتابة المتتابعة بحجم 64MB (dd conv=fsync)...\n" if is_ar else "Running 64MB sequential read/write speed benchmark inside /data/local/tmp...\n")
+        self.nand_text.insert("end", self._tr("ui.running_64mb_sequential_read_write_speed"))
 
         def task():
             w_speed, r_speed, verdict, diag = self.board_diag.benchmark_storage_speed(serial, test_size_mb=64)
             lines = [
-                "=== نتيجة اختبار سرعة الذاكرة التخزينية (64MB Benchmark) ===" if is_ar else "=== STORAGE SEQUENTIAL READ / WRITE BENCHMARK (64MB) ===",
-                f"سرعة الكتابة المتتابعة (Write): {_fmt(w_speed, 'MB/s')}" if is_ar else f"Sequential Write Speed: {_fmt(w_speed, 'MB/s')}",
-                f"سرعة القراءة المتتابعة (Read):  {_fmt(r_speed, 'MB/s')}" if is_ar else f"Sequential Read Speed:  {_fmt(r_speed, 'MB/s')}",
-                f"تقييم سرعة الناقل:              {verdict}" if is_ar else f"Throughput Verdict:     {verdict}",
-                f"التشخيص الفني:                 {diag}" if is_ar else f"Technical Diagnosis:    {diag}"
+                self._tr("ui.storage_sequential_read_write_benchmark_64mb"),
+                self._tr("ui.sequential_write_speed", s=_fmt(w_speed, 'MB/s')),
+                self._tr("ui.sequential_read_speed", s=_fmt(r_speed, 'MB/s')),
+                self._tr("ui.throughput_verdict", verdict=verdict),
+                self._tr("ui.technical_diagnosis", diag=diag)
             ]
             def upd():
                 self.nand_text.delete("1.0", "end")
@@ -2809,19 +2808,19 @@ class AndroidDoctorApp(ctk.CTk):
     def run_stress_test_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_phone_first"))
             return
         is_ar = self.current_lang == "ar"
         self.stress_progress.set(0)
         self.stress_text.delete("1.0", "end")
-        self.stress_text.insert("end", "جاري بدء اختبار الضغط (30 ثانية) لمراقبة استقرار دوائر الباور وهبوط الفولت وترددات المعالج...\n" if is_ar else "Starting 30-second CPU/PMIC stress test...\n")
+        self.stress_text.insert("end", self._tr("ui.starting_30_second_cpu_pmic_stress"))
 
         def task():
             def prog(snap: StressTestSnapshot, msg: str):
                 def update():
                     pct = min(1.0, snap.second / 30.0)
                     self.stress_progress.set(pct)
-                    self.stress_lbl.configure(text=msg)
+                    self.stress_lbl.configure(text=self._m(msg))
                     self.stress_text.insert("end", f"{msg}\n")
                     self.stress_text.see("end")
                 self.after(0, update)
@@ -2830,14 +2829,14 @@ class AndroidDoctorApp(ctk.CTk):
             self.last_stress_report = rep
 
             lines = [
-                "\n=== التقرير النهائي لاختبار ضغط المعالج والباور (30 ثانية) ===" if is_ar else "\n=== CPU & PMIC 30-SECOND STRESS TEST REPORT ===",
-                f"التقييم العام:               {rep.verdict}" if is_ar else f"Overall Verdict:           {rep.verdict}",
-                f"Initial battery voltage:   {_fmt(rep.initial_voltage_mv, 'mV')}",
-                f"Minimum voltage under load: {_fmt(rep.min_voltage_mv, 'mV')}",
-                f"Voltage drop:              {_fmt(rep.voltage_sag_mv, 'mV')}",
-                f"Temperature ({rep.temp_source}): {_fmt(rep.initial_temp_c, '°C')} -> {_fmt(rep.max_temp_c, '°C')}",
-                f"CPU frequency range:       {_fmt(rep.min_freq_mhz, 'MHz')} - {_fmt(rep.max_freq_mhz, 'MHz')}",
-                f"التشخيص النهائي:             {rep.diagnosis}" if is_ar else f"Final Diagnosis:           {rep.diagnosis}"
+                self._tr("ui.cpu_pmic_30_second_stress_test"),
+                self._tr("ui.overall_verdict", verdict=rep.verdict),
+                self._tr("ui.initial_battery_voltage", mv=_fmt(rep.initial_voltage_mv, 'mV')),
+                self._tr("ui.minimum_voltage_under_load", mv=_fmt(rep.min_voltage_mv, 'mV')),
+                self._tr("ui.voltage_drop", mv=_fmt(rep.voltage_sag_mv, 'mV')),
+                self._tr("ui.temperature", temp_source=rep.temp_source, c=_fmt(rep.initial_temp_c, '°C'), c2=_fmt(rep.max_temp_c, '°C')),
+                self._tr("ui.cpu_frequency_range", mhz=_fmt(rep.min_freq_mhz, 'MHz'), mhz2=_fmt(rep.max_freq_mhz, 'MHz')),
+                self._tr("ui.final_diagnosis", diagnosis=rep.diagnosis)
             ]
 
             def done():
@@ -2845,9 +2844,9 @@ class AndroidDoctorApp(ctk.CTk):
                 self.stress_text.insert("end", "\n".join(lines))
                 self.stress_text.see("end")
                 if rep.severe_sag_detected:
-                    messagebox.showwarning("تنبيه هبوط الجهد" if is_ar else "Voltage Sag Alert", rep.diagnosis)
+                    messagebox.showwarning(self._tr("ui.voltage_sag_alert"), self._m(rep.diagnosis))
                 else:
-                    messagebox.showinfo("اكتمل اختبار الضغط" if is_ar else "Stress Test Complete", f"استقرار النظام: {rep.verdict}\n{rep.diagnosis}")
+                    messagebox.showinfo(self._tr("ui.stress_test_complete"), self._tr("ui.result_2", verdict=rep.verdict, diagnosis=rep.diagnosis))
             self.after(0, done)
         threading.Thread(target=task, daemon=True).start()
 
@@ -2855,17 +2854,17 @@ class AndroidDoctorApp(ctk.CTk):
         serial = self.current_serial.get()
         is_ar = self.current_lang == "ar"
         self.slot_log_text.delete("1.0", "end")
-        self.slot_log_text.insert("end", f"جاري تحويل السلوت النشط إلى Slot {slot.upper()}...\n" if is_ar else f"Switching active boot slot to Slot {slot.upper()}...\n")
+        self.slot_log_text.insert("end", self._tr("ui.switching_active_boot_slot_to_slot", upper=slot.upper()))
 
         def task():
             ok, msg = self.rescue_center.switch_active_slot(slot, serial)
             def upd():
                 self.slot_log_text.delete("1.0", "end")
-                self.slot_log_text.insert("end", msg)
+                self.slot_log_text.insert("end", self._m(msg))
                 if ok:
-                    messagebox.showinfo("تبديل السلوت" if is_ar else "Slot Switch", f"تم تحويل السلوت بنجاح إلى Slot {slot.upper()}!" if is_ar else f"Successfully switched to Slot {slot.upper()}!")
+                    messagebox.showinfo(self._tr("ui.slot_switch"), self._tr("ui.successfully_switched_to_slot", upper=slot.upper()))
                 else:
-                    messagebox.showwarning("تنبيه" if is_ar else "Notice", msg)
+                    messagebox.showwarning(self._tr("ui.notice"), self._m(msg))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
@@ -2873,28 +2872,28 @@ class AndroidDoctorApp(ctk.CTk):
         serial = self.current_serial.get()
         is_ar = self.current_lang == "ar"
         self.slot_log_text.delete("1.0", "end")
-        self.slot_log_text.insert("end", "جاري قراءة رقم حماية الرجوع Anti-Rollback من البوت لودر...\n" if is_ar else "Querying Anti-Rollback (ARB) hardware fuse from bootloader...\n")
+        self.slot_log_text.insert("end", self._tr("ui.querying_anti_rollback_arb_hardware_fuse"))
 
         def task():
             ok, msg, arb_index = self.rescue_center.check_anti_rollback(serial)
             def upd():
                 self.slot_log_text.delete("1.0", "end")
-                self.slot_log_text.insert("end", msg)
+                self.slot_log_text.insert("end", self._m(msg))
                 if ok:
-                    messagebox.showinfo("مؤشر ARB" if is_ar else "ARB Index", f"مؤشر حماية الرجوع: ARB={arb_index}\nاحذر تفليش روم بإصدار أقل لتفادي إتلاف الهاتف." if is_ar else f"Anti-Rollback Protection Index: ARB={arb_index}\nDo not flash ROM with lower ARB!")
+                    messagebox.showinfo(self._tr("ui.arb_index"), self._tr("ui.anti_rollback_protection_index_arb_do", arb_index=arb_index))
                 else:
-                    messagebox.showwarning("تنبيه" if is_ar else "Notice", msg)
+                    messagebox.showwarning(self._tr("ui.notice"), self._m(msg))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
     def _backup_critical_partitions(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_phone_first"))
             return
         is_ar = self.current_lang == "ar"
         self.part_backup_text.delete("1.0", "end")
-        self.part_backup_text.insert("end", "جاري نسخ الأقسام الحساسة (EFS / FSG / Modem / Persist / Boot)...\n" if is_ar else "Dumping critical radio partitions (EFS / FSG / Modem / Persist / Boot)...\n")
+        self.part_backup_text.insert("end", self._tr("ui.dumping_critical_radio_partitions_efs_fsg"))
 
         def task():
             def prog(txt):
@@ -2902,36 +2901,36 @@ class AndroidDoctorApp(ctk.CTk):
             res = self.partition_backup.backup_critical_partitions(serial=serial, progress_callback=prog)
             def upd():
                 lines = [
-                    f"\n=== تقرير النسخ الاحتياطي للأقسام الحساسة ===" if is_ar else "\n=== CRITICAL PARTITION BACKUP REPORT ===",
-                    f"النجاح: {'نعم (اكتمل)' if res.success else 'تنبيه/جزئي'}",
-                    f"عدد الأقسام المنسوخة: {len(res.dumped_partitions)}",
-                    f"المجلد المحفوظ به: {res.backup_directory}",
-                    f"التشخيص: {res.diagnosis}"
+                    self._tr("ui.critical_partition_backup_report"),
+                    self._tr("ui.success", warning_partial=self._tr("ui.yes_completed_2") if res.success else self._tr("ui.warning_partial")),
+                    self._tr("ui.partitions_copied", dumped_partitions=len(res.dumped_partitions)),
+                    self._tr("ui.saved_in_folder", backup_directory=res.backup_directory),
+                    self._tr("ui.diagnosis_2", diagnosis=res.diagnosis)
                 ]
                 self.part_backup_text.insert("end", "\n".join(lines))
                 if res.success:
-                    messagebox.showinfo("اكتمل النسخ" if is_ar else "Backup Complete", f"تم نسخ أقسام الشبكة الحساسة وحفظها في:\n{res.backup_directory}" if is_ar else f"Critical partitions saved to:\n{res.backup_directory}")
+                    messagebox.showinfo(self._tr("ui.backup_complete"), self._tr("ui.critical_partitions_saved_to", backup_directory=res.backup_directory))
                 else:
-                    messagebox.showwarning("تنبيه" if is_ar else "Notice", res.diagnosis)
+                    messagebox.showwarning(self._tr("ui.notice"), self._m(res.diagnosis))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
     def _backup_all_partitions(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_phone_first"))
             return
         is_ar = self.current_lang == "ar"
         self.part_backup_text.delete("1.0", "end")
-        self.part_backup_text.insert("end", "جاري نسخ كامل أقسام الهاتف (Full Partition Table Dump)...\n" if is_ar else "Dumping all discoverable partitions to PC...\n")
+        self.part_backup_text.insert("end", self._tr("ui.dumping_all_discoverable_partitions_to_pc"))
 
         def task():
             def prog(txt):
                 self.after(0, lambda: self.part_backup_text.insert("end", f"{txt}\n"))
             res = self.partition_backup.backup_all_partitions(serial=serial, progress_callback=prog)
             def upd():
-                self.part_backup_text.insert("end", f"\nاكتمل النسخ: {len(res.dumped_partitions)} قسم. المجلد: {res.backup_directory}\n")
-                messagebox.showinfo("اكتمل النسخ" if is_ar else "Backup Complete", f"تم حفظ الأقسام في:\n{res.backup_directory}")
+                self.part_backup_text.insert("end", self._tr("ui.copy_finished_partitions_folder", dumped_partitions=len(res.dumped_partitions), backup_directory=res.backup_directory))
+                messagebox.showinfo(self._tr("ui.backup_complete"), self._tr("ui.partitions_saved_in", backup_directory=res.backup_directory))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
@@ -2943,45 +2942,45 @@ class AndroidDoctorApp(ctk.CTk):
     def _batch_install_apks(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
         files = filedialog.askopenfilenames(filetypes=[("Android APK", "*.apk"), ("All Files", "*.*")])
         if not files:
             return
         is_ar = self.current_lang == "ar"
         self.apk_log_text.delete("1.0", "end")
-        self.apk_log_text.insert("end", f"جاري تثبيت {len(files)} تطبيق على الجهاز دفعة واحدة...\n" if is_ar else f"Batch installing {len(files)} APK files...\n")
+        self.apk_log_text.insert("end", self._tr("ui.batch_installing_apk_files", files=len(files)))
 
         def task():
             def prog(cur, tot, f):
-                self.after(0, lambda: self.apk_log_text.insert("end", f"[{cur}/{tot}] تثبيت: {os.path.basename(f)}...\n" if is_ar else f"[{cur}/{tot}] Installing: {os.path.basename(f)}...\n"))
+                self.after(0, lambda: self.apk_log_text.insert("end", self._tr("ui.installing", cur=cur, tot=tot, f=os.path.basename(f))))
             results = self.batch_apk.install_multiple_apks(serial, list(files), progress_callback=prog)
             def upd():
                 successes = sum(1 for r in results if r.success)
-                summary = f"\nاكتمل التثبيت: نجح {successes} من أصل {len(results)} تطبيق." if is_ar else f"\nBatch install finished: {successes}/{len(results)} successful."
-                self.apk_log_text.insert("end", summary)
-                messagebox.showinfo("اكتمل التثبيت" if is_ar else "Install Complete", summary)
+                summary = self._tr("ui.batch_install_finished_successful", successes=successes, results=len(results))
+                self.apk_log_text.insert("end", self._m(summary))
+                messagebox.showinfo(self._tr("ui.install_complete"), self._m(summary))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
     def _extract_user_apps(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
         is_ar = self.current_lang == "ar"
         self.apk_log_text.delete("1.0", "end")
-        self.apk_log_text.insert("end", "جاري حصر وتفريغ تطبيقات المستخدم وحفظها بصيغة APK على الكمبيوتر...\n" if is_ar else "Listing and extracting user apps to PC...\n")
+        self.apk_log_text.insert("end", self._tr("ui.listing_and_extracting_user_apps_to"))
 
         def task():
             def prog(cur, tot, pkg):
-                self.after(0, lambda: self.apk_log_text.insert("end", f"[{cur}/{tot}] سحب: {pkg}...\n" if is_ar else f"[{cur}/{tot}] Pulling: {pkg}...\n"))
+                self.after(0, lambda: self.apk_log_text.insert("end", self._tr("ui.pulling", cur=cur, tot=tot, pkg=pkg)))
             results = self.batch_apk.extract_all_user_apks(serial, progress_callback=prog)
             def upd():
                 successes = sum(1 for r in results if r.success)
-                summary = f"\nاكتمل استخراج التطبيقات: تم سحب {successes} تطبيق إلى مجلد سطح المكتب." if is_ar else f"\nExtracted {successes} apps to Desktop."
-                self.apk_log_text.insert("end", summary)
-                messagebox.showinfo("اكتمل السحب" if is_ar else "Extraction Complete", summary)
+                summary = self._tr("ui.extracted_apps_to_desktop", successes=successes)
+                self.apk_log_text.insert("end", self._m(summary))
+                messagebox.showinfo(self._tr("ui.extraction_complete"), self._m(summary))
                 if results and results[0].output_path:
                     webbrowser.open(os.path.dirname(results[0].output_path))
             self.after(0, upd)
@@ -2990,27 +2989,27 @@ class AndroidDoctorApp(ctk.CTk):
     def run_fast_charge_diag_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
         is_ar = self.current_lang == "ar"
         self.fast_charge_text.delete("1.0", "end")
-        self.fast_charge_text.insert("end", "جاري قراءة بروتوكول الشحن ومتحسس التيار ومفاوضة الشاحن (Power Delivery / Quick Charge)...\n" if is_ar else "Reading charging protocol negotiation, voltage, and live wattage...\n")
+        self.fast_charge_text.insert("end", self._tr("ui.reading_charging_protocol_negotiation_voltage_an"))
 
         def task():
             diag = self.board_diag.diagnose_fast_charge(serial)
             self.last_fast_charge = diag
             lines = [
-                "=== تقرير بروتوكول الشحن السريع والقدرة الحقيقية ===" if is_ar else "=== FAST CHARGE PROTOCOL & POWER NEGOTIATION ===",
-                f"البروتوكول المكتشف: {diag.protocol_name}" if is_ar else f"Protocol: {diag.protocol_name}",
-                f"نوع المنفذ / الشاحن: {diag.charger_type}" if is_ar else f"Charger Type: {diag.charger_type}",
+                self._tr("ui.fast_charge_protocol_power_negotiation"),
+                self._tr("ui.protocol", protocol_name=diag.protocol_name),
+                self._tr("ui.charger_type", charger_type=diag.charger_type),
                 f"[{diag.status}]",
-                f"USB input voltage (measured): {_fmt(diag.voltage_mv, 'mV')}",
-                f"USB input current (measured): {_fmt(diag.current_ma, 'mA')}",
-                f"Input power (measured V x I): {_fmt(diag.wattage_w, 'W')}",
-                f"Reported max current / voltage (not measured): {_fmt(diag.max_charging_current_ma, 'mA')} / {_fmt(diag.max_charging_voltage_mv, 'mV')}",
-                f"Fast charging: {'UNKNOWN' if diag.is_fast_charging is None else ('yes' if diag.is_fast_charging else 'no')}",
-                f"Battery: {_fmt(diag.battery_level, '%')} ({diag.charge_status})",
-                f"التشخيص: {diag.diagnosis}" if is_ar else f"Diagnosis: {diag.diagnosis}"
+                self._tr("ui.usb_input_voltage_measured", mv=_fmt(diag.voltage_mv, 'mV')),
+                self._tr("ui.usb_input_current_measured", ma=_fmt(diag.current_ma, 'mA')),
+                self._tr("ui.input_power_measured_v_x_i", w=_fmt(diag.wattage_w, 'W')),
+                self._tr("ui.reported_max_current_voltage_not_measured", ma=_fmt(diag.max_charging_current_ma, 'mA'), mv=_fmt(diag.max_charging_voltage_mv, 'mV')),
+                self._tr("ui.fast_charging", is_fast_charging=self._tr(_tri_key(diag.is_fast_charging))),
+                self._tr("ui.battery_3", battery_level=_fmt(diag.battery_level, '%'), charge_status=diag.charge_status),
+                self._tr("ui.diagnosis_2", diagnosis=diag.diagnosis)
             ]
             def upd():
                 self.fast_charge_text.delete("1.0", "end")
@@ -3021,17 +3020,17 @@ class AndroidDoctorApp(ctk.CTk):
     def run_reset_gauge_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
         is_ar = self.current_lang == "ar"
         def task():
             ok, msg = self.board_diag.reset_battery_stats_and_gauge(serial)
             def upd():
                 self.fast_charge_text.delete("1.0", "end")
-                self.fast_charge_text.insert("end", f"إعادة ضبط إحصائيات استهلاك البطارية:\n{msg}" if is_ar else f"Reset battery statistics:\n{msg}")
+                self.fast_charge_text.insert("end", self._tr("ui.reset_battery_statistics", msg=msg))
                 messagebox.showinfo(
-                    "إعادة ضبط إحصائيات البطارية" if is_ar else "Reset Battery Statistics",
-                    "تم تصفير سجلات استهلاك البطارية بنجاح.\n(ملاحظة: هذا الإجراء يعيد ضبط إحصائيات نظام التشغيل فقط ولا يعاير العتاد الداخلي)." if is_ar else "Battery usage statistics reset successfully.\n(Note: This resets OS statistics only; it does not recalibrate hardware fuel gauge)."
+                    self._tr("ui.reset_battery_statistics_2"),
+                    self._tr("ui.battery_usage_statistics_reset_successfully_note")
                 )
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
@@ -3039,26 +3038,26 @@ class AndroidDoctorApp(ctk.CTk):
     def run_storage_benchmark_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
         is_ar = self.current_lang == "ar"
         self.storage_text.delete("1.0", "end")
-        self.storage_text.insert("end", "جاري فحص مؤشرات استهلاك الخلايا (JEDEC Life Time) واختبار سرعة القراءة والكتابة...\n" if is_ar else "Running eMMC/UFS health check & read/write speed benchmark...\n")
+        self.storage_text.insert("end", self._tr("ui.running_emmc_ufs_health_check_read"))
 
         def task():
             report = self.storage_bench.run_full_storage_test(serial)
             self.last_storage_report = report
             lines = [
-                "=== تقرير صحة وسرعة ذاكرة التخزين (eMMC / UFS) ===" if is_ar else "=== STORAGE (eMMC/UFS) LIFE CYCLE & SPEED REPORT ===",
-                f"الحالة المعتمدة: [{report.status}]" if is_ar else f"Verified Status: [{report.status}]",
-                f"نوع الذاكرة المكتشف: {report.storage_type}" if is_ar else f"Storage Type: {report.storage_type}",
-                f"استهلاك خلايا SLC (Type A): {report.life_time_type_a}" if is_ar else f"SLC Wear (Type A): {report.life_time_type_a}",
-                f"استهلاك خلايا MLC (Type B): {report.life_time_type_b}" if is_ar else f"MLC Wear (Type B): {report.life_time_type_b}",
-                f"حالة الكتل الاحتياطية (Pre-EOL): {report.pre_eol_info}" if is_ar else f"Reserved Blocks (Pre-EOL): {report.pre_eol_info}",
-                f"سرعة الكتابة المتتابعة (Write): {report.write_speed_mb_s} MB/s" if is_ar else f"Sequential Write Speed: {report.write_speed_mb_s} MB/s",
-                f"سرعة القراءة المتتابعة (Read): {report.read_speed_mb_s} MB/s" if is_ar else f"Sequential Read Speed: {report.read_speed_mb_s} MB/s",
-                f"تقييم صحة الذاكرة: {report.health_verdict}" if is_ar else f"Health Verdict: {report.health_verdict}",
-                f"التشخيص الفني: {report.diagnosis}" if is_ar else f"Diagnosis: {report.diagnosis}"
+                self._tr("ui.storage_emmc_ufs_life_cycle_speed"),
+                self._tr("ui.verified_status", status=report.status),
+                self._tr("ui.storage_type_2", storage_type=report.storage_type),
+                self._tr("ui.slc_wear_type_a", life_time_type_a=report.life_time_type_a),
+                self._tr("ui.mlc_wear_type_b", life_time_type_b=report.life_time_type_b),
+                self._tr("ui.reserved_blocks_pre_eol_2", pre_eol_info=report.pre_eol_info),
+                self._tr("ui.sequential_write_speed_mb_s", write_speed_mb_s=report.write_speed_mb_s),
+                self._tr("ui.sequential_read_speed_mb_s", read_speed_mb_s=report.read_speed_mb_s),
+                self._tr("ui.health_verdict", health_verdict=report.health_verdict),
+                self._tr("ui.diagnosis", diagnosis=report.diagnosis)
             ]
             if report.evidence:
                 lines.append(format_evidence_for_display(report.evidence, is_ar=is_ar))
@@ -3071,28 +3070,28 @@ class AndroidDoctorApp(ctk.CTk):
     def run_touch_matrix_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
         is_ar = self.current_lang == "ar"
         self.touch_text.delete("1.0", "end")
-        self.touch_text.insert("end", "جاري نشر وتشغيل شبكة فحص الديجيتيزر التفاعلية على شاشة الهاتف...\n" if is_ar else "Deploying touch digitizer grid test to phone...\n")
+        self.touch_text.insert("end", self._tr("ui.deploying_touch_digitizer_grid_test_to"))
 
         def task():
             ok, msg = self.touch_matrix.deploy_and_launch_touch_test(serial)
             def upd():
                 self.touch_text.delete("1.0", "end")
-                self.touch_text.insert("end", f"حالة اختبار اللمس:\n{msg}\n")
+                self.touch_text.insert("end", self._tr("ui.touch_test", msg=msg))
                 if ok:
-                    messagebox.showinfo("اختبار اللمس" if is_ar else "Touch Test", "تم فتح شبكة فحص اللمس على شاشة الهاتف!\nالمس جميع المربعات للتأكد من خلو الشاشة من المناطق الميتة (Dead Zones)." if is_ar else "Touch test grid opened on device! Touch all boxes to identify dead zones.")
+                    messagebox.showinfo(self._tr("ui.touch_test_2"), self._tr("ui.touch_test_grid_opened_on_device"))
                 else:
-                    messagebox.showwarning("تنبيه" if is_ar else "Notice", msg)
+                    messagebox.showwarning(self._tr("ui.notice"), self._m(msg))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
     def run_full_deep_scan_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
         def task():
@@ -3132,7 +3131,7 @@ class AndroidDoctorApp(ctk.CTk):
             )
 
             def done():
-                messagebox.showinfo("اكتمل الفحص الشامل", f"تم فحص العتاد بالكامل!\nصحة اللوحة الأم: {bdiag.overall_health}\nتطبيقات بأذونات حساسة: {len(sec.sensitive_apps)}\nكفاءة البطارية الحقيقية: {bdiag.pmic.true_health_pct}%")
+                messagebox.showinfo(self._tr("ui.full_scan_finished"), self._tr("ui.full_scan_finished_board_checks_apps", overall_health=bdiag.overall_health, sensitive_apps=len(sec.sensitive_apps), true_health_pct=bdiag.pmic.true_health_pct))
                 self.run_profile_async()
             self.after(0, done)
 
@@ -3141,105 +3140,105 @@ class AndroidDoctorApp(ctk.CTk):
     def run_screen_color_test_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه" if self.current_lang == "ar" else "Notice", "الرجاء اختيار هاتف أولاً." if self.current_lang == "ar" else "Select a device first.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_device_first"))
             return
         is_ar = self.current_lang == "ar"
         self.touch_text.delete("1.0", "end")
-        self.touch_text.insert("end", "جاري تشغيل شاشة فحص الألوان والبكسلات الميتة (RGBW) وتفعيل تتبع مسار اللمس...\n" if is_ar else "Deploying full-screen RGBW dead-pixel & color canvas with touch tracking...\n")
+        self.touch_text.insert("end", self._tr("ui.deploying_full_screen_rgbw_dead_pixel"))
 
         def task():
             ok, msg = self.hardware_tester.launch_screen_color_test(serial)
             def upd():
                 self.touch_text.delete("1.0", "end")
-                self.touch_text.insert("end", f"حالة فحص الشاشة:\n{msg}\n" if is_ar else f"Screen Test Status:\n{msg}\n")
+                self.touch_text.insert("end", self._tr("ui.screen_test_status", msg=msg))
                 if ok:
                     answer = messagebox.askyesno(
-                        "فحص الشاشة والبكسلات" if is_ar else "Screen Color Test",
-                        "شاشة فحص الألوان تعمل الآن على الهاتف!\nالمس الشاشة للتنقل بين الألوان: (أحمر، أخضر، أزرق، أبيض، أسود، تدرج رمادي).\n\nهل انتهيت وترغب في إغلاق شاشة الفحص وإلغاء تتبع اللمس؟" if is_ar else "Interactive color test is now running on your phone!\nTap the screen to cycle through Red, Green, Blue, White, Black, and Grayscale.\n\nDid you finish and want to close the test?"
+                        self._tr("ui.screen_color_test"),
+                        self._tr("ui.interactive_color_test_is_now_running")
                     )
                     if answer:
                         self.hardware_tester.stop_screen_color_test(serial)
-                        self.touch_text.insert("end", "تم إغلاق شاشة الفحص وإلغاء تتبع مسار اللمس بنجاح.\n" if is_ar else "Screen test closed and touch overlays reverted.\n")
+                        self.touch_text.insert("end", self._tr("ui.screen_test_closed_and_touch_overlays"))
                 else:
-                    messagebox.showwarning("تنبيه" if is_ar else "Notice", msg)
+                    messagebox.showwarning(self._tr("ui.notice"), self._m(msg))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
     def run_speaker_tone_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه" if self.current_lang == "ar" else "Notice", "الرجاء اختيار هاتف أولاً." if self.current_lang == "ar" else "Select a device first.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_device_first"))
             return
         is_ar = self.current_lang == "ar"
         self.audio_codec_text.delete("1.0", "end")
-        self.audio_codec_text.insert("end", "جاري توليد نغمة 1000Hz جيبية نقية وتشغيلها بأعلى صوت لاختبار نقاء مكبر الصوت...\n" if is_ar else "Generating pure 1000Hz sine test tone and playing via phone loudspeaker...\n")
+        self.audio_codec_text.insert("end", self._tr("ui.generating_pure_1000hz_sine_test_tone"))
 
         def task():
             ok, msg = self.hardware_tester.play_speaker_test_tone(serial, freq=1000, duration_sec=3.0)
             def upd():
                 self.audio_codec_text.delete("1.0", "end")
-                self.audio_codec_text.insert("end", f"فحص مكبر الصوت:\n{msg}\n" if is_ar else f"Speaker Test Output:\n{msg}\n")
+                self.audio_codec_text.insert("end", self._tr("ui.speaker_test_output", msg=msg))
                 if ok:
-                    messagebox.showinfo("فحص الصوت" if is_ar else "Speaker Test", "تم تشغيل نغمة الاختبار على مكبر صوت الهاتف بنجاح!" if is_ar else "Test tone played successfully on phone loudspeaker!")
+                    messagebox.showinfo(self._tr("ui.speaker_test"), self._tr("ui.test_tone_played_successfully_on_phone"))
                 else:
-                    messagebox.showwarning("تنبيه" if is_ar else "Notice", msg)
+                    messagebox.showwarning(self._tr("ui.notice"), self._m(msg))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
     def run_companion_diag_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه" if self.current_lang == "ar" else "Notice", "الرجاء اختيار هاتف أولاً." if self.current_lang == "ar" else "Select a device first.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_device_first"))
             return
         is_ar = self.current_lang == "ar"
         self.sensors_text.delete("1.0", "end")
-        self.sensors_text.insert("end", "جاري فحص التطبيق المساعد التفاعلي أو تفعيل وضع التشخيص Zero-APK...\n" if is_ar else "Checking Companion APK or activating Zero-APK fallback suite...\n")
+        self.sensors_text.insert("end", self._tr("ui.checking_companion_apk_or_activating_zero"))
 
         def task():
             ok, msg = self.hardware_tester.install_companion_apk(serial)
             if ok:
                 self.hardware_tester.run_companion_broadcast(serial, "START_DIAGNOSTICS")
                 res = self.hardware_tester.read_companion_results(serial)
-                diag_txt = f"نتائج التطبيق المساعد:\n{res}" if is_ar else f"Companion Results:\n{res}"
+                diag_txt = self._tr("ui.companion_results", res=res)
             else:
-                diag_txt = f"حالة التطبيق المساعد:\n{msg}\nتم تفعيل أدوات الفحص المباشر Zero-APK (فحص الشاشة، فحص الصوت، وفحص الحساسات المباشر)." if is_ar else f"Companion Status:\n{msg}\nZero-APK interactive suite is active."
+                diag_txt = self._tr("ui.companion_status_zero_apk_interactive_suite", msg=msg)
             def upd():
                 self.sensors_text.delete("1.0", "end")
                 self.sensors_text.insert("end", diag_txt)
-                messagebox.showinfo("الفحص التفاعلي" if is_ar else "Interactive Diag", diag_txt)
+                messagebox.showinfo(self._tr("ui.interactive_diag"), diag_txt)
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
     def run_root_forensics_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه" if self.current_lang == "ar" else "Notice", "الرجاء اختيار هاتف أولاً." if self.current_lang == "ar" else "Select a device first.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_device_first"))
             return
         is_ar = self.current_lang == "ar"
         self.root_forensics_text.delete("1.0", "end")
-        self.root_forensics_text.insert("end", "جاري تشغيل محرك التحليل الجنائي المتقدم (Root Forensics Pro) وفحص سجلات الكيرنل وذاكرة Ramoops وناقل I2C وعمر الذاكرة الحقيقي...\n" if is_ar else "Running Root Forensics Pro: inspecting persistent ramoops, I2C bus errors, and raw NAND lifetime...\n")
+        self.root_forensics_text.insert("end", self._tr("ui.running_root_forensics_pro_inspecting_persistent"))
 
         def task():
             rep = self.board_diag.run_root_forensics_pro(serial)
             self.last_root_forensics = rep
             lines = [
-                "=== تقرير التحليل الجنائي المتقدم للكيرنل واللوحة الأم (Root Forensics Pro) ===" if is_ar else "=== ROOT FORENSICS PRO & KERNEL CRASH ANALYSIS ===",
-                f"حالة الروت: {'مروّت (' + rep.root_type + ')' if rep.is_rooted else 'غير مروّت (SELinux Enforcing)'}" if is_ar else f"Root Status: {'ROOTED (' + rep.root_type + ')' if rep.is_rooted else 'NON_ROOT (SELinux Enforcing)'}",
-                f"التشخيص العام: {rep.diagnosis}" if is_ar else f"Diagnosis: {rep.diagnosis}",
-                f"استهلاك خلايا SLC (su life_time): {rep.nand_exact_lifetime_a or 'غير متاح بدون روت'}" if is_ar else f"SLC Wear (Direct sysfs): {rep.nand_exact_lifetime_a or 'Unavailable without root'}",
-                f"استهلاك خلايا MLC (su life_time): {rep.nand_exact_lifetime_b or 'غير متاح بدون روت'}" if is_ar else f"MLC Wear (Direct sysfs): {rep.nand_exact_lifetime_b or 'Unavailable without root'}",
-                f"حالة كتل الاحتياط (Pre-EOL): {rep.nand_exact_pre_eol or 'غير متاح بدون روت'}" if is_ar else f"Reserved Blocks (Pre-EOL): {rep.nand_exact_pre_eol or 'Unavailable without root'}",
-                f"تقييم صحة الذاكرة: {rep.nand_wear_status}" if is_ar else f"NAND Wear Status: {rep.nand_wear_status}",
-                f"أخطاء ناقل I2C للهاردوير: {len(rep.i2c_bus_errors)} خطأ مسجل" if is_ar else f"I2C Bus Hardware Errors: {len(rep.i2c_bus_errors)} errors",
-                f"بصمات الأعطال المكتشفة في الكيرنل: {len(rep.matched_fault_signatures)}" if is_ar else f"Matched Kernel Crash Signatures: {len(rep.matched_fault_signatures)}"
+                self._tr("ui.root_forensics_pro_kernel_crash_analysis"),
+                self._tr("ui.root_status", not_rooted=self._tr("ui.rooted_2") + rep.root_type + ')' if rep.is_rooted else self._tr("ui.not_rooted")),
+                self._tr("ui.diagnosis_5", diagnosis=rep.diagnosis),
+                self._tr("ui.slc_wear_direct_sysfs", not_available_without_root=rep.nand_exact_lifetime_a or self._tr("ui.not_available_without_root")),
+                self._tr("ui.mlc_wear_direct_sysfs", not_available_without_root=rep.nand_exact_lifetime_b or self._tr("ui.not_available_without_root")),
+                self._tr("ui.reserved_blocks_pre_eol_3", not_available_without_root=rep.nand_exact_pre_eol or self._tr("ui.not_available_without_root")),
+                self._tr("ui.nand_wear_status", nand_wear_status=rep.nand_wear_status),
+                self._tr("ui.i2c_bus_hardware_errors_errors", i2c_bus_errors=len(rep.i2c_bus_errors)),
+                self._tr("ui.matched_kernel_crash_signatures", matched_fault_signatures=len(rep.matched_fault_signatures))
             ]
             if rep.matched_fault_signatures:
-                lines.append("\nالأعطال المطابقة المسجلة في الكيرنل:" if is_ar else "\nMatched Hardware Fault Signatures:")
+                lines.append(self._tr("ui.matched_hardware_fault_signatures"))
                 for f in rep.matched_fault_signatures:
-                    name = f.get("name_ar" if is_ar else "name", "عطل")
-                    lines.append(f"  • [{f.get('severity', 'UNKNOWN')}] {name}: {f.get('description_ar' if is_ar else 'description', '')}")
+                    name = f.get(self._tr("ui.name"), self._tr("ui.fault"))
+                    lines.append(f"  • [{f.get('severity', 'UNKNOWN')}] {name}: {f.get(self._tr("ui.description_2"), '')}")
             if rep.i2c_bus_errors:
-                lines.append("\nأخطاء ناقل I2C المكتشفة:" if is_ar else "\nI2C Bus Error Logs:")
+                lines.append(self._tr("ui.i2c_bus_error_logs"))
                 for err in rep.i2c_bus_errors[:5]:
                     lines.append(f"  • {err}")
             if rep.evidence:
@@ -3249,20 +3248,20 @@ class AndroidDoctorApp(ctk.CTk):
                 self.root_forensics_text.delete("1.0", "end")
                 self.root_forensics_text.insert("end", "\n".join(lines))
                 if rep.is_rooted:
-                    messagebox.showinfo("التحليل الجنائي" if is_ar else "Forensics Complete", "تم استخراج أدلة الكيرنل وسجلات Ramoops واستهلاك الذاكرة الدقيق بنجاح!" if is_ar else "Root forensics completed successfully!")
+                    messagebox.showinfo(self._tr("ui.forensics_complete"), self._tr("ui.root_forensics_completed_successfully"))
                 else:
-                    messagebox.showwarning("تنبيه الروت" if is_ar else "Root Required", rep.diagnosis)
+                    messagebox.showwarning(self._tr("ui.root_required"), self._m(rep.diagnosis))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
     def run_efs_backup_async(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه" if self.current_lang == "ar" else "Notice", "الرجاء اختيار هاتف أولاً." if self.current_lang == "ar" else "Select a device first.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_device_first"))
             return
         is_ar = self.current_lang == "ar"
         self.root_forensics_text.delete("1.0", "end")
-        self.root_forensics_text.insert("end", "جاري اكتشاف أقسام الشبكة الحساسة (EFS / NVRAM / Modem) والنسخ الاحتياطي بصيغة raw dd block images مع حساب بصمات SHA-256...\n" if is_ar else "Discovering critical EFS/NVRAM/Modem partitions and performing raw dd block backup with SHA-256 hashes...\n")
+        self.root_forensics_text.insert("end", self._tr("ui.discovering_critical_efs_nvram_modem_partitions"))
 
         def task():
             def prog(msg):
@@ -3271,34 +3270,34 @@ class AndroidDoctorApp(ctk.CTk):
             self.last_efs_backup = res
             def upd():
                 lines = [
-                    "\n=== تقرير النسخ الاحتياطي الخام لأقسام EFS و NVRAM ===" if is_ar else "\n=== RAW EFS / NVRAM BACKUP REPORT ===",
-                    f"النجاح: {'نعم (اكتمل بنجاح)' if res.success else 'فشل أو يحتاج صلاحيات'}" if is_ar else f"Success: {'YES (Completed)' if res.success else 'FAILED / Needs Permissions'}",
-                    f"عدد الأقسام المنسوخة: {len(res.backed_up_partitions)}",
-                    f"حجم النسخة الإجمالي: {res.total_bytes / (1024*1024):.2f} MB",
-                    f"مجلد الحفظ: {res.backup_folder}",
-                    f"الرسالة: {res.message}"
+                    self._tr("ui.raw_efs_nvram_backup_report"),
+                    self._tr("ui.success_2", failed_or_needs_permissions=self._tr("ui.yes_completed_3") if res.success else self._tr("ui.failed_or_needs_permissions")),
+                    self._tr("ui.partitions_copied_2", backed_up_partitions=len(res.backed_up_partitions)),
+                    self._tr("ui.total_backup_size_mb", total_bytes=res.total_bytes / (1024*1024)),
+                    self._tr("ui.saved_in_folder_2", backup_folder=res.backup_folder),
+                    self._tr("ui.message", message=res.message)
                 ]
                 if res.hashes:
-                    lines.append("بصمات SHA-256 للأقسام:" if is_ar else "Partition SHA-256 Checksums:")
+                    lines.append(self._tr("ui.partition_sha_256_checksums"))
                     for p, h in res.hashes.items():
                         lines.append(f"  • {p}: {h[:16]}...")
                 self.root_forensics_text.insert("end", "\n".join(lines))
                 if res.success:
-                    messagebox.showinfo("اكتمل النسخ الخام" if is_ar else "Raw Backup Complete", f"تم حفظ صور أقسام EFS/NVRAM الحساسة في:\n{res.backup_folder}" if is_ar else f"Raw partitions successfully dumped to:\n{res.backup_folder}")
+                    messagebox.showinfo(self._tr("ui.raw_backup_complete"), self._tr("ui.raw_partitions_successfully_dumped_to", backup_folder=res.backup_folder))
                     if res.backup_folder and os.path.exists(res.backup_folder):
                         webbrowser.open(res.backup_folder)
                 else:
-                    messagebox.showwarning("تنبيه" if is_ar else "Notice", res.message)
+                    messagebox.showwarning(self._tr("ui.notice"), self._m(res.message))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
     def _generate_and_open_certificate(self):
         serial = self.current_serial.get()
         if not serial:
-            messagebox.showwarning("تنبيه", "الرجاء اختيار هاتف مصرح أولاً.")
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
-        tech = self.tech_name_entry.get().strip() or ("كبير مهندسي الصيانة" if self.current_lang == "ar" else "Chief Hardware Technician")
+        tech = self.tech_name_entry.get().strip() or (self._tr("ui.chief_hardware_technician"))
         c_name = self.cust_name_entry.get().strip() if hasattr(self, "cust_name_entry") else ""
         c_phone = self.cust_phone_entry.get().strip() if hasattr(self, "cust_phone_entry") else ""
         c_fault = self.cust_fault_entry.get().strip() if hasattr(self, "cust_fault_entry") else ""
@@ -3364,10 +3363,10 @@ class AndroidDoctorApp(ctk.CTk):
     def _refresh_past_reports(self):
         reports = self.db.get_diagnostic_reports(limit=25)
         is_ar = self.current_lang == "ar"
-        lines = [f"=== سجل تقارير الفحص التشخيصي المسجلة بالذاكرة ({len(reports)}) ===" if is_ar else f"=== STORED DIAGNOSTIC REPORTS IN DATABASE ({len(reports)}) ==="]
+        lines = [self._tr("ui.stored_diagnostic_reports_in_database", reports=len(reports))]
         for r in reports:
             batt_pct = r.get('battery_health_pct')
             batt_str = f"{batt_pct}%" if batt_pct is not None else "UNKNOWN"
-            lines.append(f"تقرير #{r['id']} | الجهاز: {r['device_serial']} | التاريخ: {r['timestamp']} | الحالة: {r['overall_status']} | كفاءة البطارية: {batt_str}")
+            lines.append(self._tr("ui.report_device_date_status_battery_health", id=r['id'], device_serial=r['device_serial'], timestamp=r['timestamp'], overall_status=r['overall_status'], batt_str=batt_str))
         self.reports_text.delete("1.0", "end")
         self.reports_text.insert("end", "\n".join(lines))
