@@ -1,0 +1,2 @@
+# bin/ must stay byte-identical to bin/manifest.json (SHA-256 checked at startup)
+bin/** -text
