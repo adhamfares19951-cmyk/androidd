@@ -3309,8 +3309,10 @@ class AndroidDoctorApp(ctk.CTk):
             if rep.matched_fault_signatures:
                 lines.append(self._tr("ui.matched_hardware_fault_signatures"))
                 for f in rep.matched_fault_signatures:
-                    name = f.get(self._tr("ui.name"), self._tr("ui.fault"))
-                    lines.append(f"  • [{f.get('severity', 'UNKNOWN')}] {name}: {f.get(self._tr("ui.description_2"), '')}")
+                    # fault_signatures.json fields: id, severity, description_en / description_ar
+                    name = f.get("id") or self._tr("ui.fault")
+                    desc = f.get(f"description_{self.current_lang}") or f.get("description_en", "")
+                    lines.append(f"  • [{f.get('severity', 'UNKNOWN')}] {name}: {desc}")
             if rep.i2c_bus_errors:
                 lines.append(self._tr("ui.i2c_bus_error_logs"))
                 for err in rep.i2c_bus_errors[:5]:

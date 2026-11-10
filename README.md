@@ -17,7 +17,7 @@ Every check returns one of four statuses defined in `core/result.py` (`Status`):
 
 - Every check attaches one or more `Evidence` records (`source`, `raw_excerpt` trimmed at 2048 characters, and `exit_code`).
 - `exit_code` defaults to `None` when no real process exit code is known (such as legacy ADB connections without `shell_v2` or host-side ratio calculations) so an unknown exit state never looks like `0`.
-- Raw evidence is exposed in the UI, printed in CLI tables, and rendered inside expandable `<details>` blocks in exported HTML reports.
+- Raw evidence is shown in the GUI and rendered inside expandable `<details>` blocks in exported HTML reports. The CLI prints statuses and details; the raw evidence is in the HTML report it writes.
 - `aggregate_status()` combines check statuses as `FAIL` if any key check failed, `UNKNOWN` if any key check is `UNKNOWN` or `NEEDS_ROOT`, and `PASS` only when all key checks pass.
 
 ### "Possible Causes" Wording
@@ -45,7 +45,7 @@ Reads device properties (`getprop`), CPU core count (`/proc/cpuinfo`), kernel st
 
 ### Hardware Subsystem Checks & Interactive Tools (`core/hardware_tester.py`, `core/touch_matrix.py`)
 - **Reported sensors & cameras**: Parses `dumpsys sensorservice` and `dumpsys media.camera` for reported sensors and camera modules; absent fields stay `None`. Missing common sensors are listed for reference rather than treated as an automatic fault.
-- **Subsystem checks**: Evaluates AudioFlinger/ALSA soundcards (`/proc/asound/cards`, `/proc/asound/pcm`), biometric HAL (`dumpsys fingerprint`, `dumpsys biometric`, `dmesg`), physical keys (`dumpsys input` and interactive `getevent -l`, passing each key only on observed `DOWN` + `UP`), SIM & baseband (`getprop`, `dumpsys telephony.registry`), display backlight + DSI logs, display panel controller & verified boot state (`display.panel_info`, without claiming screen originality), Wi-Fi (`cmd wifi status`, `dumpsys wifi`), Bluetooth (`dumpsys bluetooth_manager`), and declared features (`pm has-system-feature` flags for GPS, NFC, and USB host).
+- **Subsystem checks**: Evaluates AudioFlinger/ALSA soundcards (`/proc/asound/cards`, `/proc/asound/pcm`), biometric HAL (`pm has-system-feature`, `dumpsys fingerprint`, `dumpsys biometric`, `getprop ro.hardware.fingerprint`), physical keys (interactive `getevent -l`, passing each key only on observed `DOWN` + `UP`), SIM & baseband (`getprop`, `dumpsys telephony.registry`), display backlight + DSI logs, display panel controller & verified boot state (`display.panel_info`, without claiming screen originality), Wi-Fi (`cmd wifi status`, `dumpsys wifi`), Bluetooth (`dumpsys bluetooth_manager`), and declared features (`pm has-system-feature` flags for GPS, NFC, and USB host).
 - **Interactive bench helpers**: Pushes standalone HTML5 screen color and `8x14` touch-grid test pages (`core/touch_matrix.py`) opened via intent with `pointer_location` enabled, generates a temporary `1000 Hz` PCM speaker WAV tone in the OS temp folder, triggers haptic vibration pulses, and includes optional companion APK broadcast helpers.
 
 ### Apps with Sensitive Permissions & Debloater (`core/malware_hunter.py`)
@@ -85,17 +85,14 @@ Key tool policies enforced in `setup_bins.py` and `core/adb_bridge.py`:
 ## Installation & Running
 
 ### Requirements
-- Windows 10/11 (primary target; PnP USB and BootROM port queries use PowerShell) and Python 3.10+ (developed/tested on Python 3.13).
+- Windows 10/11 (primary target; PnP USB and BootROM port queries use PowerShell) and Python 3.13 (tested; the code also compiles on 3.12; older versions are not tested).
 - USB Debugging enabled on Android devices for ADB checks (Fastboot and `scrcpy --otg` work outside ADB).
 
 Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
-`requirements.txt` lists `customtkinter>=6.0.0`, `darkdetect>=0.8.0`, `packaging>=24.0`, and `Pillow>=10.0.0`. Note that `ui/i18n.py` also imports `arabic_reshaper` and `python-bidi` (`bidi.algorithm`), and `ui/report_exporter.py` optionally imports `qrcode` for SVG QR rendering; install them if missing in your environment:
-```bash
-pip install arabic-reshaper python-bidi qrcode
-```
+`requirements.txt` lists `customtkinter`, `darkdetect`, `packaging`, `Pillow`, `arabic-reshaper`, `python-bidi` and `qrcode` (QR codes in the report are optional; the report is written without one if `qrcode` is missing).
 
 ### Launching the GUI
 On Windows, double-click `run.bat` (launches `python main.py --lang ar`) or run directly:
@@ -135,7 +132,7 @@ Logs are written by a rotating file handler (`1 MB` per file, `5` backups) in:
 
 ## Languages
 
-All user-facing text lives in `locales/ar.json` and `locales/en.json` (1140 matching keys in each). `ui/i18n.py` loads all `locales/*.json` files, exposes `available_languages()`, formats `{placeholders}` safely via `t()` / `render()`, and applies `arabic-reshaper` + `python-bidi` for Tkinter RTL widgets. Core modules emit `Msg(key, args)` objects via `M()` rather than building display strings.
+All user-facing text lives in `locales/ar.json` and `locales/en.json` (the same keys in each file). `ui/i18n.py` loads all `locales/*.json` files, exposes `available_languages()`, formats `{placeholders}` safely via `t()` / `render()`, and provides `fix_arabic()` (`arabic-reshaper` + `python-bidi`), which the UI does not call at the moment. Core modules emit `Msg(key, args)` objects via `M()` rather than building display strings.
 
 To add or modify text:
 1. Add the same key and matching `{placeholder}` names to both `locales/ar.json` and `locales/en.json`.
@@ -190,7 +187,6 @@ On an unrooted production Android device, SELinux restricts several paths and to
 - **Physical device coverage:** All 104 automated tests use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
 - **Non-Windows tool manifests:** Download URLs and archive SHA-256 hashes are pinned for all 5 platforms, but pre-listed per-file `scrcpy` SHA-256 entries cover `windows-x86_64` only, and non-Windows archive downloads have not been runtime-tested.
 - **Unsigned reports:** Generated HTML reports have no cryptographic signature; an external-key Ed25519 signing mechanism is planned.
-- **`requirements.txt` completeness:** `arabic-reshaper`, `python-bidi`, and optional `qrcode` are imported in code (`ui/i18n.py`, `ui/report_exporter.py`) but omitted from `requirements.txt`.
 
 ---
 

@@ -63,6 +63,12 @@ class TestLocaleFiles(unittest.TestCase):
             self.assertEqual(sorted(base - set(STRINGS[lang])), [], f"missing in {lang}")
             self.assertEqual(sorted(set(STRINGS[lang]) - base), [], f"missing in {langs[0]}")
 
+    def test_no_data_field_names_as_texts(self):
+        """A value like 'description_ar' means a dict field name was translated instead of looked up."""
+        for lang, strings in STRINGS.items():
+            for key, value in strings.items():
+                self.assertIsNone(re.fullmatch(r"[a-z]+(_[a-z]+)*_(ar|en)", value), f"{lang}.{key} = {value!r}")
+
     def test_same_placeholders_and_no_empty_values(self):
         for key, en in STRINGS["en"].items():
             ar = STRINGS["ar"][key]
