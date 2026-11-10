@@ -26,6 +26,7 @@ class FakeBridge:
         self.props = props or {}
         self.root = root
         self.commands: List[str] = []
+        self.fastboot_routes = {}
 
     def route(self, pattern: str, reply: Reply) -> "FakeBridge":
         self.routes.insert(0, (pattern, reply))
@@ -38,6 +39,21 @@ class FakeBridge:
             if pattern in command:
                 return reply
         return self.default
+
+    # fastboot: routes keyed by the joined argument string, e.g. "getvar partition-type:cache"
+    fastboot_routes: Dict[str, Reply] = {}
+
+    def run_fastboot(self, args: List[str], serial: Optional[str] = None, timeout: int = 30) -> Reply:
+        joined = " ".join(args)
+        self.commands.append(f"fastboot {joined}")
+        for pattern, reply in self.fastboot_routes.items():
+            if pattern in joined:
+                return reply
+        return (1, "", "")
+
+    def pull(self, remote_path: str, local_path: str, serial: Optional[str] = None):
+        self.commands.append(f"pull {remote_path}")
+        return False, "remote object does not exist"
 
     def get_prop(self, name: str, serial: Optional[str] = None) -> str:
         return self.props.get(name, "")

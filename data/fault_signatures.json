@@ -21,9 +21,9 @@
       "pattern": "Watchdog bark!|Watchdog bite!|qcom,wdt.*bark|mtk_wdt.*timeout",
       "description_en": "Hardware Watchdog Timer triggered. CPU froze and failed to feed hardware watchdog.",
       "description_ar": "تدخل رقاقة الحماية (Watchdog Reset) بسبب تعليق كامل في مسارات المعالج.",
-      "suspect_components": ["PMIC", "SoC Power Rail", "Mainboard Short"],
-      "action_en": "Check PMIC voltage rails and monitor standby current leakage.",
-      "action_ar": "فحص خطوط فولت آيسي الباور (PMIC) وفحص تسريب اللوحة الأم في وضع الاستعداد."
+      "suspect_components": ["Kernel / firmware bug", "PMIC", "SoC power rail"],
+      "action_en": "Possible causes, most likely first: kernel/firmware bug, then power-rail problems. If it repeats on stock firmware, measure the screen-off battery current (wireless ADB, no charger) and check power rails.",
+      "action_ar": "أسباب محتملة بالترتيب: خلل في الكيرنل أو الفيرموير، ثم مشاكل في خطوط الطاقة. إذا تكرر على الروم الرسمي، قِس تيار البطارية والشاشة مطفأة (ADB لاسلكي وبدون شاحن) وافحص خطوط الطاقة."
     },
     {
       "id": "I2C_BUS_TIMEOUT",

@@ -2,8 +2,6 @@ import os
 import time
 import json
 import logging
-import hmac
-import hashlib
 from typing import Optional, Dict, Any
 
 logger = logging.getLogger("ReportExporter")
@@ -11,8 +9,8 @@ logger = logging.getLogger("ReportExporter")
 REPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "reports")
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
-# Secret salt key for HMAC-SHA256 hardware certificate signing
-CERTIFICATE_SIGNING_SECRET = b"AndroidDoctorPro_v4_Hardware_Certificate_Authority_2026"
+# Reports are NOT signed. A hash or HMAC with a key stored in this program would not prove anything,
+# so no integrity claim is made. Real signing (Ed25519 with a key outside the program) is planned.
 
 
 class DiagnosticReportExporter:
@@ -81,18 +79,17 @@ class DiagnosticReportExporter:
         bt = haudit.get("bluetooth", {})
         periph = haudit.get("peripherals", {})
 
-        critical_threats = sscan.get("critical_threats", [])
-        high_threats = sscan.get("high_threats", [])
-        ghost_apps = sscan.get("ghost_apps", [])
+        sensitive_apps = sscan.get("sensitive_apps", [])
         connections = sscan.get("active_connections", [])
-        overall_risk = sscan.get("overall_risk", "CLEAN")
+        user_ca_status = sscan.get("user_ca_status", "UNKNOWN")
 
         opt_before = oresult.get("before", {})
         opt_after = oresult.get("after", {})
-        ram_freed = oresult.get("ram_freed_mb", 0.0)
-        storage_freed = oresult.get("storage_freed_mb", 0.0)
-        drain_reduction = oresult.get("drain_reduction_ma", 0.0)
-        actions = oresult.get("actions_completed", [])
+        storage_freed = oresult.get("storage_freed_mb")
+        opt_actions = oresult.get("actions", [])
+
+        def _v(value, unit=""):
+            return "UNKNOWN" if value is None else f"{value} {unit}".strip()
 
         true_health = pmic.get("true_health_pct")
         if true_health is not None:
@@ -102,12 +99,7 @@ class DiagnosticReportExporter:
             health_color = "#6e7681"
             health_badge_text = pmic.get("health_verdict", "NEEDS_ROOT")
 
-        risk_color = "#10b981" if overall_risk == "CLEAN" else ("#f59e0b" if overall_risk in ["LOW", "MEDIUM"] else "#ef4444")
         diag_color = "#10b981" if overall_health == "PASS" else ("#ef4444" if overall_health == "FAIL" else "#f59e0b")
-
-        # Cryptographic HMAC-SHA256 Digital Signature
-        sign_payload = f"{report_id}|{serial}|{dev.get('model','')}|{true_health}|{overall_health}|{ticket_id}|{timestamp_str}".encode("utf-8")
-        cert_hmac_sig = hmac.new(CERTIFICATE_SIGNING_SECRET, sign_payload, hashlib.sha256).hexdigest()
 
         # Pure Vector SVG QR Code Generation
         qr_data_obj = {
@@ -119,7 +111,6 @@ class DiagnosticReportExporter:
             "dev": f"{dev.get('brand', '')} {dev.get('model', '')}".strip(),
             "bat": f"{true_health}%" if true_health is not None else "NEEDS_ROOT",
             "status": overall_health,
-            "sig": cert_hmac_sig[:16],
             "tech": technician_name,
             "date": timestamp_str
         }
@@ -141,21 +132,21 @@ class DiagnosticReportExporter:
             qr_svg_html = qr_svg_raw
         except Exception as e:
             logger.warning(f"QR code SVG rendering fallback: {e}")
-            qr_svg_html = f'<div style="font-family:monospace;font-size:10px;color:#79c0ff;padding:6px;border:1px dashed #58a6ff;text-align:center;">QR VERIFIED<br>SIG: {cert_hmac_sig[:10]}</div>'
+            qr_svg_html = ""
 
         is_ar = (lang == "ar")
         direction = "rtl" if is_ar else "ltr"
         doc_title = "تقرير الفحص التشخيصي للهاتف — أندرويد دكتور برو" if is_ar else f"Android Doctor Pro - Diagnostic Report ({serial})"
         header_title = "أندرويد دكتور برو (ANDROID DOCTOR PRO)" if is_ar else "ANDROID DOCTOR PRO"
-        header_sub = "تقرير الفحص التشخيصي المعتمد للعتاد واللوحة الأم وتذكرة الصيانة" if is_ar else "Advanced Hardware Diagnostic Report & Technical Intake Voucher"
+        header_sub = "تقرير الفحص التشخيصي للعتاد واللوحة الأم وتذكرة الصيانة" if is_ar else "Advanced Hardware Diagnostic Report & Technical Intake Voucher"
         btn_print_text = "طباعة تقرير الفحص / حفظ بصيغة PDF" if is_ar else "Print Diagnostic Report / Save as PDF"
         specs_card_title = "مواصفات الجهاز والعتاد الأساسي" if is_ar else "DEVICE SPECIFICATIONS"
         pmic_card_title = "جهد البطارية وآيسي الشحن (PMIC)" if is_ar else "BATTERY & CHARGING IC (PMIC)"
         thermal_card_title = f"خريطة حرارة الآيسيات ({len(thermals)} مستشعر)" if is_ar else f"THERMAL MAPPING ({len(thermals)} Zones)"
         panic_card_title = "سجلات الذاكرة التخزينية وانهيار النظام" if is_ar else "NAND / UFS & KERNEL PANICS"
         hw_card_title = "الفحص التفاعلي لقطع الهاتف والحساسات" if is_ar else "INTERACTIVE HARDWARE AUDIT"
-        sec_card_title = "الفحص الأمني وصائد برامج التجسس" if is_ar else "SECURITY AUDIT & SPYWARE HUNTER"
-        opt_card_title = "نتائج الصيانة وتسريع أداء النظام" if is_ar else "REAL SYSTEM OPTIMIZATION METRICS"
+        sec_card_title = "التطبيقات ذات الأذونات الحساسة" if is_ar else "APPS WITH SENSITIVE PERMISSIONS"
+        opt_card_title = "نتائج الصيانة (المقاسة فقط)" if is_ar else "MAINTENANCE (MEASURED RESULTS ONLY)"
 
         def make_evidence_box(evidence_items, label_ar="عرض الدليل التقني المباشر", label_en="Show Evidence") -> str:
             if not evidence_items:
@@ -493,7 +484,6 @@ class DiagnosticReportExporter:
                 <div class="cert-badge">
                     <span class="code">REF: {report_id}</span><br>
                     <small style="color: #8b949e; margin-top: 4px; display: inline-block;">{'التاريخ:' if is_ar else 'Date:'} {timestamp_str}</small><br>
-                    <small style="font-family: monospace; color: #58a6ff; font-size: 10px;">SIG: {cert_hmac_sig[:12]}...</small>
                 </div>
             </div>
         </div>
@@ -642,19 +632,20 @@ class DiagnosticReportExporter:
             {make_evidence_box(haudit.get("evidence", []) or slife.get("evidence", []))}
         </div>
 
-        <!-- Security & Malware Hunter -->
+        <!-- Apps with sensitive permissions -->
         <div class="card" style="margin-bottom: 25px;">
             <div class="card-header">
                 <span>{sec_card_title}</span>
-                <span class="badge" style="background: {risk_color}; color: #fff;">{'مستوى الخطر:' if is_ar else 'Risk:'} {overall_risk}</span>
+                <span class="badge" style="background: #6e7681; color: #fff;">{'للمراجعة وليس حكماً' if is_ar else 'For review, not a verdict'}</span>
             </div>
             <div class="grid-2">
                 <div>
                     <div class="prop-row"><span class="prop-name">{'إجمالي التطبيقات المفحوصة:' if is_ar else 'Total Packages Scanned:'}</span><span class="prop-val">{sscan.get("total_packages_scanned", 0)}</span></div>
                     <div class="prop-row"><span class="prop-name">{'تطبيقات المستخدم المثبتة:' if is_ar else 'Third-Party User Apps:'}</span><span class="prop-val">{sscan.get("third_party_count", 0)}</span></div>
                     <div class="prop-row"><span class="prop-name">{'تطبيقات النظام الأساسية:' if is_ar else 'System Pre-installed Apps:'}</span><span class="prop-val">{sscan.get("system_count", 0)}</span></div>
-                    <div class="prop-row"><span class="prop-name">{'التطبيقات الشبحية (بدون أيقونة):' if is_ar else 'Ghost Apps (Hidden Launcher):'}</span><span class="prop-val">{len(ghost_apps)}</span></div>
-                    <div class="prop-row"><span class="prop-name">{'تطبيقات التجسس الخطرة (RAT):' if is_ar else 'Critical RAT / Spyware Threats:'}</span><span class="prop-val" style="color: {"#ef4444" if critical_threats else "#10b981"}">{len(critical_threats)}</span></div>
+                    <div class="prop-row"><span class="prop-name">{'تطبيقات بأذونات حساسة ممنوحة:' if is_ar else 'Apps with granted sensitive permissions:'}</span><span class="prop-val">{len(sensitive_apps)}</span></div>
+                    <div class="prop-row"><span class="prop-name">{'شهادات CA مثبتة من المستخدم:' if is_ar else 'User-installed CA certificates:'}</span><span class="prop-val">{user_ca_status}</span></div>
+                    <div style="font-size: 11px; color: #8b949e; margin-top: 6px;">{"<br>".join(f"{a.get('package_name')}: {', '.join(a.get('permission_labels', []))}" for a in sensitive_apps[:8])}</div>
                 </div>
                 <div>
                     <h4 style="color: #79c0ff; font-size: 13px; margin-bottom: 6px;">{'الاتصالات الخارجية النشطة:' if is_ar else 'Active Network Sockets:'}</h4>
@@ -668,31 +659,15 @@ class DiagnosticReportExporter:
             </div>
         </div>
 
-        <!-- Optimization Metrics -->
+        <!-- Maintenance -->
         <div class="card" style="margin-bottom: 25px;">
             <div class="card-header">
                 <span>{opt_card_title}</span>
-                <span class="badge badge-pass">{'تمت الصيانة بنجاح' if is_ar else 'Optimized'}</span>
+                <span class="badge" style="background: #6e7681; color: #fff;">{'النتائج المقاسة فقط' if is_ar else 'Measured results only'}</span>
             </div>
-            <div class="grid-3">
-                <div style="background: #010409; padding: 12px; border-radius: 6px; text-align: center;">
-                    <div style="color: #8b949e; font-size: 12px;">{'الرام المحررة' if is_ar else 'RAM Released'}</div>
-                    <div style="font-size: 20px; font-weight: bold; color: #58a6ff;">+{ram_freed} MB</div>
-                    <div style="font-size: 11px; color: #8b949e;">{opt_before.get("ram_free_mb", 0)}MB &rarr; {opt_after.get("ram_free_mb", 0)}MB</div>
-                </div>
-                <div style="background: #010409; padding: 12px; border-radius: 6px; text-align: center;">
-                    <div style="color: #8b949e; font-size: 12px;">{'مساحة التخزين الموفرة' if is_ar else 'Storage Cleaned'}</div>
-                    <div style="font-size: 20px; font-weight: bold; color: #238636;">+{storage_freed} MB</div>
-                    <div style="font-size: 11px; color: #8b949e;">{opt_before.get("storage_free_mb", 0)}MB &rarr; {opt_after.get("storage_free_mb", 0)}MB</div>
-                </div>
-                <div style="background: #010409; padding: 12px; border-radius: 6px; text-align: center;">
-                    <div style="color: #8b949e; font-size: 12px;">{'توفير استنزاف البطارية' if is_ar else 'Standby Drain Reduction'}</div>
-                    <div style="font-size: 20px; font-weight: bold; color: #f59e0b;">-{drain_reduction} mA</div>
-                    <div style="font-size: 11px; color: #8b949e;">{opt_before.get("current_drain_ma", 0)}mA &rarr; {opt_after.get("current_drain_ma", 0)}mA</div>
-                </div>
-            </div>
-            <div style="margin-top: 12px; font-size: 12px; color: #8b949e;">
-                <strong>{'العمليات المنفذة:' if is_ar else 'Executed Protocols:'}</strong> {", ".join(actions) if actions else ("تهيئة الفلاش TRIM، تجميع الكود البرمجي bg-dexopt، تفريغ الكاش، وتفعيل توفير الطاقة Doze" if is_ar else "NAND Flash TRIM, Bytecode bg-dexopt, Cache Purge, Deep Doze, UI 0.5x Scale")}
+            <div style="font-size: 12px;">
+                <div class="prop-row"><span class="prop-name">{'تغير المساحة الحرة بعد تنظيف الكاش:' if is_ar else 'Free space change after cache trim:'}</span><span class="prop-val">{_v(storage_freed, 'MB')}</span></div>
+                {"".join(f'<div class="prop-row"><span class="prop-name">[{x.get("status")}] {x.get("command")}</span><span class="prop-val">{(_v(x.get("before"), "MB") + " -> " + _v(x.get("after"), "MB")) if x.get("measured") else ("لا يمكن قياس أثره" if is_ar else "not measurable")}</span></div>' for x in opt_actions)}
             </div>
         </div>
 
@@ -704,9 +679,7 @@ class DiagnosticReportExporter:
                 {f'<div style="margin-top: 4px;">{"رقم التذكرة:" if is_ar else "Ticket REF:"} <strong style="color: #58a6ff;">{ticket_id}</strong></div>' if ticket_id else ''}
             </div>
             <div style="text-align: {'left' if is_ar else 'right'};">
-                <div style="font-family: monospace; font-size: 11px;">{'الختم الرقمي المشفر (HMAC-SHA256):' if is_ar else 'HMAC-SHA256 DIGITAL STAMP:'}</div>
-                <div style="font-family: monospace; font-size: 10px; color: #58a6ff; word-break: break-all;">{cert_hmac_sig}</div>
-                <div style="margin-top: 4px;">{'الحالة:' if is_ar else 'Status:'} <strong>{'تقرير تشخيصي موثق ومحمي بختم رقمي' if is_ar else 'VERIFIED DIAGNOSTIC REPORT, DIGITALLY SIGNED'}</strong></div>
+                <div style="font-size: 11px;">{'هذا التقرير غير موقّع رقمياً، ويمكن تعديله بعد تصديره. المرجع:' if is_ar else 'This report is not digitally signed and can be edited after export. Reference:'} <strong>{report_id}</strong></div>
             </div>
         </div>
     </div>
@@ -717,5 +690,5 @@ class DiagnosticReportExporter:
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(html)
 
-        logger.info(f"Diagnostic certificate generated at: {output_path}")
+        logger.info(f"Diagnostic report generated at: {output_path}")
         return output_path

@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import subprocess
 import threading
@@ -9,6 +10,13 @@ from setup_bins import get_scrcpy_path, CREATE_NO_WINDOW
 from core.adb_bridge import ADBBridge
 
 logger = logging.getLogger("RescueCenter")
+
+# WhatsApp: media only. Chat databases are encrypted (msgstore.db.crypt14/15) and useless without the key.
+WHATSAPP_MEDIA_PATHS = (
+    "/sdcard/Android/media/com.whatsapp/WhatsApp/Media",
+    "/sdcard/WhatsApp/Media",
+)
+WHATSAPP_NOTE = "WhatsApp chats are not copied: their databases are encrypted. Use WhatsApp's own chat backup to move messages."
 
 
 @dataclass
@@ -186,18 +194,34 @@ class RescueCenter:
         fb_vars.raw_vars = raw_dict
         return fb_vars
 
+    def has_cache_partition(self, serial: Optional[str] = None) -> Tuple[Optional[bool], str]:
+        """
+        Ask the bootloader whether a `cache` partition exists (`fastboot getvar partition-type:cache`).
+        Returns (True/False, evidence text), or (None, evidence) when the answer could not be read.
+        A/B devices (most phones since 2017) have no cache partition.
+        """
+        code, out, err = self.bridge.run_fastboot(["getvar", "partition-type:cache"], serial=serial, timeout=10)
+        text = f"{out}\n{err}".strip()
+        evidence = f"fastboot getvar partition-type:cache -> exit={code}: {text[:300]}"
+        m = re.search(r"partition-type:cache:\s*(\S+)", text)
+        if m and m.group(1).lower() not in ("", "none"):
+            return True, evidence
+        if re.search(r"(?i)(FAILED|not found|unknown variable|no such partition)", text):
+            return False, evidence
+        return None, evidence
+
     def fix_cache_bootloop(self, serial: Optional[str] = None) -> Tuple[bool, str]:
-        logger.info(f"Executing Cache Bootloop Repair on {serial}...")
-        results = []
-
-        code1, out1, err1 = self.bridge.run_fastboot(["erase", "cache"], serial=serial, timeout=20)
-        results.append(f"fastboot erase cache: {out1 or err1 or ('OK' if code1 == 0 else 'Failed')}")
-
-        code2, out2, err2 = self.bridge.run_fastboot(["format", "cache"], serial=serial, timeout=20)
-        results.append(f"fastboot format cache: {out2 or err2 or ('OK' if code2 == 0 else 'Failed')}")
-
-        success = (code1 == 0 or code2 == 0)
-        return success, "\n".join(results)
+        """
+        Erase the cache partition, only if the bootloader reports one.
+        This can clear a corrupted cache that blocks booting; it is not a guaranteed fix.
+        """
+        has_cache, evidence = self.has_cache_partition(serial)
+        if has_cache is not True:
+            return False, f"{evidence}\nNo cache partition confirmed; nothing was erased."
+        logger.info(f"Erasing cache partition on {serial}...")
+        code, out, err = self.bridge.run_fastboot(["erase", "cache"], serial=serial, timeout=30)
+        text = (out or err or "").strip()
+        return code == 0, f"{evidence}\nfastboot erase cache -> exit={code}: {text[:300]}"
 
     def flash_partition(self, partition: str, file_path: str, serial: Optional[str] = None) -> Tuple[bool, str]:
         if not os.path.exists(file_path):
@@ -220,8 +244,10 @@ class RescueCenter:
         progress_callback: Optional[Callable[[str], None]] = None
     ) -> Tuple[bool, str]:
         """
-        Pull user data (Photos, DCIM, Pictures, WhatsApp, Downloads, Full Storage)
+        Pull user data (Photos, DCIM, Pictures, WhatsApp media, Downloads, Full Storage)
         to the PC workstation. Handles both single directories and combined bundles.
+        WhatsApp: only the Media folder is pulled. Chat databases (msgstore.db.crypt*) are
+        encrypted with a key that stays on the phone / in the user's backup, so they are not copied.
         """
         cat_lower = target_category.lower().strip()
 
@@ -230,7 +256,7 @@ class RescueCenter:
             "all_photos": ["/sdcard/DCIM", "/sdcard/Pictures"],
             "photos": ["/sdcard/DCIM", "/sdcard/Pictures"],
             "camera_only": ["/sdcard/DCIM"],
-            "whatsapp": ["/sdcard/Android/media/com.whatsapp/WhatsApp", "/sdcard/WhatsApp"],
+            "whatsapp": list(WHATSAPP_MEDIA_PATHS),
             "downloads": ["/sdcard/Download"],
             "documents": ["/sdcard/Documents"],
             "full_storage": [
@@ -240,9 +266,7 @@ class RescueCenter:
                 "/sdcard/Documents",
                 "/sdcard/Movies",
                 "/sdcard/Music",
-                "/sdcard/Android/media/com.whatsapp/WhatsApp",
-                "/sdcard/WhatsApp"
-            ]
+            ] + list(WHATSAPP_MEDIA_PATHS)
         }
 
         # Resolve paths
@@ -263,7 +287,8 @@ class RescueCenter:
         logs = []
 
         for idx, remote_path in enumerate(paths_to_pull, start=1):
-            folder_name = os.path.basename(remote_path.rstrip("/"))
+            # unique local folder per remote path (both WhatsApp paths end in "Media")
+            folder_name = "_".join(remote_path.strip("/").split("/")[1:]) or os.path.basename(remote_path.rstrip("/"))
             sub_dest = os.path.join(local_dest_dir, folder_name)
             os.makedirs(sub_dest, exist_ok=True)
 
@@ -277,6 +302,8 @@ class RescueCenter:
             else:
                 logs.append(f"• {folder_name}: {out.strip() or 'تجاوز (المجلد غير موجود على الهاتف)'}")
 
+        if any(p in WHATSAPP_MEDIA_PATHS for p in paths_to_pull):
+            logs.append(f"i {WHATSAPP_NOTE}")
         all_ok = successes > 0
         final_summary = "\n".join(logs)
         if progress_callback:
@@ -421,7 +448,7 @@ class RescueCenter:
     ) -> Tuple[bool, str, str]:
         """
         One-Click complete customer data preservation:
-        Pulls DCIM (Camera), Pictures, Downloads, Documents, WhatsApp media,
+        Pulls DCIM (Camera), Pictures, Downloads, Documents, WhatsApp media (not the encrypted chat databases),
         and dumps contacts/SMS tables if accessible.
         Saves everything to ~/Desktop/Android_Customer_Backups/<Serial>_<Timestamp>/
         """
@@ -447,8 +474,8 @@ class RescueCenter:
             ("Pictures", "/sdcard/Pictures"),
             ("Downloads", "/sdcard/Download"),
             ("Documents", "/sdcard/Documents"),
-            ("WhatsApp_Media", "/sdcard/Android/media/com.whatsapp/WhatsApp"),
-            ("WhatsApp_Legacy", "/sdcard/WhatsApp")
+            ("WhatsApp_Media", WHATSAPP_MEDIA_PATHS[0]),
+            ("WhatsApp_Media_Legacy", WHATSAPP_MEDIA_PATHS[1])
         ]
 
         total_pulled = 0
@@ -462,6 +489,8 @@ class RescueCenter:
                 log_lines.append(f"✓ {name}: Extracted successfully")
             else:
                 log_lines.append(f"• {name}: Skipped ({out.strip() or 'Not on device'})")
+
+        log_lines.append(f"i {WHATSAPP_NOTE}")
 
         # 2. Extract Contacts where permitted
         if progress_callback:

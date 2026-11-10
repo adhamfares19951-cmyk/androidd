@@ -111,9 +111,37 @@ class ThermalZone:
     temp_c: float
     is_overheated: bool
     source: str = ""
+    category: str = "other"
+    limit_c: Optional[float] = None  # None: zone not classified, reported but not judged
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class LeakageTestResult:
+    """Screen-off battery current. Only measured over wireless ADB with no charger connected."""
+    check_id: str = "battery.screen_off_current"
+    status: str = "UNKNOWN"
+    precondition: str = ""   # "usb_connection" / "charger_connected" / "power_state_unknown" when not measured
+    sample_count: int = 0
+    samples: List[float] = field(default_factory=list)
+    avg_ma: Optional[float] = None
+    max_ma: Optional[float] = None
+    source: str = "UNKNOWN"
+    diagnosis: str = ""
+    possible_causes: List[str] = field(default_factory=list)
+    evidence: List[Evidence] = field(default_factory=list)
+
+    @property
+    def is_faulty(self) -> bool:
+        return self.status == "FAIL"
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = asdict(self)
+        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        d["is_faulty"] = self.is_faulty
+        return d
 
 
 @dataclass
@@ -540,98 +568,213 @@ class MotherboardDiagnostics:
         pmic.evidence = ev
         return pmic
 
+    # ------------------------------------------------------------------
+    # Battery current with screen off (screen-off drain test)
+    # ------------------------------------------------------------------
+    LEAK_AVG_LIMIT_MA = 250.0
+    LEAK_PEAK_LIMIT_MA = 350.0
+
+    @staticmethod
+    def is_wireless_adb(serial: str) -> bool:
+        """True for TCP/IP (adb connect host:port) or mDNS wireless-debugging transports."""
+        return ":" in serial or "_adb-tls-connect" in serial
+
+    def _external_power_state(self, serial: str) -> Tuple[Optional[bool], ReadResult]:
+        """
+        (True if any charger/USB/wireless/dock power is reported, False if all are reported false,
+        None if dumpsys battery could not be read or parsed).
+        """
+        res = run_read(self.bridge, "dumpsys battery", serial=serial, timeout=8)
+        if not res.ok:
+            return None, res
+        flags = {}
+        for line in res.text.splitlines():
+            key, _, val = line.strip().partition(":")
+            if key in ("AC powered", "USB powered", "Wireless powered", "Dock powered"):
+                if val.strip().lower() in ("true", "false"):
+                    flags[key] = val.strip().lower() == "true"
+        if not flags:
+            return None, res
+        return any(flags.values()), res
+
     def run_leakage_test(
         self,
         serial: str,
         sample_count: int = 10,
         sample_interval: float = 3.0,
-        progress_callback: Optional[Callable[[int, float, str], None]] = None
-    ) -> Tuple[bool, float, float, List[float], str]:
-        logger.info(f"Initiating Motherboard Battery Current Leakage Test on {serial}...")
+        progress_callback: Optional[Callable[[int, Optional[float], str], None]] = None
+    ) -> LeakageTestResult:
+        """
+        Battery discharge current with the screen off.
+        Only meaningful over wireless ADB with no charger connected: over USB the cable supplies
+        current, so the reading is not the phone's own drain. Otherwise the result is UNKNOWN.
+        A high reading is reported as possible causes, never as a detected short.
+        """
+        result = LeakageTestResult(sample_count=sample_count)
+
+        if not self.is_wireless_adb(serial):
+            result.status = str(Status.UNKNOWN)
+            result.precondition = "usb_connection"
+            result.diagnosis = ("Not measured: the phone is connected over USB, which supplies current. "
+                                "Connect with wireless ADB and unplug the cable/charger, then run the test again.")
+            result.evidence.append(Evidence(source="adb transport", raw_excerpt=f"serial={serial} (USB transport)", exit_code=None))
+            return self._save_leakage(serial, result)
+
+        powered, pres = self._external_power_state(serial)
+        result.evidence.append(pres.evidence(f"external power={powered}"))
+        if powered is None:
+            result.status = str(pres.status)
+            result.precondition = "power_state_unknown"
+            result.diagnosis = "Not measured: could not confirm that no charger is connected (dumpsys battery unreadable)."
+            return self._save_leakage(serial, result)
+        if powered:
+            result.status = str(Status.UNKNOWN)
+            result.precondition = "charger_connected"
+            result.diagnosis = "Not measured: a charger / external power source is connected. Unplug it and run the test again."
+            return self._save_leakage(serial, result)
 
         if progress_callback:
-            progress_callback(0, 0.0, "Turning off screen to measure battery current (includes charging current while USB connected)...")
-
+            progress_callback(0, None, "Turning the screen off...")
         self.bridge.shell("input keyevent 223", serial=serial, timeout=5)
         time.sleep(4.0)
 
-        samples: List[float] = []
-        c_paths = [f"{base}/current_now" for base in BATTERY_SYSFS_DIRS] + \
-                  [f"{base}/batt_current" for base in BATTERY_SYSFS_DIRS]
+        c_specs = [(f"{b}/current_now", None) for b in BATTERY_SYSFS_DIRS[:5]] + \
+                  [(f"{b}/batt_current", 1.0) for b in BATTERY_SYSFS_DIRS[:5]]
+        failed_status: Optional[str] = None
+        try:
+            for idx in range(1, sample_count + 1):
+                value, source, status, ev = self._read_scaled(serial, c_specs, -20000.0, 20000.0, "mA")
+                if value is None:
+                    failed_status = status
+                    result.evidence.extend(ev)
+                    if progress_callback:
+                        progress_callback(int(idx / sample_count * 100), None, f"Sample {idx}/{sample_count}: not readable")
+                    break
+                ma = abs(value)
+                result.samples.append(ma)
+                result.source = source
+                if idx == 1:
+                    result.evidence.extend(ev)
+                if progress_callback:
+                    progress_callback(int(idx / sample_count * 100), ma, f"Sample {idx}/{sample_count}: battery current = {ma} mA")
+                if idx < sample_count:
+                    time.sleep(sample_interval)
+        finally:
+            self.bridge.shell("input keyevent 224", serial=serial, timeout=5)
 
-        readable = True
-        for idx in range(1, sample_count + 1):
-            c_val = self.bridge.read_sysfs_int(c_paths, serial=serial)
-            c_ma = 0.0
-            if c_val is not None:
-                if abs(c_val) > 20000:
-                    c_ma = abs(round(c_val / 1000.0, 1))
-                else:
-                    c_ma = abs(float(c_val))
-            else:
-                readable = False
-                c_ma = 0.0
+        powered_after, pres_after = self._external_power_state(serial)
+        result.evidence.append(pres_after.evidence(f"external power after test={powered_after}"))
 
-            samples.append(c_ma)
-            pct = int((idx / sample_count) * 100)
-            msg = f"Sample {idx}/{sample_count}: Battery current = {c_ma} mA"
-            if progress_callback:
-                progress_callback(pct, c_ma, msg)
-            if idx < sample_count:
-                time.sleep(sample_interval)
+        if failed_status is not None or len(result.samples) < sample_count:
+            result.status = failed_status or str(Status.UNKNOWN)
+            result.samples = []
+            result.diagnosis = "Battery current could not be read for every sample; no average is reported."
+            return self._save_leakage(serial, result)
+        if powered_after is not False:
+            result.status = str(Status.UNKNOWN)
+            result.precondition = "charger_connected"
+            result.samples = []
+            result.diagnosis = "External power was connected (or unconfirmed) at the end of the test; result discarded."
+            return self._save_leakage(serial, result)
 
-        self.bridge.shell("input keyevent 224", serial=serial, timeout=5)
-
-        avg_leakage = round(sum(samples) / len(samples), 1) if samples and readable else 0.0
-        max_leakage = round(max(samples), 1) if samples and readable else 0.0
-
-        is_wifi = ":" in serial
-        usb_note = " (Note: Wi-Fi connected, no USB charging current)" if is_wifi else " (Note: includes charging current while USB is connected)"
-
-        if not readable or max_leakage == 0.0:
-            is_faulty = False
-            verdict = "UNKNOWN: SELinux Enforcing blocked current_now node. Requires root access or hardware USB inline multimeter."
-        elif avg_leakage > 250.0 or max_leakage > 350.0:
-            is_faulty = True
-            verdict = f"FAIL: Elevated Battery Current Detected! Avg: {avg_leakage}mA, Peak: {max_leakage}mA{usb_note}"
+        result.avg_ma = round(sum(result.samples) / len(result.samples), 1)
+        result.max_ma = round(max(result.samples), 1)
+        result.evidence.append(Evidence(source=result.source,
+                                        raw_excerpt="samples (mA): " + ", ".join(str(s) for s in result.samples),
+                                        exit_code=None))
+        if result.avg_ma > self.LEAK_AVG_LIMIT_MA or result.max_ma > self.LEAK_PEAK_LIMIT_MA:
+            result.status = str(Status.FAIL)
+            result.diagnosis = (f"Screen-off battery current is high: average {result.avg_ma} mA, peak {result.max_ma} mA "
+                                f"(limits {self.LEAK_AVG_LIMIT_MA:g} / {self.LEAK_PEAK_LIMIT_MA:g} mA).")
+            result.possible_causes = [
+                "Apps or services keeping the phone awake (wakelocks, sync, updates)",
+                "Radio activity: weak mobile signal, Wi-Fi / wireless ADB traffic",
+                "A component drawing current on the board (only after software causes are excluded)",
+            ]
         else:
-            is_faulty = False
-            verdict = f"PASS: Battery current within safe limits. Avg: {avg_leakage}mA, Peak: {max_leakage}mA{usb_note}"
+            result.status = str(Status.PASS)
+            result.diagnosis = (f"Screen-off battery current: average {result.avg_ma} mA, peak {result.max_ma} mA "
+                                f"(below {self.LEAK_AVG_LIMIT_MA:g} / {self.LEAK_PEAK_LIMIT_MA:g} mA).")
+        return self._save_leakage(serial, result)
 
-        self.db.save_leakage_test(
-            device_serial=serial,
-            samples=samples,
-            avg_leakage_ma=avg_leakage,
-            max_leakage_ma=max_leakage,
-            is_faulty=is_faulty,
-            verdict=verdict
-        )
-
-        return is_faulty, avg_leakage, max_leakage, samples, verdict
+    def _save_leakage(self, serial: str, result: LeakageTestResult) -> LeakageTestResult:
+        try:
+            self.db.save_leakage_test(
+                device_serial=serial,
+                samples=result.samples,
+                avg_leakage_ma=result.avg_ma,
+                max_leakage_ma=result.max_ma,
+                is_faulty=result.status == str(Status.FAIL),
+                verdict=f"{result.status}: {result.diagnosis}"
+            )
+        except Exception as e:
+            logger.warning(f"Could not store leakage result: {e}")
+        return result
 
     # ------------------------------------------------------------------
-    # Thermal zones
+    # Thermal zones (per-category thresholds from data/thermal_thresholds.json)
     # ------------------------------------------------------------------
-    THERMAL_ALERT_C = 45.0  # single threshold kept until per-zone thresholds land (Step 3)
+    _thermal_rules_cache: Optional[Dict[str, Any]] = None
+
+    @classmethod
+    def load_thermal_rules(cls, path: Optional[str] = None) -> Dict[str, Any]:
+        if path is None and cls._thermal_rules_cache is not None:
+            return cls._thermal_rules_cache
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        file_path = path or os.path.join(base_dir, "data", "thermal_thresholds.json")
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                rules = json.load(f)
+        except Exception as e:
+            logger.warning(f"thermal_thresholds.json not loaded ({e}); zones will be reported without limits")
+            rules = {"categories": {}, "hal_types": {}, "non_temperature_hal_types": [], "name_patterns": []}
+        if path is None:
+            cls._thermal_rules_cache = rules
+        return rules
+
+    def classify_zone(self, name: str, hal_type: Optional[int] = None) -> Tuple[str, Optional[float]]:
+        """Return (category, limit_c). Unknown zones are ('other', None): reported, not judged."""
+        rules = self.load_thermal_rules()
+        category = None
+        if hal_type is not None:
+            category = rules.get("hal_types", {}).get(str(hal_type))
+        if category is None:
+            for pattern, cat in rules.get("name_patterns", []):
+                if re.search(pattern, name):
+                    category = cat
+                    break
+        if category is None:
+            return "other", None
+        limit = rules.get("categories", {}).get(category, {}).get("limit_c")
+        return category, (float(limit) if limit is not None else None)
+
+    def _make_zone(self, zone_id: int, name: str, temp_c: float, source: str, hal_type: Optional[int] = None) -> ThermalZone:
+        category, limit = self.classify_zone(name, hal_type)
+        return ThermalZone(zone_id=zone_id, zone_type=name, temp_c=temp_c,
+                           is_overheated=(limit is not None and temp_c > limit),
+                           source=source, category=category, limit_c=limit)
 
     def read_thermal(self, serial: str) -> ThermalReport:
         """Read thermal zones from dumpsys thermalservice (non-root), falling back to sysfs."""
         report = ThermalReport()
         zones: Dict[str, ThermalZone] = {}
+        non_temp = set(self.load_thermal_rules().get("non_temperature_hal_types", []))
 
         res = run_read(self.bridge, "dumpsys thermalservice", serial=serial, timeout=8)
         reads = [res]
         if res.ok:
             for m in re.finditer(r"Temperature\{mValue=(-?[\d.]+),\s*mType=(-?\d+),\s*mName=([^,}]+)", res.text):
                 name = m.group(3).strip()
+                hal_type = int(m.group(2))
+                if hal_type in non_temp:
+                    continue  # BCL voltage/current/percentage: not a temperature
                 try:
                     val = float(m.group(1))
                 except ValueError:
                     continue
                 if name in zones or not (-40.0 <= val <= 150.0):
                     continue
-                zones[name] = ThermalZone(zone_id=len(zones), zone_type=name, temp_c=round(val, 1),
-                                          is_overheated=val > self.THERMAL_ALERT_C, source="dumpsys thermalservice")
+                zones[name] = self._make_zone(len(zones), name, round(val, 1), "dumpsys thermalservice", hal_type)
             report.evidence.append(res.evidence(f"{len(zones)} temperatures parsed"))
         else:
             report.evidence.append(res.evidence())
@@ -657,15 +800,19 @@ class MotherboardDiagnostics:
                     z_match = re.search(r"thermal_zone(\d+)", path)
                     z_id = int(z_match.group(1)) if z_match else len(zones)
                     name = t_type.strip() or f"thermal_zone{z_id}"
-                    zones[f"{name}#{z_id}"] = ThermalZone(zone_id=z_id, zone_type=name, temp_c=t_c,
-                                                          is_overheated=t_c > self.THERMAL_ALERT_C, source=path)
+                    zones[f"{name}#{z_id}"] = self._make_zone(z_id, name, t_c, path)
                 report.evidence.append(sys_res.evidence(f"{len(zones)} zones parsed"))
             else:
                 report.evidence.append(sys_res.evidence())
 
         report.zones = list(zones.values())
-        if report.zones:
-            report.status = str(Status.FAIL if any(z.is_overheated for z in report.zones) else Status.PASS)
+        judged = [z for z in report.zones if z.limit_c is not None]
+        if any(z.is_overheated for z in judged):
+            report.status = str(Status.FAIL)
+        elif judged:
+            report.status = str(Status.PASS)
+        elif report.zones:
+            report.status = str(Status.UNKNOWN)  # temperatures read, but no zone could be classified
         else:
             report.status = str(failure_status(reads))
         return report
@@ -807,9 +954,9 @@ class MotherboardDiagnostics:
         panic = self.inspect_panic_and_emmc(serial)
 
         findings: List[str] = list(pmic.fault_flags)
-        hot = [f"{z.zone_type} ({z.temp_c}°C)" for z in thermal.zones if z.is_overheated]
+        hot = [f"{z.zone_type} [{z.category}] {z.temp_c}°C > {z.limit_c:g}°C" for z in thermal.zones if z.is_overheated]
         if hot:
-            findings.append(f"Thermal alert (> {self.THERMAL_ALERT_C:g}°C): {', '.join(hot)}")
+            findings.append(f"Thermal alert: {', '.join(hot)}")
         if panic.status == str(Status.FAIL):
             findings.append(panic.summary_verdict)
 

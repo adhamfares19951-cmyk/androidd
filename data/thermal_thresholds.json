@@ -1,0 +1,33 @@
+{
+  "note": "Alert thresholds per thermal zone category, in degrees C. These are conservative alert levels for a diagnostic tool, not vendor shutdown limits. CPU/GPU run hot under normal load, so their limit is much higher than skin or battery. Zones that match no category are reported but not judged.",
+  "categories": {
+    "battery": {"limit_c": 50.0, "reason": "Li-ion cells should not exceed ~50 C; charging normally stops near 45 C."},
+    "skin": {"limit_c": 45.0, "reason": "Device surface temperature; above ~45 C is uncomfortable and Android starts throttling."},
+    "usb_port": {"limit_c": 60.0, "reason": "Connector temperature; a hot port can indicate moisture or debris."},
+    "cpu": {"limit_c": 95.0, "reason": "SoC junction; 70-90 C under load is normal."},
+    "gpu": {"limit_c": 95.0, "reason": "GPU junction; 70-90 C under load is normal."},
+    "npu": {"limit_c": 95.0, "reason": "NPU/DSP junction."},
+    "modem": {"limit_c": 85.0, "reason": "Modem / RF power amplifier."},
+    "pmic": {"limit_c": 85.0, "reason": "Power management / charger IC."}
+  },
+  "hal_types": {
+    "0": "cpu",
+    "1": "gpu",
+    "2": "battery",
+    "3": "skin",
+    "4": "usb_port",
+    "5": "modem",
+    "9": "npu"
+  },
+  "non_temperature_hal_types": [6, 7, 8],
+  "name_patterns": [
+    ["(?i)(battery|batt|bms|^bat_)", "battery"],
+    ["(?i)(skin|xo_therm|quiet_therm|case_therm|shell|back_therm|sys_therm)", "skin"],
+    ["(?i)(usb|conn_therm|charger_therm)", "usb_port"],
+    ["(?i)gpu", "gpu"],
+    ["(?i)(npu|nsp|cdsp|apu)", "npu"],
+    ["(?i)(pa_therm|^pa\\d|modem|mdm|mmw|rf_therm)", "modem"],
+    ["(?i)(pmic|pm\\d{3,}|pmi\\d|chg_therm|charger)", "pmic"],
+    ["(?i)(cpu|cpuss|apc|cluster|little|big|mid|soc|tsens|mtktscpu)", "cpu"]
+  ]
+}

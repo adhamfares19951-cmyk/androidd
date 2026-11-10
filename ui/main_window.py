@@ -668,7 +668,7 @@ class AndroidDoctorApp(ctk.CTk):
         self.leakage_progress.set(0)
         self.leakage_progress.pack(fill="x", padx=15, pady=(5, 8))
 
-        self.leakage_lbl = ctk.CTkLabel(self.leakage_card, text="جاهز للاختبار (سيتم إطفاء الشاشة مؤقتاً لعزل سحب المازربورد)", font=ctk.CTkFont(size=12), text_color="#8b949e")
+        self.leakage_lbl = ctk.CTkLabel(self.leakage_card, text="جاهز (يتطلب ADB لاسلكي وفصل الشاحن؛ تُطفأ الشاشة مؤقتاً)", font=ctk.CTkFont(size=12), text_color="#8b949e")
         self.leakage_lbl.pack(anchor="w", padx=15, pady=(0, 5))
 
         self.leakage_text = ctk.CTkTextbox(self.leakage_card, height=110, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
@@ -1189,13 +1189,13 @@ class AndroidDoctorApp(ctk.CTk):
             values=[
                 "all_photos (جميع الصور والفيديوهات)",
                 "full_storage (سحب كل ملفات الهاتف)",
-                "whatsapp (ميديا ومحادثات واتساب)",
+                "whatsapp (وسائط واتساب فقط - المحادثات مشفرة)",
                 "downloads (التنزيلات)",
                 "documents (المستندات)"
             ] if self.current_lang == "ar" else [
                 "all_photos (All Photos & DCIM)",
                 "full_storage (Full Storage Dump)",
-                "whatsapp (WhatsApp Media)",
+                "whatsapp (WhatsApp media only - chats are encrypted)",
                 "downloads (Downloads)",
                 "documents (Documents)"
             ],
@@ -1655,32 +1655,40 @@ class AndroidDoctorApp(ctk.CTk):
         is_ar = self.current_lang == "ar"
         self.leakage_progress.set(0)
         self.leakage_text.delete("1.0", "end")
-        self.leakage_text.insert("end", "جاري بدء اختبار تيار البطارية وفحص تسريب اللوحة الأم...\nسيتم إطفاء الشاشة مؤقتاً لقياس تيار البطارية (يشمل تيار الشحن في حال التوصيل عبر USB)...\n" if is_ar else "Starting Motherboard Battery Current Leakage Test...\nTurning screen off to measure battery current (includes charging current while USB is connected)...\n")
+        self.leakage_text.insert("end", "اختبار تيار البطارية والشاشة مطفأة...\nيعمل فقط عبر ADB اللاسلكي ومع فصل الشاحن، لأن كابل USB يغذي الهاتف بالتيار.\n" if is_ar else "Screen-off battery current test...\nOnly runs over wireless ADB with no charger connected, because a USB cable supplies current.\n")
 
         def progress(pct, val, msg):
             def upd():
                 self.leakage_progress.set(pct / 100.0)
-                ar_msg = f"عينة {int(pct/10)}/10: تيار البطارية = {val} mA" if is_ar else f"Sample {int(pct/10)}/10: Battery current = {val} mA"
+                val_txt = f"{val} mA" if val is not None else "UNKNOWN"
+                ar_msg = f"عينة {int(pct/10)}/10: تيار البطارية = {val_txt}" if is_ar else f"Sample {int(pct/10)}/10: battery current = {val_txt}"
                 self.leakage_lbl.configure(text=ar_msg)
                 self.leakage_text.insert("end", f"{ar_msg}\n")
                 self.leakage_text.see("end")
             self.after(0, upd)
 
         def task():
-            is_faulty, avg_leak, max_leak, samples, verdict = self.board_diag.run_leakage_test(
+            res = self.board_diag.run_leakage_test(
                 serial=serial,
                 sample_count=10,
                 sample_interval=3.0,
                 progress_callback=progress
             )
+            self.last_leakage = res
+            lines = [f"\n[{res.status}] {res.diagnosis}"]
+            for cause in res.possible_causes:
+                lines.append(f"  - {'سبب محتمل' if is_ar else 'Possible cause'}: {cause}")
+            if res.evidence:
+                lines.append(format_evidence_for_display(res.evidence, is_ar=is_ar))
+            verdict = "\n".join(lines)
             def done():
-                res_v = f"\n{verdict}\n"
-                self.leakage_text.insert("end", res_v)
+                self.leakage_text.insert("end", verdict + "\n")
                 self.leakage_text.see("end")
-                if is_faulty:
-                    messagebox.showerror("تنبيه تيار البطارية / شورت اللوحة" if is_ar else "Battery Current / Leakage Alert", verdict)
+                title = "نتيجة فحص تيار البطارية" if is_ar else "Battery current test result"
+                if res.status == "FAIL":
+                    messagebox.showwarning(title, f"[{res.status}] {res.diagnosis}")
                 else:
-                    messagebox.showinfo("نتيجة فحص التيار" if is_ar else "Battery Current Test Result", verdict)
+                    messagebox.showinfo(title, f"[{res.status}] {res.diagnosis}")
             self.after(0, done)
 
         threading.Thread(target=task, daemon=True).start()
@@ -1696,8 +1704,13 @@ class AndroidDoctorApp(ctk.CTk):
             is_ar = self.current_lang == "ar"
             out = [f"=== خريطة الحرارة ({len(zones)} منطقة) [{thermal.status}] ===" if is_ar else f"=== THERMAL ZONES ({len(zones)} zones) [{thermal.status}] ==="]
             for z in zones:
-                status = ("مرتفعة (>45°C) ⚠️" if is_ar else "HOT (>45°C) ⚠️") if z.is_overheated else ("أقل من 45°C" if is_ar else "below 45°C")
-                out.append(f"منطقة {z.zone_id:02d} [{z.zone_type}]: {z.temp_c:.1f}°C — {status}")
+                if z.limit_c is None:
+                    status = "غير مصنفة - لا يوجد حد" if is_ar else "unclassified - not judged"
+                elif z.is_overheated:
+                    status = f"أعلى من حد {z.limit_c:g}°C ⚠️" if is_ar else f"ABOVE {z.limit_c:g}°C limit ⚠️"
+                else:
+                    status = f"ضمن حد {z.limit_c:g}°C" if is_ar else f"within {z.limit_c:g}°C limit"
+                out.append(f"{z.zone_id:02d} [{z.zone_type} / {z.category}]: {z.temp_c:.1f}°C — {status}")
             
             def upd():
                 self.thermal_text.delete("1.0", "end")
@@ -2091,33 +2104,29 @@ class AndroidDoctorApp(ctk.CTk):
             self.last_sec_scan = scan
 
             t_lines = [
-                f"=== فحص الحماية وصائد التجسس (مستوى الخطر: {scan.overall_risk}) ===" if is_ar else f"=== MALWARE & SECURITY AUDIT (Risk: {scan.overall_risk}) ===",
-                f"إجمالي التطبيقات: {scan.total_packages_scanned} | تطبيقات المستخدم: {scan.third_party_count} | تطبيقات النظام: {scan.system_count}",
-                f"تهديدات حرجة: {len(scan.critical_threats)} | تهديدات متوسطة: {len(scan.high_threats)} | تطبيقات شبحية (بدون أيقونة): {len(scan.ghost_apps)}",
+                f"=== التطبيقات ذات الأذونات الحساسة (للمراجعة وليست حكماً) ===" if is_ar else "=== APPS WITH SENSITIVE PERMISSIONS (for review, not a verdict) ===",
+                f"إجمالي التطبيقات: {scan.total_packages_scanned} | تطبيقات المستخدم: {scan.third_party_count} | تطبيقات النظام: {scan.system_count}" if is_ar
+                else f"Packages: {scan.total_packages_scanned} | third-party: {scan.third_party_count} | system: {scan.system_count}",
+                scan.summary,
                 ""
             ]
-
-            all_threats = scan.critical_threats + scan.high_threats + scan.ghost_apps
-            seen = set()
-            for t_item in all_threats:
-                if t_item.package_name in seen:
-                    continue
-                seen.add(t_item.package_name)
-                t_lines.append(f"[{t_item.threat_level}] {t_item.package_name} (درجة الخطر: {t_item.threat_score})")
-                for r in t_item.flagged_reasons:
-                    t_lines.append(f"   • {r}")
-                if t_item.dangerous_permissions:
-                    t_lines.append(f"   الأذونات الخطرة: {', '.join(t_item.dangerous_permissions[:3])}")
+            for app in scan.sensitive_apps:
+                t_lines.append(f"• {app.package_name}")
+                for perm, label in zip(app.sensitive_permissions, app.permission_labels):
+                    t_lines.append(f"   - {label} ({perm})")
+                for note in app.review_notes:
+                    t_lines.append(f"   ! {note}")
                 t_lines.append("")
-
-            if not all_threats:
-                t_lines.append("✓ الهاتف نظيف: لم يتم العثور على تطبيقات تجسس أو تطبيقات شبحية مخفية." if is_ar else "✓ Clean: No active spyware, ghost apps, or RAT accessibility backdoors detected.")
-
-            if scan.has_mitm_risk:
-                t_lines.append("\n⚠️ تحذير أمني حرج: تم رصد شهادات CA للمستخدم (خطر اعتراض التشفير والتجسس MITM)!" if is_ar else "\n⚠️ CRITICAL WARNING: User-Installed Root CA Certificates Detected (MITM Traffic Interception Risk)!")
-                for cert in scan.user_mitm_certificates:
-                    t_lines.append(f"   • {cert}")
-                t_lines.append("")
+            if not scan.sensitive_apps:
+                t_lines.append("لم يتم العثور على تطبيقات مستخدم تملك أذونات حساسة ممنوحة." if is_ar else "No third-party app holds a granted sensitive permission.")
+            if scan.accessibility_services:
+                t_lines.append(("خدمات إمكانية الوصول المفعلة: " if is_ar else "Enabled accessibility services: ") + ", ".join(scan.accessibility_services))
+            if scan.device_admins:
+                t_lines.append(("مديرو الجهاز النشطون: " if is_ar else "Active device admins: ") + ", ".join(scan.device_admins))
+            t_lines.append(f"\n[{scan.user_ca_status}] {scan.user_ca_diagnosis}")
+            for cert in scan.user_certificates:
+                t_lines.append(f"   • {cert}")
+            t_lines.append(format_evidence_for_display(scan.evidence, is_ar=is_ar))
 
             def upd():
                 self.threats_text.delete("1.0", "end")
@@ -2137,10 +2146,9 @@ class AndroidDoctorApp(ctk.CTk):
             is_ar = self.current_lang == "ar"
             lines = [f"=== الاتصالات الشبكية النشطة للخارج ({len(conns)} اتصال) ===" if is_ar else f"=== ACTIVE NETWORK CONNECTIONS ({len(conns)} Sockets) ==="]
             for c in conns:
-                susp = "⚠️ [منفذ غير مألوف/مشبوه]" if c.is_suspicious else ""
-                lines.append(f"{c.protocol:4s} {c.local_address}:{c.local_port} -> {c.remote_address}:{c.remote_port} [{c.state}] | التطبيق: {c.package_name} {susp}")
+                lines.append(f"{c.protocol:4s} {c.local_address}:{c.local_port} -> {c.remote_address}:{c.remote_port} [{c.state}] | {c.package_name}")
             if not conns:
-                lines.append("لا توجد اتصالات مريبة نشطة في الخلفية.")
+                lines.append("لم تتم قراءة أي اتصال خارجي نشط." if is_ar else "No active external connection was read.")
 
             def upd():
                 self.net_text.delete("1.0", "end")
@@ -2345,11 +2353,24 @@ class AndroidDoctorApp(ctk.CTk):
             res = self.optimizer.run_optimization(serial, progress_callback=progress)
             self.last_opt_result = res
 
+            is_ar = self.current_lang == "ar"
+            lines = []
+            for a in res.actions:
+                if a.measured:
+                    lines.append(f"[{a.status}] {a.command}: {_fmt(a.before, 'MB')} -> {_fmt(a.after, 'MB')} ({'التغير' if is_ar else 'change'}: {_fmt(a.delta, 'MB')})")
+                else:
+                    lines.append(f"[{a.status}] {a.command}: {'لا يمكن قياس أثره' if is_ar else 'effect not measurable'}")
+                lines.append(f"    {a.note}")
+
             def done():
-                self.lbl_ram_gain.configure(text=f"+{res.ram_freed_mb} MB")
-                self.lbl_storage_gain.configure(text=f"+{res.storage_freed_mb} MB")
-                self.lbl_drain_gain.configure(text=f"-{res.drain_reduction_ma} mA")
-                messagebox.showinfo("اكتملت الصيانة", f"تم تحرير {res.ram_freed_mb}MB من الرام، وتنظيف {res.storage_freed_mb}MB من التخزين!")
+                self.lbl_ram_gain.configure(text=f"{_fmt(res.before.ram_free_mb)} -> {_fmt(res.after.ram_free_mb, 'MB')}")
+                self.lbl_storage_gain.configure(text=_fmt(res.storage_freed_mb, "MB"))
+                self.lbl_drain_gain.configure(text="—")
+                self.opt_log_text.insert("end", "\n" + "\n".join(lines) + "\n")
+                self.opt_log_text.see("end")
+                messagebox.showinfo("اكتملت الصيانة" if is_ar else "Maintenance finished",
+                                    (f"التغير المقاس في مساحة التخزين الحرة بعد تنظيف الكاش: {_fmt(res.storage_freed_mb, 'MB')}" if is_ar
+                                     else f"Measured change in free storage after cache trim: {_fmt(res.storage_freed_mb, 'MB')}"))
             self.after(0, done)
 
         threading.Thread(target=task, daemon=True).start()
@@ -2547,16 +2568,39 @@ class AndroidDoctorApp(ctk.CTk):
 
     def _fix_cache_bootloop(self):
         serial = self.current_serial.get()
+        is_ar = self.current_lang == "ar"
+
         def task():
-            ok, msg = self.rescue_center.fix_cache_bootloop(serial)
-            def upd():
-                self.rescue_log_text.delete("1.0", "end")
-                self.rescue_log_text.insert("end", f"إصلاح الكاش والتعليق:\n{msg}\n")
-                if ok:
-                    messagebox.showinfo("تم الإصلاح", "تم مسح وتهيئة قسم الكاش بنجاح.")
-                else:
-                    messagebox.showerror("خطأ", msg)
-            self.after(0, upd)
+            has_cache, check_msg = self.rescue_center.has_cache_partition(serial)
+            if has_cache is not True:
+                def no_cache():
+                    self.rescue_log_text.delete("1.0", "end")
+                    self.rescue_log_text.insert("end", f"{check_msg}\n")
+                    messagebox.showinfo("مسح الكاش" if is_ar else "Erase cache",
+                                        ("هذا الجهاز لا يحتوي قسم cache (أو تعذر التحقق)، لذلك لن يتم تنفيذ المسح." if is_ar
+                                         else "This device has no cache partition (or it could not be confirmed); nothing was erased."))
+                self.after(0, no_cache)
+                return
+            confirm = {"ok": False}
+            def ask():
+                confirm["ok"] = messagebox.askyesno(
+                    "مسح الكاش" if is_ar else "Erase cache",
+                    ("سيتم مسح قسم cache فقط (لا يمس بيانات المستخدم). قد يساعد في بعض حالات التعليق على الشعار ولا يضمن الإصلاح. متابعة؟" if is_ar
+                     else "This erases the cache partition only (user data is not touched). It can help with some bootloops but is not a guaranteed fix. Continue?"))
+                if confirm["ok"]:
+                    threading.Thread(target=run_erase, daemon=True).start()
+            def run_erase():
+                ok, msg = self.rescue_center.fix_cache_bootloop(serial)
+                def upd():
+                    self.rescue_log_text.delete("1.0", "end")
+                    self.rescue_log_text.insert("end", f"{check_msg}\n{msg}\n")
+                    if ok:
+                        messagebox.showinfo("مسح الكاش" if is_ar else "Erase cache",
+                                            "تم مسح قسم cache. أعد تشغيل الجهاز للتحقق." if is_ar else "Cache partition erased. Reboot to check.")
+                    else:
+                        messagebox.showerror("خطأ" if is_ar else "Error", msg)
+                self.after(0, upd)
+            self.after(0, ask)
         threading.Thread(target=task, daemon=True).start()
 
     def _browse_image_file(self):
@@ -3078,7 +3122,7 @@ class AndroidDoctorApp(ctk.CTk):
                 storage_summary=f"{profile.storage_free_gb}GB Free",
                 ram_summary=f"{profile.ram_free_mb}MB Free",
                 sensor_summary=f"{len(haudit.sensors)} active sensors",
-                security_summary=f"Risk: {sec.overall_risk}",
+                security_summary=sec.summary,
                 raw_dict={
                     "profile": profile.to_dict(),
                     "board": bdiag.to_dict(),
@@ -3088,7 +3132,7 @@ class AndroidDoctorApp(ctk.CTk):
             )
 
             def done():
-                messagebox.showinfo("اكتمل الفحص الشامل", f"تم فحص العتاد بالكامل!\nصحة اللوحة الأم: {bdiag.overall_health}\nمستوى الأمان: {sec.overall_risk}\nكفاءة البطارية الحقيقية: {bdiag.pmic.true_health_pct}%")
+                messagebox.showinfo("اكتمل الفحص الشامل", f"تم فحص العتاد بالكامل!\nصحة اللوحة الأم: {bdiag.overall_health}\nتطبيقات بأذونات حساسة: {len(sec.sensitive_apps)}\nكفاءة البطارية الحقيقية: {bdiag.pmic.true_health_pct}%")
                 self.run_profile_async()
             self.after(0, done)
 

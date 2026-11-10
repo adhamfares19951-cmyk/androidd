@@ -118,11 +118,10 @@ def run_cli_diagnostics(serial: str = ""):
         if hw.missing_critical_sensors:
             print(f"Missing Sensors: {', '.join(hw.missing_critical_sensors)}")
 
-        print("\n--- 4. SECURITY & MALWARE HUNTER ---")
+        print("\n--- 4. APPS WITH SENSITIVE PERMISSIONS ---")
         sec = malware_hunter.audit_security(target_serial)
         print(f"Scanned: {sec.total_packages_scanned} packages (3rd Party: {sec.third_party_count})")
-        print(f"Threat Assessment: {sec.overall_risk}")
-        print(f"Critical Threats: {len(sec.critical_threats)} | Ghost Apps: {len(sec.ghost_apps)}")
+        print(sec.summary)
 
         print("\n--- 5. EXPORTING OFFICIAL CERTIFICATE ---")
         report_file = DiagnosticReportExporter.generate_html_report(
