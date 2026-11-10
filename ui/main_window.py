@@ -9,6 +9,42 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import customtkinter as ctk
 
+from ui.theme import (
+    BG_CANVAS,
+    BG_SIDEBAR,
+    BG_CARD,
+    BG_TILE,
+    BG_TILE_ALT,
+    BG_CONSOLE,
+    BG_INPUT,
+    BORDER_SUBTLE,
+    BORDER_ACCENT,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+    TEXT_MUTED,
+    ACCENT_BLUE,
+    ACCENT_BLUE_HOVER,
+    ACCENT_CYAN,
+    ACCENT_GREEN,
+    ACCENT_AMBER,
+    ACCENT_RED,
+    ACCENT_PURPLE,
+    ACCENT_SLATE,
+    FONT_FAMILY,
+    get_layout,
+    rtl_wrap,
+    make_hero_header,
+    make_status_badge,
+    update_status_badge,
+    make_card,
+    make_console_box,
+    set_console_text,
+    make_button,
+    pack_button_grid,
+    make_telemetry_tile,
+    style_entry,
+)
+
 from setup_bins import verify_binaries, repair_tools, get_adb_path, get_fastboot_path, get_scrcpy_path
 from database.db_manager import DatabaseManager
 from core.adb_bridge import ADBBridge
@@ -153,108 +189,202 @@ class AndroidDoctorApp(ctk.CTk):
         self._telemetry_thread: Optional[threading.Thread] = None
         self.pointer_location_var = tk.BooleanVar(value=False)
 
+        self.configure(fg_color=BG_CANVAS)
+        self.status_pills: dict[str, ctk.CTkLabel] = {}
+        self.kpi_labels: dict[str, ctk.CTkLabel] = {}
+        self._current_tab = "dashboard"
         self._setup_ui()
         self._start_device_monitor()
 
     def _tr(self, key: str, **kwargs: Any) -> str:
         return t(key, self.current_lang, **kwargs)
 
+    def _layout(self) -> dict[str, Any]:
+        return get_layout(self.current_lang)
+
+    def _L(self, text: str) -> str:
+        return rtl_wrap(text, self.current_lang)
+
+    def _set_box(self, box: ctk.CTkTextbox | None, text: str) -> None:
+        set_console_text(box, text, self.current_lang)
+
+    def _append_box(self, box: ctk.CTkTextbox | None, text: str) -> None:
+        if box is None:
+            return
+        try:
+            if not box.winfo_exists():
+                return
+            wrapped = rtl_wrap(text, self.current_lang)
+            box.insert("end", wrapped)
+            layout = self._layout()
+            box._textbox.tag_configure("rtl", justify=layout["justify"])
+            box._textbox.tag_add("rtl", "1.0", "end")
+            box.see("end")
+        except Exception:
+            pass
+
+    def _set_pill(self, key: str, status: str) -> None:
+        update_status_badge(self.status_pills.get(key), status)
+
     def _m(self, value: Any) -> str:
         """Render a core message (Msg), a list of them, or a plain value in the current language."""
         return render(value, self.current_lang)
 
     def _setup_ui(self):
+        L = self._layout()
         self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=0)
+        self.grid_rowconfigure(1, weight=1)
 
         # ------------------ SIDEBAR ------------------
-        self.sidebar_frame = ctk.CTkFrame(self, width=250, corner_radius=0)
-        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-
-        # Explicit row configure to eliminate ANY gaps between buttons:
-        # Rows 0-6: header, lang, device dropdown, refresh, nav_container (weight=0)
-        # Row 7: expanding spacer (weight=1) -> pushes status_box to bottom
-        # Row 8: status_box (weight=0)
-        for r in range(7):
-            self.sidebar_frame.grid_rowconfigure(r, weight=0)
-        self.sidebar_frame.grid_rowconfigure(7, weight=1)
-        self.sidebar_frame.grid_rowconfigure(8, weight=0)
-
-        # App Brand
-        self.logo_label = ctk.CTkLabel(
-            self.sidebar_frame,
-            text=self._tr("ui.android_doctor_pro_2"),
-            font=ctk.CTkFont(size=17, weight="bold"),
-            text_color="#58a6ff"
+        self.sidebar_frame = ctk.CTkFrame(
+            self,
+            width=265,
+            corner_radius=0,
+            fg_color=BG_SIDEBAR,
+            border_width=1,
+            border_color=BORDER_SUBTLE,
         )
-        self.logo_label.grid(row=0, column=0, padx=15, pady=(15, 2))
+        self.sidebar_frame.grid(row=0, column=0, rowspan=2, sticky="nsew")
+        self.sidebar_frame.grid_propagate(False)
+        self.sidebar_frame.grid_columnconfigure(0, weight=1)
+
+        for r in range(6):
+            self.sidebar_frame.grid_rowconfigure(r, weight=0)
+        self.sidebar_frame.grid_rowconfigure(6, weight=1)
+        self.sidebar_frame.grid_rowconfigure(7, weight=0)
+
+        # Brand Header Card
+        brand_card = ctk.CTkFrame(
+            self.sidebar_frame,
+            fg_color=BG_TILE,
+            corner_radius=10,
+            border_width=1,
+            border_color=BORDER_ACCENT,
+        )
+        brand_card.grid(row=0, column=0, padx=14, pady=(14, 10), sticky="ew")
+
+        brand_top = ctk.CTkFrame(brand_card, fg_color="transparent")
+        brand_top.pack(fill="x", padx=12, pady=(10, 2))
+
+        self.logo_label = ctk.CTkLabel(
+            brand_top,
+            text=self._L(self._tr("ui.android_doctor_pro_2")),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=16, weight="bold"),
+            text_color="#60a5fa",
+            anchor=L["anchor"],
+        )
+        self.logo_label.pack(side=L["lead"], fill="x", expand=True)
+
+        pro_pill = ctk.CTkLabel(
+            brand_top,
+            text="PRO",
+            fg_color="#172554",
+            text_color="#93c5fd",
+            corner_radius=6,
+            padx=7,
+            pady=1,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=10, weight="bold"),
+        )
+        pro_pill.pack(side=L["trail"], padx=(4, 0) if L["lead"] == "left" else (0, 4))
 
         self.subtitle_label = ctk.CTkLabel(
-            self.sidebar_frame,
-            text=self._tr("ui.hardware_diagnostics_suite"),
-            font=ctk.CTkFont(size=12),
-            text_color="#8b949e"
+            brand_card,
+            text=self._L(self._tr("ui.hardware_diagnostics_suite")),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            text_color=TEXT_SECONDARY,
+            anchor=L["anchor"],
+            justify=L["justify"],
+            wraplength=210,
         )
-        self.subtitle_label.grid(row=1, column=0, padx=15, pady=(0, 10))
+        self.subtitle_label.pack(fill="x", padx=12, pady=(0, 10))
 
-        # Language Switcher
-        lang_bar = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        lang_bar.grid(row=2, column=0, padx=15, pady=(0, 15))
+        # Language Switcher (Segmented Pill)
+        lang_bar = ctk.CTkFrame(
+            self.sidebar_frame,
+            fg_color=BG_TILE,
+            corner_radius=9,
+            border_width=1,
+            border_color=BORDER_SUBTLE,
+        )
+        lang_bar.grid(row=1, column=0, padx=14, pady=(0, 10), sticky="ew")
+        lang_bar.grid_columnconfigure((0, 1), weight=1, uniform="lang_col")
 
+        ar_active = self.current_lang == "ar"
         self.btn_lang_ar = ctk.CTkButton(
             lang_bar,
-            text=self._tr("ui.text"),
-            width=80,
-            height=26,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color="#1f6feb" if self.current_lang == "ar" else "#21262d",
-            command=lambda: self.switch_language("ar")
+            text=self._L(self._tr("ui.text")),
+            height=28,
+            corner_radius=7,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
+            fg_color=ACCENT_BLUE if ar_active else "transparent",
+            hover_color=ACCENT_BLUE_HOVER if ar_active else BG_CARD,
+            text_color="#ffffff" if ar_active else TEXT_SECONDARY,
+            command=lambda: self.switch_language("ar"),
         )
-        self.btn_lang_ar.pack(side="left", padx=2)
+        self.btn_lang_ar.grid(row=0, column=0, padx=3, pady=3, sticky="ew")
 
+        en_active = self.current_lang == "en"
         self.btn_lang_en = ctk.CTkButton(
             lang_bar,
             text=self._tr("ui.english"),
-            width=80,
-            height=26,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color="#1f6feb" if self.current_lang == "en" else "#21262d",
-            command=lambda: self.switch_language("en")
+            height=28,
+            corner_radius=7,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
+            fg_color=ACCENT_BLUE if en_active else "transparent",
+            hover_color=ACCENT_BLUE_HOVER if en_active else BG_CARD,
+            text_color="#ffffff" if en_active else TEXT_SECONDARY,
+            command=lambda: self.switch_language("en"),
         )
-        self.btn_lang_en.pack(side="left", padx=2)
+        self.btn_lang_en.grid(row=0, column=1, padx=3, pady=3, sticky="ew")
 
-        # Device Selection Dropdown
-        self.dev_select_label = ctk.CTkLabel(
+        # Device Connection Panel
+        dev_card = ctk.CTkFrame(
             self.sidebar_frame,
-            text=self._tr("target_device"),
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#c9d1d9",
-            anchor="w"
+            fg_color=BG_TILE,
+            corner_radius=10,
+            border_width=1,
+            border_color=BORDER_SUBTLE,
         )
-        self.dev_select_label.grid(row=3, column=0, padx=20, pady=(5, 2), sticky="w")
+        dev_card.grid(row=2, column=0, padx=14, pady=(0, 12), sticky="ew")
+
+        self.dev_select_label = ctk.CTkLabel(
+            dev_card,
+            text=self._L(self._tr("target_device")),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold"),
+            text_color=TEXT_SECONDARY,
+            anchor=L["anchor"],
+        )
+        self.dev_select_label.pack(fill="x", padx=12, pady=(10, 4))
 
         self.device_combo = ctk.CTkComboBox(
-            self.sidebar_frame,
+            dev_card,
             values=[self._tr("no_devices")],
             command=self._on_device_selected,
-            width=210
+            height=32,
+            fg_color=BG_INPUT,
+            border_color=BORDER_ACCENT,
+            button_color=ACCENT_BLUE,
+            button_hover_color=ACCENT_BLUE_HOVER,
+            dropdown_fg_color=BG_CARD,
+            text_color=TEXT_PRIMARY,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
         )
-        self.device_combo.grid(row=4, column=0, padx=20, pady=(0, 8))
+        self.device_combo.pack(fill="x", padx=12, pady=(0, 8))
 
-        self.btn_refresh_dev = ctk.CTkButton(
-            self.sidebar_frame,
-            text=self._tr("refresh_devices"),
+        self.btn_refresh_dev = make_button(
+            dev_card,
+            text=self._L(self._tr("refresh_devices")),
             command=self.refresh_devices_async,
-            height=28,
-            fg_color="#21262d",
-            hover_color="#30363d"
+            variant="secondary",
+            height=30,
+            font_size=11,
         )
-        self.btn_refresh_dev.grid(row=5, column=0, padx=20, pady=(0, 12))
+        self.btn_refresh_dev.pack(fill="x", padx=12, pady=(0, 10))
 
-        # Navigation Buttons Container Frame
-        # PACKING buttons inside nav_container ELIMINATES all spacing anomalies and gaps!
+        # Navigation Menu
         self.nav_container = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        self.nav_container.grid(row=6, column=0, sticky="ew", padx=10, pady=0)
+        self.nav_container.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 6))
 
         self.nav_buttons = {}
         tab_names = [
@@ -264,58 +394,93 @@ class AndroidDoctorApp(ctk.CTk):
             ("malware_hunter", "tab_malware"),
             ("optimizer", "tab_optimizer"),
             ("rescue_center", "tab_rescue"),
-            ("reports", "tab_reports")
+            ("reports", "tab_reports"),
         ]
 
         for key, tr_key in tab_names:
             btn = ctk.CTkButton(
                 self.nav_container,
-                text=self._tr(tr_key),
-                anchor="w",
-                height=36,
+                text=self._L(self._tr(tr_key)),
+                anchor=L["anchor"],
+                height=38,
+                corner_radius=8,
+                border_width=0,
+                border_color=BORDER_SUBTLE,
                 fg_color="transparent",
-                text_color="#c9d1d9",
-                hover_color="#1f2937",
-                command=lambda k=key: self.select_tab(k)
+                text_color=TEXT_SECONDARY,
+                hover_color="#162033",
+                font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
+                command=lambda k=key: self.select_tab(k),
             )
             btn.pack(fill="x", pady=2)
             self.nav_buttons[key] = btn
 
-        # Expanding Spacer: absorbs leftover vertical window height to push status_box to bottom
+        # Expanding Spacer
         self.sidebar_spacer = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        self.sidebar_spacer.grid(row=7, column=0, sticky="nsew")
+        self.sidebar_spacer.grid(row=6, column=0, sticky="nsew")
 
-        # System Status at Bottom Sidebar
-        self.status_box = ctk.CTkFrame(self.sidebar_frame, fg_color="#161b22", corner_radius=6)
-        self.status_box.grid(row=8, column=0, padx=15, pady=15, sticky="ew")
+        # Live ADB Status Footer Pill
+        self.status_box = ctk.CTkFrame(
+            self.sidebar_frame,
+            fg_color=BG_TILE,
+            corner_radius=10,
+            border_width=1,
+            border_color=BORDER_SUBTLE,
+        )
+        self.status_box.grid(row=7, column=0, padx=14, pady=14, sticky="ew")
+
+        status_inner = ctk.CTkFrame(self.status_box, fg_color="transparent")
+        status_inner.pack(fill="x", padx=10, pady=9)
+
+        self.adb_status_dot = ctk.CTkFrame(
+            status_inner, width=9, height=9, corner_radius=5, fg_color=TEXT_MUTED
+        )
+        self.adb_status_dot.pack(side=L["lead"], padx=(0, 8) if L["lead"] == "left" else (8, 0))
 
         self.adb_status_label = ctk.CTkLabel(
-            self.status_box,
-            text=self._tr("adb_disconnected"),
-            font=ctk.CTkFont(size=11),
-            text_color="#8b949e",
-            wraplength=210
+            status_inner,
+            text=self._L(self._tr("adb_disconnected")),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            text_color=TEXT_SECONDARY,
+            anchor=L["anchor"],
+            justify=L["justify"],
+            wraplength=190,
         )
-        self.adb_status_label.pack(padx=8, pady=8)
+        self.adb_status_label.pack(side=L["lead"], fill="x", expand=True)
 
         # ------------------ MAIN CONTENT AREA ------------------
-        # Row 0: tools banner (hidden unless a bundled tool is missing / does not match bin/manifest.json)
-        self.grid_rowconfigure(0, weight=0)
-        self.grid_rowconfigure(1, weight=1)
-        self.sidebar_frame.grid_configure(rowspan=2)
-        self.tools_banner = ctk.CTkFrame(self, fg_color="#3d1d1d", corner_radius=6)
-        self.tools_banner_lbl = ctk.CTkLabel(self.tools_banner, text="", text_color="#fca5a5", justify="left", wraplength=700)
-        self.tools_banner_lbl.pack(side="left", padx=12, pady=8, fill="x", expand=True)
-        self.btn_repair_tools = ctk.CTkButton(self.tools_banner, text=self._tr("tools.repair"), width=140,
-                                              fg_color="#b91c1c", hover_color="#dc2626", command=self._repair_tools_async)
-        self.btn_repair_tools.pack(side="right", padx=12, pady=8)
+        self.tools_banner = ctk.CTkFrame(
+            self,
+            fg_color="#2a1215",
+            corner_radius=10,
+            border_width=1,
+            border_color="#b91c1c",
+        )
+        self.tools_banner_lbl = ctk.CTkLabel(
+            self.tools_banner,
+            text="",
+            text_color="#fca5a5",
+            justify=L["justify"],
+            anchor=L["anchor"],
+            wraplength=700,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+        )
+        self.tools_banner_lbl.pack(side=L["lead"], padx=14, pady=8, fill="x", expand=True)
+        self.btn_repair_tools = make_button(
+            self.tools_banner,
+            text=self._L(self._tr("tools.repair")),
+            command=self._repair_tools_async,
+            variant="danger",
+            height=30,
+            width=150,
+        )
+        self.btn_repair_tools.pack(side=L["trail"], padx=14, pady=8)
 
-        self.content_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="#0d1117")
-        self.content_frame.grid(row=1, column=1, sticky="nsew", padx=10, pady=10)
+        self.content_frame = ctk.CTkFrame(self, corner_radius=0, fg_color=BG_CANVAS)
+        self.content_frame.grid(row=1, column=1, sticky="nsew", padx=8, pady=8)
         self.content_frame.grid_columnconfigure(0, weight=1)
         self.content_frame.grid_rowconfigure(0, weight=1)
 
-        # Tabs are built on first use (and in idle time), so the window opens quickly
         self.tab_frames = {}
         self._init_tab_builders()
         self.select_tab("dashboard")
@@ -334,17 +499,40 @@ class AndroidDoctorApp(ctk.CTk):
     def switch_language(self, lang: str):
         if self.current_lang == lang:
             return
+        active_tab = getattr(self, "_current_tab", "dashboard")
         self.current_lang = lang
         set_current_language(lang)
-        self.btn_lang_ar.configure(fg_color="#1f6feb" if lang == "ar" else "#21262d")
-        self.btn_lang_en.configure(fg_color="#1f6feb" if lang == "en" else "#21262d")
-        
-        # Refresh current view
+        L = self._layout()
+
+        ar_active = lang == "ar"
+        en_active = lang == "en"
+        self.btn_lang_ar.configure(
+            fg_color=ACCENT_BLUE if ar_active else "transparent",
+            hover_color=ACCENT_BLUE_HOVER if ar_active else BG_CARD,
+            text_color="#ffffff" if ar_active else TEXT_SECONDARY,
+        )
+        self.btn_lang_en.configure(
+            fg_color=ACCENT_BLUE if en_active else "transparent",
+            hover_color=ACCENT_BLUE_HOVER if en_active else BG_CARD,
+            text_color="#ffffff" if en_active else TEXT_SECONDARY,
+        )
+
+        # Destroy existing tabs & rebuild with updated directional layout
         for widget in self.content_frame.winfo_children():
             widget.destroy()
         self.tab_frames.clear()
-        self.btn_repair_tools.configure(text=self._tr("tools.repair"))
-        self.after(150, self._build_next_pending_tab)
+        self.status_pills.clear()
+        self.kpi_labels.clear()
+
+        self.logo_label.configure(
+            text=self._L(self._tr("ui.android_doctor_pro_2")), anchor=L["anchor"]
+        )
+        self.subtitle_label.configure(
+            text=self._L(self._tr("ui.hardware_diagnostics_suite")),
+            anchor=L["anchor"],
+            justify=L["justify"],
+        )
+        self.btn_repair_tools.configure(text=self._L(self._tr("tools.repair")))
 
         tab_tr = {
             "dashboard": "tab_dashboard",
@@ -353,15 +541,22 @@ class AndroidDoctorApp(ctk.CTk):
             "malware_hunter": "tab_malware",
             "optimizer": "tab_optimizer",
             "rescue_center": "tab_rescue",
-            "reports": "tab_reports"
+            "reports": "tab_reports",
         }
         for k, tr_key in tab_tr.items():
             if k in self.nav_buttons:
-                self.nav_buttons[k].configure(text=self._tr(tr_key))
+                self.nav_buttons[k].configure(
+                    text=self._L(self._tr(tr_key)), anchor=L["anchor"]
+                )
 
-        self.dev_select_label.configure(text=self._tr("target_device"))
-        self.btn_refresh_dev.configure(text=self._tr("refresh_devices"))
-        self.select_tab("dashboard")
+        self.dev_select_label.configure(
+            text=self._L(self._tr("target_device")), anchor=L["anchor"]
+        )
+        self.btn_refresh_dev.configure(text=self._L(self._tr("refresh_devices")))
+        self.adb_status_label.configure(anchor=L["anchor"], justify=L["justify"])
+
+        self.select_tab(active_tab)
+        self.after(120, self._build_next_pending_tab)
         self.refresh_devices_async()
 
     def _init_tab_builders(self):
@@ -395,12 +590,22 @@ class AndroidDoctorApp(ctk.CTk):
             if k == key:
                 frame.grid(row=0, column=0, sticky="nsew")
                 if k in self.nav_buttons:
-                    self.nav_buttons[k].configure(fg_color="#1f6feb", text_color="#ffffff")
+                    self.nav_buttons[k].configure(
+                        fg_color="#172554",
+                        border_width=1,
+                        border_color=ACCENT_BLUE,
+                        text_color="#ffffff",
+                    )
             else:
                 if frame is not None:
                     frame.grid_forget()
                 if k in self.nav_buttons:
-                    self.nav_buttons[k].configure(fg_color="transparent", text_color="#c9d1d9")
+                    self.nav_buttons[k].configure(
+                        fg_color="transparent",
+                        border_width=0,
+                        border_color=BORDER_SUBTLE,
+                        text_color=TEXT_SECONDARY,
+                    )
 
     # ------------------ bundled tools check / repair ------------------
     def _check_tools_background(self):
@@ -454,136 +659,271 @@ class AndroidDoctorApp(ctk.CTk):
     # TAB 1: DASHBOARD & SPECS
     # =========================================================================
     def _build_dashboard_tab(self):
-        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color="#0d1117")
+        L = self._layout()
+        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color=BG_CANVAS)
         self.tab_frames["dashboard"] = tab
 
-        # Header Banner
-        header = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        header.pack(fill="x", padx=15, pady=(15, 10))
+        wrap = ctk.CTkFrame(tab, fg_color="transparent")
+        wrap.pack(fill="both", expand=True, padx=14, pady=12)
 
-        title = ctk.CTkLabel(header, text=self._tr("dash_title"), font=ctk.CTkFont(size=18, weight="bold"), text_color="#58a6ff")
-        title.pack(anchor="w", padx=15, pady=(10, 2))
+        make_hero_header(
+            wrap,
+            self._L(self._tr("dash_title")),
+            self._L(self._tr("dash_sub")),
+            L,
+            accent_color=ACCENT_BLUE,
+        )
 
-        sub = ctk.CTkLabel(header, text=self._tr("dash_sub"), font=ctk.CTkFont(size=12), text_color="#8b949e")
-        sub.pack(anchor="w", padx=15, pady=(0, 10))
+        # Dedicated banner host keeps dynamic alerts above actions without reordering
+        banner_host = ctk.CTkFrame(wrap, fg_color="transparent")
+        banner_host.pack(fill="x")
 
         # Dynamic Connection Warning Alert Card
-        self.alert_card = ctk.CTkFrame(tab, fg_color="#2b1414", border_color="#ef4444", border_width=1, corner_radius=8)
-        self.alert_title_lbl = ctk.CTkLabel(self.alert_card, text="", font=ctk.CTkFont(size=14, weight="bold"), text_color="#f87171")
-        self.alert_title_lbl.pack(anchor="w", padx=15, pady=(10, 4))
-        
-        self.alert_desc_lbl = ctk.CTkLabel(self.alert_card, text="", font=ctk.CTkFont(size=12), text_color="#fecaca", justify="left", anchor="w")
+        self.alert_card = ctk.CTkFrame(
+            banner_host,
+            fg_color="#2a1215",
+            border_color=ACCENT_RED,
+            border_width=1,
+            corner_radius=12,
+        )
+        self.alert_title_lbl = ctk.CTkLabel(
+            self.alert_card,
+            text="",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
+            text_color="#f87171",
+            anchor=L["anchor"],
+            justify=L["justify"],
+        )
+        self.alert_title_lbl.pack(fill="x", padx=15, pady=(12, 4))
+
+        self.alert_desc_lbl = ctk.CTkLabel(
+            self.alert_card,
+            text="",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            text_color="#fecaca",
+            justify=L["justify"],
+            anchor=L["anchor"],
+            wraplength=760,
+        )
         self.alert_desc_lbl.pack(fill="x", padx=15, pady=(0, 10))
 
         alert_btns = ctk.CTkFrame(self.alert_card, fg_color="transparent")
-        alert_btns.pack(fill="x", padx=15, pady=(0, 10))
+        alert_btns.pack(fill="x", padx=15, pady=(0, 12))
 
-        self.btn_alert_action = ctk.CTkButton(alert_btns, text=self._tr("ui.rescan_now"), height=28, fg_color="#b91c1c", hover_color="#dc2626", command=self.refresh_devices_async)
-        self.btn_alert_action.pack(side="left", padx=(0, 8))
+        self.btn_alert_action = make_button(
+            alert_btns,
+            text=self._L(self._tr("ui.rescan_now")),
+            command=self.refresh_devices_async,
+            variant="danger",
+            height=30,
+        )
+        self.btn_alert_action.pack(side=L["lead"], padx=4)
 
-        ctk.CTkButton(alert_btns, text=self._tr("ui.restart_the_adb_server"), height=28, fg_color="#21262d", hover_color="#30363d", command=self._restart_adb_service).pack(side="left")
+        make_button(
+            alert_btns,
+            text=self._L(self._tr("ui.restart_the_adb_server")),
+            command=self._restart_adb_service,
+            variant="secondary",
+            height=30,
+        ).pack(side=L["lead"], padx=4)
 
         # Connection Help Banner (Shown when no device is connected)
-        self.guide_card = ctk.CTkFrame(tab, fg_color="#221c10", border_color="#d97706", border_width=1, corner_radius=8)
-        self.guide_card.pack(fill="x", padx=15, pady=(0, 15))
+        self.guide_card = ctk.CTkFrame(
+            banner_host,
+            fg_color="#1f1709",
+            border_color=ACCENT_AMBER,
+            border_width=1,
+            corner_radius=12,
+        )
+        self.guide_card.pack(fill="x", pady=(0, 12))
 
         guide_top = ctk.CTkFrame(self.guide_card, fg_color="transparent")
-        guide_top.pack(fill="x", padx=15, pady=(10, 5))
+        guide_top.pack(fill="x", padx=15, pady=(12, 6))
 
-        ctk.CTkLabel(guide_top, text=self._tr("guide_title"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#f59e0b").pack(side="left")
-
-        ctk.CTkButton(
+        ctk.CTkLabel(
             guide_top,
-            text=self._tr("guide_btn_restart_adb"),
-            height=26,
-            fg_color="#b45309",
-            hover_color="#d97706",
-            command=self._restart_adb_service
-        ).pack(side="right")
+            text=self._L(self._tr("guide_title")),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
+            text_color="#fbbf24",
+            anchor=L["anchor"],
+            justify=L["justify"],
+        ).pack(side=L["lead"], fill="x", expand=True)
 
-        ctk.CTkLabel(self.guide_card, text=self._tr("guide_step1"), font=ctk.CTkFont(size=12), text_color="#fef3c7", anchor="w").pack(fill="x", padx=18, pady=2)
-        ctk.CTkLabel(self.guide_card, text=self._tr("guide_step2"), font=ctk.CTkFont(size=12), text_color="#fef3c7", anchor="w").pack(fill="x", padx=18, pady=2)
-        ctk.CTkLabel(self.guide_card, text=self._tr("guide_step3"), font=ctk.CTkFont(size=12), text_color="#fef3c7", anchor="w").pack(fill="x", padx=18, pady=(2, 10))
+        make_button(
+            guide_top,
+            text=self._L(self._tr("guide_btn_restart_adb")),
+            command=self._restart_adb_service,
+            variant="warning",
+            height=28,
+            font_size=11,
+        ).pack(side=L["trail"], padx=4)
 
-        # Quick Actions Bar
-        actions_bar = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        actions_bar.pack(fill="x", padx=15, pady=(0, 15))
+        for step_key, step_pad in (("guide_step1", 2), ("guide_step2", 2), ("guide_step3", (2, 12))):
+            ctk.CTkLabel(
+                self.guide_card,
+                text=self._L(self._tr(step_key)),
+                font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+                text_color="#fef3c7",
+                anchor=L["anchor"],
+                justify=L["justify"],
+                wraplength=820,
+            ).pack(fill="x", padx=18, pady=step_pad)
 
-        self.btn_full_scan = ctk.CTkButton(actions_bar, text=self._tr("btn_full_scan"), command=self.run_full_deep_scan_async, fg_color="#238636", hover_color="#2ea043")
-        self.btn_full_scan.pack(side="left", padx=15, pady=10)
+        # Responsive Quick Actions Toolbar
+        _, action_btns = pack_button_grid(
+            wrap,
+            [
+                (self._L(self._tr("btn_full_scan")), self.run_full_deep_scan_async, "success"),
+                (self._L(self._tr("btn_reboot_sys")), lambda: self._exec_reboot(""), "secondary"),
+                (self._L(self._tr("btn_reboot_rec")), lambda: self._exec_reboot("recovery"), "secondary"),
+                (self._L(self._tr("btn_reboot_bl")), lambda: self._exec_reboot("bootloader"), "secondary"),
+            ],
+            cols=4,
+            is_rtl=L["is_rtl"],
+            pady=(0, 12),
+            height=38,
+        )
+        self.btn_full_scan, self.btn_reboot_norm, self.btn_reboot_rec, self.btn_reboot_bl = action_btns
 
-        self.btn_reboot_norm = ctk.CTkButton(actions_bar, text=self._tr("btn_reboot_sys"), command=lambda: self._exec_reboot(""), width=120, fg_color="#21262d", hover_color="#30363d")
-        self.btn_reboot_norm.pack(side="left", padx=5, pady=10)
+        # 4-Column KPI Summary Strip
+        kpi_grid = ctk.CTkFrame(wrap, fg_color="transparent")
+        kpi_grid.pack(fill="x", pady=(0, 12))
+        kpi_grid.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="dash_kpi")
 
-        self.btn_reboot_rec = ctk.CTkButton(actions_bar, text=self._tr("btn_reboot_rec"), command=lambda: self._exec_reboot("recovery"), width=130, fg_color="#21262d", hover_color="#30363d")
-        self.btn_reboot_rec.pack(side="left", padx=5, pady=10)
+        kpi_specs = [
+            ("model", self._L(self._tr("spec_model").rstrip(":")), ACCENT_BLUE),
+            ("android", self._L(self._tr("spec_android").rstrip(":")), ACCENT_GREEN),
+            ("root", self._L(self._tr("spec_root").rstrip(":")), ACCENT_PURPLE),
+            ("selinux", self._L(self._tr("spec_selinux").rstrip(":")), ACCENT_AMBER),
+        ]
+        for idx, (k_key, k_title, k_color) in enumerate(kpi_specs):
+            col = (3 - idx) if L["is_rtl"] else idx
+            tile, k_val = make_telemetry_tile(kpi_grid, k_title, "—", k_color, L)
+            tile.grid(row=0, column=col, padx=4, sticky="nsew")
+            self.kpi_labels[k_key] = k_val
 
-        self.btn_reboot_bl = ctk.CTkButton(actions_bar, text=self._tr("btn_reboot_bl"), command=lambda: self._exec_reboot("bootloader"), width=140, fg_color="#21262d", hover_color="#30363d")
-        self.btn_reboot_bl.pack(side="left", padx=5, pady=10)
+        # Dual Grid: Hardware Specifications + Live Telemetry Gauges
+        grid = ctk.CTkFrame(wrap, fg_color="transparent")
+        grid.pack(fill="both", expand=True)
+        grid.grid_columnconfigure((0, 1), weight=1, uniform="dash_dual")
 
-        # Specs Grid Frame
-        grid = ctk.CTkFrame(tab, fg_color="transparent")
-        grid.pack(fill="both", expand=True, padx=15, pady=0)
-        grid.grid_columnconfigure((0, 1), weight=1)
+        specs_col = 1 if L["is_rtl"] else 0
+        gauges_col = 0 if L["is_rtl"] else 1
 
-        # Specifications Card
-        self.specs_card = ctk.CTkFrame(grid, fg_color="#161b22", corner_radius=8)
-        self.specs_card.grid(row=0, column=0, padx=(0, 8), pady=8, sticky="nsew")
-
-        ctk.CTkLabel(self.specs_card, text=self._tr("core_specs"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(12, 10))
+        self.specs_card, _ = make_card(
+            grid,
+            self._L(self._tr("core_specs")),
+            ACCENT_BLUE,
+            L,
+            pack_card=False,
+        )
+        self.specs_card.grid(
+            row=0,
+            column=specs_col,
+            padx=(6, 0) if L["is_rtl"] else (0, 6),
+            pady=4,
+            sticky="nsew",
+        )
 
         self.spec_labels = {}
         spec_fields = [
-            ("model", self._tr("spec_model")),
-            ("serial", self._tr("spec_serial")),
-            ("soc", self._tr("spec_soc")),
-            ("cores", self._tr("spec_cores")),
-            ("android", self._tr("spec_android")),
-            ("build_id", self._tr("spec_build_id")),
-            ("security", self._tr("spec_security")),
-            ("kernel", self._tr("spec_kernel")),
-            ("root", self._tr("spec_root")),
-            ("selinux", self._tr("spec_selinux")),
-            ("display", self._tr("spec_display"))
+            ("model", self._L(self._tr("spec_model"))),
+            ("serial", self._L(self._tr("spec_serial"))),
+            ("soc", self._L(self._tr("spec_soc"))),
+            ("cores", self._L(self._tr("spec_cores"))),
+            ("android", self._L(self._tr("spec_android"))),
+            ("build_id", self._L(self._tr("spec_build_id"))),
+            ("security", self._L(self._tr("spec_security"))),
+            ("kernel", self._L(self._tr("spec_kernel"))),
+            ("root", self._L(self._tr("spec_root"))),
+            ("selinux", self._L(self._tr("spec_selinux"))),
+            ("display", self._L(self._tr("spec_display"))),
         ]
 
-        for key, title_str in spec_fields:
-            row = ctk.CTkFrame(self.specs_card, fg_color="transparent")
-            row.pack(fill="x", padx=15, pady=3)
-            ctk.CTkLabel(row, text=title_str, font=ctk.CTkFont(size=12), text_color="#8b949e").pack(side="left")
-            val_lbl = ctk.CTkLabel(row, text="—", font=ctk.CTkFont(size=12, weight="bold"), text_color="#f0f6fc")
-            val_lbl.pack(side="right")
+        specs_body = ctk.CTkFrame(self.specs_card, fg_color="transparent")
+        specs_body.pack(fill="both", expand=True, padx=14, pady=(0, 12))
+
+        for r_idx, (key, title_str) in enumerate(spec_fields):
+            row_bg = BG_TILE if r_idx % 2 == 0 else BG_TILE_ALT
+            row = ctk.CTkFrame(specs_body, fg_color=row_bg, corner_radius=6)
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(
+                row,
+                text=title_str,
+                font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+                text_color=TEXT_SECONDARY,
+                anchor=L["anchor"],
+            ).pack(side=L["lead"], padx=10, pady=5)
+            val_lbl = ctk.CTkLabel(
+                row,
+                text="—",
+                font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
+                text_color=TEXT_PRIMARY,
+                anchor="w",
+            )
+            val_lbl.pack(side=L["trail"], padx=10, pady=5)
             self.spec_labels[key] = val_lbl
 
-        # Resources & Real-Time Gauges Card
-        self.gauges_card = ctk.CTkFrame(grid, fg_color="#161b22", corner_radius=8)
-        self.gauges_card.grid(row=0, column=1, padx=(8, 0), pady=8, sticky="nsew")
+        self.gauges_card, _ = make_card(
+            grid,
+            self._L(self._tr("live_gauges")),
+            ACCENT_CYAN,
+            L,
+            pack_card=False,
+        )
+        self.gauges_card.grid(
+            row=0,
+            column=gauges_col,
+            padx=(0, 6) if L["is_rtl"] else (6, 0),
+            pady=4,
+            sticky="nsew",
+        )
 
-        ctk.CTkLabel(self.gauges_card, text=self._tr("live_gauges"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(12, 10))
+        gauges_body = ctk.CTkFrame(self.gauges_card, fg_color="transparent")
+        gauges_body.pack(fill="both", expand=True, padx=14, pady=(0, 12))
 
-        # RAM Gauge
-        self.ram_title_lbl = ctk.CTkLabel(self.gauges_card, text=self._tr("ui.ram"), font=ctk.CTkFont(size=12), text_color="#c9d1d9")
-        self.ram_title_lbl.pack(anchor="w", padx=15, pady=(5, 2))
-        self.ram_bar = ctk.CTkProgressBar(self.gauges_card, height=12, progress_color="#1f6feb")
-        self.ram_bar.set(0)
-        self.ram_bar.pack(fill="x", padx=15, pady=(0, 15))
+        def _make_gauge_block(title_key: str, bar_color: str):
+            box = ctk.CTkFrame(
+                gauges_body,
+                fg_color=BG_TILE,
+                corner_radius=8,
+                border_width=1,
+                border_color=BORDER_SUBTLE,
+            )
+            box.pack(fill="x", pady=(0, 10))
+            lbl = ctk.CTkLabel(
+                box,
+                text=self._L(self._tr(title_key)),
+                font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
+                text_color=TEXT_PRIMARY,
+                anchor=L["anchor"],
+                justify=L["justify"],
+            )
+            lbl.pack(fill="x", padx=12, pady=(10, 6))
+            bar = ctk.CTkProgressBar(
+                box,
+                height=11,
+                corner_radius=6,
+                fg_color=BORDER_SUBTLE,
+                progress_color=bar_color,
+            )
+            bar.set(0)
+            bar.pack(fill="x", padx=12, pady=(0, 12))
+            return lbl, bar, box
 
-        # Storage Gauge
-        self.storage_title_lbl = ctk.CTkLabel(self.gauges_card, text=self._tr("ui.internal_storage"), font=ctk.CTkFont(size=12), text_color="#c9d1d9")
-        self.storage_title_lbl.pack(anchor="w", padx=15, pady=(5, 2))
-        self.storage_bar = ctk.CTkProgressBar(self.gauges_card, height=12, progress_color="#238636")
-        self.storage_bar.set(0)
-        self.storage_bar.pack(fill="x", padx=15, pady=(0, 15))
+        self.ram_title_lbl, self.ram_bar, _ = _make_gauge_block("ui.ram", ACCENT_BLUE)
+        self.storage_title_lbl, self.storage_bar, _ = _make_gauge_block("ui.internal_storage", ACCENT_GREEN)
+        self.batt_title_lbl, self.batt_bar, batt_box = _make_gauge_block("ui.battery", ACCENT_AMBER)
 
-        # Battery Gauge
-        self.batt_title_lbl = ctk.CTkLabel(self.gauges_card, text=self._tr("ui.battery"), font=ctk.CTkFont(size=12), text_color="#c9d1d9")
-        self.batt_title_lbl.pack(anchor="w", padx=15, pady=(5, 2))
-        self.batt_bar = ctk.CTkProgressBar(self.gauges_card, height=12, progress_color="#e3b341")
-        self.batt_bar.set(0)
-        self.batt_bar.pack(fill="x", padx=15, pady=(0, 15))
-
-        self.batt_quick_lbl = ctk.CTkLabel(self.gauges_card, text=self._tr("ui.voltage_temp_health"), font=ctk.CTkFont(size=12), text_color="#8b949e")
-        self.batt_quick_lbl.pack(anchor="w", padx=15, pady=(0, 10))
+        self.batt_quick_lbl = ctk.CTkLabel(
+            batt_box,
+            text=self._L(self._tr("ui.voltage_temp_health")),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            text_color=TEXT_SECONDARY,
+            anchor=L["anchor"],
+            justify=L["justify"],
+        )
+        self.batt_quick_lbl.pack(fill="x", padx=12, pady=(0, 10))
 
     def _restart_adb_service(self):
         def task():
@@ -601,845 +941,1075 @@ class AndroidDoctorApp(ctk.CTk):
     # TAB 2: MOTHERBOARD & IC DIAGNOSTICS & BOOTROM SCANNER
     # =========================================================================
     def _build_board_diag_tab(self):
-        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color="#0d1117")
+        L = self._layout()
+        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color=BG_CANVAS)
         self.tab_frames["board_diag"] = tab
 
-        # Header
-        header = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        header.pack(fill="x", padx=15, pady=(15, 10))
-        ctk.CTkLabel(header, text=self._tr("board_title"), font=ctk.CTkFont(size=18, weight="bold"), text_color="#58a6ff").pack(anchor="w", padx=15, pady=(10, 2))
-        ctk.CTkLabel(header, text=self._tr("board_sub"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(anchor="w", padx=15, pady=(0, 10))
+        wrap = ctk.CTkFrame(tab, fg_color="transparent")
+        wrap.pack(fill="both", expand=True, padx=14, pady=12)
 
-        # Action Buttons
-        btn_bar = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        btn_bar.pack(fill="x", padx=15, pady=(0, 15))
+        make_hero_header(
+            wrap,
+            self._L(self._tr("board_title")),
+            self._L(self._tr("board_sub")),
+            L,
+            accent_color=ACCENT_CYAN,
+        )
 
-        btn_row1 = ctk.CTkFrame(btn_bar, fg_color="transparent")
-        btn_row1.pack(fill="x", padx=10, pady=(8, 4))
-
-        btn_row2 = ctk.CTkFrame(btn_bar, fg_color="transparent")
-        btn_row2.pack(fill="x", padx=10, pady=(0, 8))
-
-        # Row 1 Buttons
-        self.btn_run_pmic = ctk.CTkButton(btn_row1, text=self._tr("btn_pmic"), command=self.run_pmic_diag_async, fg_color="#1f6feb", hover_color="#388bfd")
-        self.btn_run_pmic.pack(side="left", padx=4)
-
-        self.btn_run_leakage = ctk.CTkButton(btn_row1, text=self._tr("btn_leakage"), command=self.run_leakage_test_async, fg_color="#da3633", hover_color="#f85149")
-        self.btn_run_leakage.pack(side="left", padx=4)
-
-        self.btn_scan_thermal = ctk.CTkButton(btn_row1, text=self._tr("btn_thermals"), command=self.run_thermal_scan_async, fg_color="#21262d", hover_color="#30363d")
-        self.btn_scan_thermal.pack(side="left", padx=4)
-
-        self.btn_scan_panics = ctk.CTkButton(btn_row1, text=self._tr("btn_panics"), command=self.run_panic_scan_async, fg_color="#21262d", hover_color="#30363d")
-        self.btn_scan_panics.pack(side="left", padx=4)
-
-        self.btn_scan_bootrom = ctk.CTkButton(btn_row1, text=self._tr("btn_scan_bootrom"), command=self.run_bootrom_scan_async, fg_color="#7c3aed", hover_color="#6d28d9")
-        self.btn_scan_bootrom.pack(side="left", padx=4)
-
-        self.btn_fast_charge = ctk.CTkButton(btn_row1, text=self._tr("btn_fast_charge"), command=self.run_fast_charge_diag_async, fg_color="#059669", hover_color="#10b981")
-        self.btn_fast_charge.pack(side="left", padx=4)
-
-        self.btn_reset_gauge = ctk.CTkButton(btn_row1, text=self._tr("btn_reset_gauge"), command=self.run_reset_gauge_async, fg_color="#d97706", hover_color="#f59e0b")
-        self.btn_reset_gauge.pack(side="left", padx=4)
-
-        # Row 2 Buttons
-        self.btn_nand_lifespan = ctk.CTkButton(btn_row2, text=self._tr("btn_nand_lifespan"), command=self.run_nand_lifespan_async, fg_color="#6366f1", hover_color="#4f46e5")
-        self.btn_nand_lifespan.pack(side="left", padx=4)
-
-        self.btn_speed_bench = ctk.CTkButton(btn_row2, text=self._tr("btn_speed_bench"), command=self.run_speed_bench_async, fg_color="#0891b2", hover_color="#0e7490")
-        self.btn_speed_bench.pack(side="left", padx=4)
-
-        self.btn_stress_test = ctk.CTkButton(btn_row2, text=self._tr("btn_stress_test"), command=self.run_stress_test_async, fg_color="#dc2626", hover_color="#b91c1c")
-        self.btn_stress_test.pack(side="left", padx=4)
-
-        self.btn_run_blackbox = ctk.CTkButton(btn_row2, text=self._tr("btn_run_blackbox"), command=self.run_blackbox_forensics_async, fg_color="#4338ca", hover_color="#3730a3")
-        self.btn_run_blackbox.pack(side="left", padx=4)
-
-        self.btn_run_root_forensics = ctk.CTkButton(btn_row2, text=self._tr("btn_run_root_forensics"), command=self.run_root_forensics_async, fg_color="#7c3aed", hover_color="#6d28d9")
-        self.btn_run_root_forensics.pack(side="left", padx=4)
-
-        self.btn_backup_efs_row = ctk.CTkButton(btn_row2, text=self._tr("btn_backup_efs_raw"), command=self.run_efs_backup_async, fg_color="#059669", hover_color="#10b981")
-        self.btn_backup_efs_row.pack(side="left", padx=4)
-
-        self.btn_toggle_telemetry = ctk.CTkButton(btn_row2, text=self._tr("btn_live_telemetry"), command=self._toggle_live_telemetry, fg_color="#0e7490", hover_color="#0891b2")
-        self.btn_toggle_telemetry.pack(side="left", padx=4)
+        # Responsive 4-Column Button Grid (Eliminates horizontal overflow on all widths)
+        board_specs = [
+            (self._L(self._tr("btn_pmic")), self.run_pmic_diag_async, "primary"),
+            (self._L(self._tr("btn_leakage")), self.run_leakage_test_async, "danger"),
+            (self._L(self._tr("btn_fast_charge")), self.run_fast_charge_diag_async, "success"),
+            (self._L(self._tr("btn_reset_gauge")), self.run_reset_gauge_async, "warning"),
+            (self._L(self._tr("btn_thermals")), self.run_thermal_scan_async, "secondary"),
+            (self._L(self._tr("btn_panics")), self.run_panic_scan_async, "secondary"),
+            (self._L(self._tr("btn_scan_bootrom")), self.run_bootrom_scan_async, "purple"),
+            (self._L(self._tr("btn_live_telemetry")), self._toggle_live_telemetry, "cyan"),
+            (self._L(self._tr("btn_nand_lifespan")), self.run_nand_lifespan_async, "purple"),
+            (self._L(self._tr("btn_speed_bench")), self.run_speed_bench_async, "cyan"),
+            (self._L(self._tr("btn_stress_test")), self.run_stress_test_async, "danger"),
+            (self._L(self._tr("btn_run_blackbox")), self.run_blackbox_forensics_async, "secondary"),
+            (self._L(self._tr("btn_run_root_forensics")), self.run_root_forensics_async, "purple"),
+            (self._L(self._tr("btn_backup_efs_raw")), self.run_efs_backup_async, "success"),
+        ]
+        _, b_btns = pack_button_grid(
+            wrap, board_specs, cols=3, is_rtl=L["is_rtl"], pady=(0, 12), height=38
+        )
+        (
+            self.btn_run_pmic,
+            self.btn_run_leakage,
+            self.btn_fast_charge,
+            self.btn_reset_gauge,
+            self.btn_scan_thermal,
+            self.btn_scan_panics,
+            self.btn_scan_bootrom,
+            self.btn_toggle_telemetry,
+            self.btn_nand_lifespan,
+            self.btn_speed_bench,
+            self.btn_stress_test,
+            self.btn_run_blackbox,
+            self.btn_run_root_forensics,
+            self.btn_backup_efs_row,
+        ) = b_btns
 
         # Live Hardware Telemetry Strip (1.5s Polling)
-        self.telemetry_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.telemetry_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(self.telemetry_card, text=self._tr("card_telemetry"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#38bdf8").pack(anchor="w", padx=15, pady=(10, 5))
-
+        self.telemetry_card, _ = make_card(
+            wrap, self._L(self._tr("card_telemetry")), ACCENT_CYAN, L
+        )
         telem_grid = ctk.CTkFrame(self.telemetry_card, fg_color="transparent")
-        telem_grid.pack(fill="x", padx=15, pady=(0, 15))
-        telem_grid.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        telem_grid.pack(fill="x", padx=14, pady=(0, 14))
+        telem_grid.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="board_telem")
 
-        # Voltage
-        box_v = ctk.CTkFrame(telem_grid, fg_color="#0d1117", corner_radius=6)
-        box_v.grid(row=0, column=0, padx=4, sticky="nsew")
-        ctk.CTkLabel(box_v, text=self._tr("ui.battery_voltage_fuel_gauge"), font=ctk.CTkFont(size=11), text_color="#8b949e").pack(padx=8, pady=(8, 2))
-        self.lbl_telem_volt = ctk.CTkLabel(box_v, text=self._tr("ui.mv"), font=ctk.CTkFont(size=16, weight="bold"), text_color="#58a6ff")
-        self.lbl_telem_volt.pack(padx=8, pady=(0, 8))
+        t_cols = (3, 2, 1, 0) if L["is_rtl"] else (0, 1, 2, 3)
+        t_v, self.lbl_telem_volt = make_telemetry_tile(
+            telem_grid,
+            self._L(self._tr("ui.battery_voltage_fuel_gauge")),
+            self._tr("ui.mv"),
+            ACCENT_BLUE,
+            L,
+        )
+        t_v.grid(row=0, column=t_cols[0], padx=4, sticky="nsew")
 
-        # Current Draw
-        box_c = ctk.CTkFrame(telem_grid, fg_color="#0d1117", corner_radius=6)
-        box_c.grid(row=0, column=1, padx=4, sticky="nsew")
-        ctk.CTkLabel(box_c, text=self._tr("ui.battery_current_incl_usb_charging"), font=ctk.CTkFont(size=11), text_color="#8b949e").pack(padx=8, pady=(8, 2))
-        self.lbl_telem_curr = ctk.CTkLabel(box_c, text=self._tr("ui.ma"), font=ctk.CTkFont(size=16, weight="bold"), text_color="#f59e0b")
-        self.lbl_telem_curr.pack(padx=8, pady=(0, 8))
+        t_c, self.lbl_telem_curr = make_telemetry_tile(
+            telem_grid,
+            self._L(self._tr("ui.battery_current_incl_usb_charging")),
+            self._tr("ui.ma"),
+            ACCENT_AMBER,
+            L,
+        )
+        t_c.grid(row=0, column=t_cols[1], padx=4, sticky="nsew")
 
-        # Battery Temp
-        box_bt = ctk.CTkFrame(telem_grid, fg_color="#0d1117", corner_radius=6)
-        box_bt.grid(row=0, column=2, padx=4, sticky="nsew")
-        ctk.CTkLabel(box_bt, text=self._tr("ui.battery_temp"), font=ctk.CTkFont(size=11), text_color="#8b949e").pack(padx=8, pady=(8, 2))
-        self.lbl_telem_batt_temp = ctk.CTkLabel(box_bt, text="— °C", font=ctk.CTkFont(size=16, weight="bold"), text_color="#10b981")
-        self.lbl_telem_batt_temp.pack(padx=8, pady=(0, 8))
+        t_bt, self.lbl_telem_batt_temp = make_telemetry_tile(
+            telem_grid,
+            self._L(self._tr("ui.battery_temp")),
+            "— °C",
+            ACCENT_GREEN,
+            L,
+        )
+        t_bt.grid(row=0, column=t_cols[2], padx=4, sticky="nsew")
 
-        # CPU Temp
-        box_ct = ctk.CTkFrame(telem_grid, fg_color="#0d1117", corner_radius=6)
-        box_ct.grid(row=0, column=3, padx=4, sticky="nsew")
-        ctk.CTkLabel(box_ct, text=self._tr("ui.peak_cpu_temp"), font=ctk.CTkFont(size=11), text_color="#8b949e").pack(padx=8, pady=(8, 2))
-        self.lbl_telem_cpu_temp = ctk.CTkLabel(box_ct, text="— °C", font=ctk.CTkFont(size=16, weight="bold"), text_color="#f87171")
-        self.lbl_telem_cpu_temp.pack(padx=8, pady=(0, 8))
+        t_ct, self.lbl_telem_cpu_temp = make_telemetry_tile(
+            telem_grid,
+            self._L(self._tr("ui.peak_cpu_temp")),
+            "— °C",
+            ACCENT_RED,
+            L,
+        )
+        t_ct.grid(row=0, column=t_cols[3], padx=4, sticky="nsew")
 
         # PMIC Status Card
-        self.pmic_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.pmic_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(self.pmic_card, text=self._tr("card_pmic"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.pmic_text = ctk.CTkTextbox(self.pmic_card, height=130, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.pmic_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.pmic_text.insert("end", self._tr("ui.click_analyze_pmic_charging_ic_to"))
+        self.pmic_card, badge = make_card(
+            wrap, self._L(self._tr("card_pmic")), ACCENT_BLUE, L, show_badge=True
+        )
+        self.status_pills["pmic"] = badge
+        self.pmic_text = make_console_box(
+            self.pmic_card,
+            135,
+            L,
+            self._L(self._tr("ui.click_analyze_pmic_charging_ic_to")),
+        )
 
         # Fast Charge Protocol & Power Card
-        self.fast_charge_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.fast_charge_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(self.fast_charge_card, text=self._tr("card_fast_charge"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#34d399").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.fast_charge_text = ctk.CTkTextbox(self.fast_charge_card, height=110, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.fast_charge_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.fast_charge_text.insert("end", self._tr("ui.click_diagnose_fast_charge_protocol_to"))
+        self.fast_charge_card, badge = make_card(
+            wrap, self._L(self._tr("card_fast_charge")), ACCENT_GREEN, L, show_badge=True
+        )
+        self.status_pills["fast_charge"] = badge
+        self.fast_charge_text = make_console_box(
+            self.fast_charge_card,
+            115,
+            L,
+            self._L(self._tr("ui.click_diagnose_fast_charge_protocol_to")),
+        )
 
         # NAND Flash Wear & Speed Benchmark Card
-        self.nand_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.nand_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(self.nand_card, text=self._tr("card_nand_wear"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#818cf8").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.nand_text = ctk.CTkTextbox(self.nand_card, height=115, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.nand_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.nand_text.insert("end", self._tr("ui.click_emmc_ufs_lifespan_wear_or"))
+        self.nand_card, badge = make_card(
+            wrap, self._L(self._tr("card_nand_wear")), ACCENT_PURPLE, L, show_badge=True
+        )
+        self.status_pills["nand"] = badge
+        self.nand_text = make_console_box(
+            self.nand_card,
+            120,
+            L,
+            self._L(self._tr("ui.click_emmc_ufs_lifespan_wear_or")),
+        )
 
         # 30-Second CPU & PMIC Load / Stress Test Card
-        self.stress_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.stress_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(self.stress_card, text=self._tr("card_stress_test"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#f87171").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.stress_progress = ctk.CTkProgressBar(self.stress_card, height=10, progress_color="#dc2626")
+        self.stress_card, badge = make_card(
+            wrap, self._L(self._tr("card_stress_test")), ACCENT_RED, L, show_badge=True
+        )
+        self.status_pills["stress"] = badge
+        self.stress_progress = ctk.CTkProgressBar(
+            self.stress_card, height=10, corner_radius=5, fg_color=BORDER_SUBTLE, progress_color=ACCENT_RED
+        )
         self.stress_progress.set(0)
-        self.stress_progress.pack(fill="x", padx=15, pady=(5, 8))
-
-        self.stress_lbl = ctk.CTkLabel(self.stress_card, text=self._tr("ui.ready_will_apply_a_30s_multi"), font=ctk.CTkFont(size=12), text_color="#8b949e")
-        self.stress_lbl.pack(anchor="w", padx=15, pady=(0, 5))
-
-        self.stress_text = ctk.CTkTextbox(self.stress_card, height=115, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.stress_text.pack(fill="x", padx=15, pady=(0, 15))
+        self.stress_progress.pack(fill="x", padx=14, pady=(2, 6))
+        self.stress_lbl = ctk.CTkLabel(
+            self.stress_card,
+            text=self._L(self._tr("ui.ready_will_apply_a_30s_multi")),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            text_color=TEXT_SECONDARY,
+            anchor=L["anchor"],
+            justify=L["justify"],
+        )
+        self.stress_lbl.pack(fill="x", padx=14, pady=(0, 6))
+        self.stress_text = make_console_box(self.stress_card, 115, L)
 
         # BootROM / Dead Phone Diagnosis Card
-        self.bootrom_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.bootrom_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(self.bootrom_card, text=self._tr("card_bootrom"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#a78bfa").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.bootrom_text = ctk.CTkTextbox(self.bootrom_card, height=110, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.bootrom_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.bootrom_text.insert("end", self._tr("ui.click_dead_phone_bootrom_usb_scanner"))
+        self.bootrom_card, badge = make_card(
+            wrap, self._L(self._tr("card_bootrom")), ACCENT_PURPLE, L, show_badge=True
+        )
+        self.status_pills["bootrom"] = badge
+        self.bootrom_text = make_console_box(
+            self.bootrom_card,
+            115,
+            L,
+            self._L(self._tr("ui.click_dead_phone_bootrom_usb_scanner")),
+        )
 
         # Leakage Test Live Output Card
-        self.leakage_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.leakage_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(self.leakage_card, text=self._tr("card_leakage"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.leakage_progress = ctk.CTkProgressBar(self.leakage_card, height=10, progress_color="#da3633")
+        self.leakage_card, badge = make_card(
+            wrap, self._L(self._tr("card_leakage")), ACCENT_AMBER, L, show_badge=True
+        )
+        self.status_pills["leakage"] = badge
+        self.leakage_progress = ctk.CTkProgressBar(
+            self.leakage_card, height=10, corner_radius=5, fg_color=BORDER_SUBTLE, progress_color=ACCENT_RED
+        )
         self.leakage_progress.set(0)
-        self.leakage_progress.pack(fill="x", padx=15, pady=(5, 8))
-
-        self.leakage_lbl = ctk.CTkLabel(self.leakage_card, text=self._tr("ui.ready_needs_wireless_adb_and_no"), font=ctk.CTkFont(size=12), text_color="#8b949e")
-        self.leakage_lbl.pack(anchor="w", padx=15, pady=(0, 5))
-
-        self.leakage_text = ctk.CTkTextbox(self.leakage_card, height=110, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.leakage_text.pack(fill="x", padx=15, pady=(0, 15))
+        self.leakage_progress.pack(fill="x", padx=14, pady=(2, 6))
+        self.leakage_lbl = ctk.CTkLabel(
+            self.leakage_card,
+            text=self._L(self._tr("ui.ready_needs_wireless_adb_and_no")),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            text_color=TEXT_SECONDARY,
+            anchor=L["anchor"],
+            justify=L["justify"],
+        )
+        self.leakage_lbl.pack(fill="x", padx=14, pady=(0, 6))
+        self.leakage_text = make_console_box(self.leakage_card, 115, L)
 
         # Thermal Zones & Kernel Panic Dual Grid
-        dual_grid = ctk.CTkFrame(tab, fg_color="transparent")
-        dual_grid.pack(fill="both", expand=True, padx=15, pady=0)
-        dual_grid.grid_columnconfigure((0, 1), weight=1)
+        dual_grid = ctk.CTkFrame(wrap, fg_color="transparent")
+        dual_grid.pack(fill="both", expand=True, pady=(0, 12))
+        dual_grid.grid_columnconfigure((0, 1), weight=1, uniform="board_dual")
 
-        # Thermal Zones List
-        self.thermal_card = ctk.CTkFrame(dual_grid, fg_color="#161b22", corner_radius=8)
-        self.thermal_card.grid(row=0, column=0, padx=(0, 8), pady=0, sticky="nsew")
-        ctk.CTkLabel(self.thermal_card, text=self._tr("card_thermal"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
+        col_therm = 1 if L["is_rtl"] else 0
+        col_panic = 0 if L["is_rtl"] else 1
 
-        self.thermal_text = ctk.CTkTextbox(self.thermal_card, height=180, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.thermal_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        self.thermal_card, badge = make_card(
+            dual_grid, self._L(self._tr("card_thermal")), ACCENT_AMBER, L, show_badge=True, pack_card=False
+        )
+        self.status_pills["thermal"] = badge
+        self.thermal_card.grid(
+            row=0, column=col_therm, padx=(6, 0) if L["is_rtl"] else (0, 6), sticky="nsew"
+        )
+        self.thermal_text = make_console_box(self.thermal_card, 180, L)
 
-        # Kernel & Panic Logs
-        self.panic_card = ctk.CTkFrame(dual_grid, fg_color="#161b22", corner_radius=8)
-        self.panic_card.grid(row=0, column=1, padx=(8, 0), pady=0, sticky="nsew")
-        ctk.CTkLabel(self.panic_card, text=self._tr("card_panics"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.panic_text = ctk.CTkTextbox(self.panic_card, height=180, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.panic_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        self.panic_card, badge = make_card(
+            dual_grid, self._L(self._tr("card_panics")), ACCENT_RED, L, show_badge=True, pack_card=False
+        )
+        self.status_pills["panic"] = badge
+        self.panic_card.grid(
+            row=0, column=col_panic, padx=(0, 6) if L["is_rtl"] else (6, 0), sticky="nsew"
+        )
+        self.panic_text = make_console_box(self.panic_card, 180, L)
 
         # Blackbox Forensics Card
-        self.blackbox_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.blackbox_card.pack(fill="x", padx=15, pady=(15, 15))
-        ctk.CTkLabel(self.blackbox_card, text=self._tr("card_blackbox"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#a5b4fc").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.blackbox_text = ctk.CTkTextbox(self.blackbox_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.blackbox_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.blackbox_text.insert("end", self._tr("ui.click_run_blackbox_forensics_to_parse"))
+        self.blackbox_card, badge = make_card(
+            wrap, self._L(self._tr("card_blackbox")), ACCENT_BLUE, L, show_badge=True
+        )
+        self.status_pills["blackbox"] = badge
+        self.blackbox_text = make_console_box(
+            self.blackbox_card,
+            140,
+            L,
+            self._L(self._tr("ui.click_run_blackbox_forensics_to_parse")),
+        )
 
         # Root Forensics Pro & EFS Backup Card
-        self.root_forensics_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.root_forensics_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(self.root_forensics_card, text=self._tr("card_root_forensics"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#d2a8ff").pack(anchor="w", padx=15, pady=(10, 5))
+        self.root_forensics_card, badge = make_card(
+            wrap, self._L(self._tr("card_root_forensics")), ACCENT_PURPLE, L, show_badge=True
+        )
+        self.status_pills["root_forensics"] = badge
 
         rf_btn_row = ctk.CTkFrame(self.root_forensics_card, fg_color="transparent")
-        rf_btn_row.pack(fill="x", padx=15, pady=(0, 8))
-        self.btn_run_rf = ctk.CTkButton(rf_btn_row, text=self._tr("btn_run_root_forensics"), command=self.run_root_forensics_async, fg_color="#7c3aed", hover_color="#6d28d9")
-        self.btn_run_rf.pack(side="left", padx=(0, 8))
-        self.btn_backup_efs_card = ctk.CTkButton(rf_btn_row, text=self._tr("btn_backup_efs_raw"), command=self.run_efs_backup_async, fg_color="#059669", hover_color="#10b981")
-        self.btn_backup_efs_card.pack(side="left", padx=0)
+        rf_btn_row.pack(fill="x", padx=14, pady=(0, 8))
+        self.btn_run_rf = make_button(
+            rf_btn_row, self._L(self._tr("btn_run_root_forensics")), self.run_root_forensics_async, variant="purple"
+        )
+        self.btn_run_rf.pack(side=L["lead"], padx=4)
+        self.btn_backup_efs_card = make_button(
+            rf_btn_row, self._L(self._tr("btn_backup_efs_raw")), self.run_efs_backup_async, variant="success"
+        )
+        self.btn_backup_efs_card.pack(side=L["lead"], padx=4)
 
-        self.root_forensics_text = ctk.CTkTextbox(self.root_forensics_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.root_forensics_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.root_forensics_text.insert("end", self._tr("ui.click_kernel_ramoops_forensics_root_to"))
+        self.root_forensics_text = make_console_box(
+            self.root_forensics_card,
+            140,
+            L,
+            self._L(self._tr("ui.click_kernel_ramoops_forensics_root_to")),
+        )
 
     # =========================================================================
     # TAB 3: HARDWARE, SENSORS & PERIPHERALS TESTER
     # =========================================================================
     def _build_hardware_tester_tab(self):
-        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color="#0d1117")
+        L = self._layout()
+        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color=BG_CANVAS)
         self.tab_frames["hardware_tester"] = tab
 
-        # Header
-        header = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        header.pack(fill="x", padx=15, pady=(15, 10))
-        ctk.CTkLabel(header, text=self._tr("hw_title"), font=ctk.CTkFont(size=18, weight="bold"), text_color="#58a6ff").pack(anchor="w", padx=15, pady=(10, 2))
-        ctk.CTkLabel(header, text=self._tr("hw_sub"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(anchor="w", padx=15, pady=(0, 10))
+        wrap = ctk.CTkFrame(tab, fg_color="transparent")
+        wrap.pack(fill="both", expand=True, padx=14, pady=12)
 
-        # Action Buttons
-        btn_bar = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        btn_bar.pack(fill="x", padx=15, pady=(0, 15))
-
-        btn_row1 = ctk.CTkFrame(btn_bar, fg_color="transparent")
-        btn_row1.pack(fill="x", padx=10, pady=(8, 4))
-
-        btn_row2 = ctk.CTkFrame(btn_bar, fg_color="transparent")
-        btn_row2.pack(fill="x", padx=10, pady=(0, 8))
-
-        self.btn_audit_hw = ctk.CTkButton(btn_row1, text=self._tr("btn_audit_hw"), command=self.run_hardware_audit_async, fg_color="#1f6feb", hover_color="#388bfd")
-        self.btn_audit_hw.pack(side="left", padx=4)
-
-        self.btn_test_keys = ctk.CTkButton(btn_row1, text=self._tr("ui.test_physical_keys_live"), command=self.run_buttons_test_async, fg_color="#21262d", hover_color="#30363d")
-        self.btn_test_keys.pack(side="left", padx=4)
-
-        self.btn_test_vib = ctk.CTkButton(btn_row1, text=self._tr("btn_test_vib"), command=self._trigger_vibration, fg_color="#21262d", hover_color="#30363d")
-        self.btn_test_vib.pack(side="left", padx=4)
-
-        self.btn_test_audio = ctk.CTkButton(btn_row1, text=self._tr("btn_test_audio"), command=self._trigger_audio, fg_color="#21262d", hover_color="#30363d")
-        self.btn_test_audio.pack(side="left", padx=4)
-
-        self.btn_storage_bench = ctk.CTkButton(btn_row1, text=self._tr("btn_storage_bench"), command=self.run_storage_benchmark_async, fg_color="#7c3aed", hover_color="#6d28d9")
-        self.btn_storage_bench.pack(side="left", padx=4)
-
-        # Row 2: LCD Color Test, Loudspeaker Sine Sweep, Companion Diag, Touch Matrix Grid, Pointer Overlay
-        self.btn_lcd_color_test = ctk.CTkButton(btn_row2, text=self._tr("btn_lcd_color_test"), command=self.run_screen_color_test_async, fg_color="#ea580c", hover_color="#c2410c")
-        self.btn_lcd_color_test.pack(side="left", padx=4)
-
-        self.btn_speaker_test = ctk.CTkButton(btn_row2, text=self._tr("btn_speaker_test"), command=self.run_speaker_tone_async, fg_color="#10b981", hover_color="#059669")
-        self.btn_speaker_test.pack(side="left", padx=4)
-
-        self.btn_companion_diag = ctk.CTkButton(btn_row2, text=self._tr("btn_companion_diag"), command=self.run_companion_diag_async, fg_color="#6366f1", hover_color="#4f46e5")
-        self.btn_companion_diag.pack(side="left", padx=4)
-
-        self.btn_touch_matrix = ctk.CTkButton(btn_row2, text=self._tr("btn_touch_matrix"), command=self.run_touch_matrix_async, fg_color="#0891b2", hover_color="#06b6d4")
-        self.btn_touch_matrix.pack(side="left", padx=4)
-
-        self.switch_pointer = ctk.CTkSwitch(
-            btn_row2,
-            text=self._tr("switch_pointer"),
-            variable=self.pointer_location_var,
-            command=self._toggle_pointer_location
+        make_hero_header(
+            wrap,
+            self._L(self._tr("hw_title")),
+            self._L(self._tr("hw_sub")),
+            L,
+            accent_color=ACCENT_BLUE,
         )
-        self.switch_pointer.pack(side="left", padx=10)
+
+        # Responsive 3x3 Button Grid (Zero clipping on all widths)
+        hw_specs = [
+            (self._L(self._tr("btn_audit_hw")), self.run_hardware_audit_async, "primary"),
+            (self._L(self._tr("ui.test_physical_keys_live")), self.run_buttons_test_async, "secondary"),
+            (self._L(self._tr("btn_storage_bench")), self.run_storage_benchmark_async, "purple"),
+            (self._L(self._tr("btn_test_vib")), self._trigger_vibration, "secondary"),
+            (self._L(self._tr("btn_test_audio")), self._trigger_audio, "secondary"),
+            (self._L(self._tr("btn_speaker_test")), self.run_speaker_tone_async, "success"),
+            (self._L(self._tr("btn_lcd_color_test")), self.run_screen_color_test_async, "warning"),
+            (self._L(self._tr("btn_touch_matrix")), self.run_touch_matrix_async, "cyan"),
+            (self._L(self._tr("btn_companion_diag")), self.run_companion_diag_async, "purple"),
+        ]
+        _, h_btns = pack_button_grid(
+            wrap, hw_specs, cols=3, is_rtl=L["is_rtl"], pady=(0, 8), height=36
+        )
+        (
+            self.btn_audit_hw,
+            self.btn_test_keys,
+            self.btn_storage_bench,
+            self.btn_test_vib,
+            self.btn_test_audio,
+            self.btn_speaker_test,
+            self.btn_lcd_color_test,
+            self.btn_touch_matrix,
+            self.btn_companion_diag,
+        ) = h_btns
+
+        # Touch Overlay Switch Strip
+        sw_strip = ctk.CTkFrame(
+            wrap,
+            fg_color=BG_CARD,
+            corner_radius=10,
+            border_width=1,
+            border_color=BORDER_SUBTLE,
+        )
+        sw_strip.pack(fill="x", pady=(0, 12))
+        self.switch_pointer = ctk.CTkSwitch(
+            sw_strip,
+            text=self._L(self._tr("switch_pointer")),
+            variable=self.pointer_location_var,
+            command=self._toggle_pointer_location,
+            progress_color=ACCENT_BLUE,
+            text_color=TEXT_PRIMARY,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
+        )
+        self.switch_pointer.pack(side=L["lead"], padx=14, pady=8)
+
+        col_a = 1 if L["is_rtl"] else 0
+        col_b = 0 if L["is_rtl"] else 1
+        pad_a = (6, 0) if L["is_rtl"] else (0, 6)
+        pad_b = (0, 6) if L["is_rtl"] else (6, 0)
 
         # Content Grid 1: Sensors & Cameras
-        hw_grid = ctk.CTkFrame(tab, fg_color="transparent")
-        hw_grid.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        hw_grid.grid_columnconfigure((0, 1), weight=1)
+        hw_grid = ctk.CTkFrame(wrap, fg_color="transparent")
+        hw_grid.pack(fill="both", expand=True, pady=(0, 12))
+        hw_grid.grid_columnconfigure((0, 1), weight=1, uniform="hw_dual_top")
 
-        # Sensors List Card
-        self.sensor_card = ctk.CTkFrame(hw_grid, fg_color="#161b22", corner_radius=8)
-        self.sensor_card.grid(row=0, column=0, padx=(0, 8), pady=0, sticky="nsew")
-        ctk.CTkLabel(self.sensor_card, text=self._tr("card_sensors"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
+        self.sensor_card, badge = make_card(
+            hw_grid, self._L(self._tr("card_sensors")), ACCENT_BLUE, L, show_badge=True, pack_card=False
+        )
+        self.status_pills["sensors"] = badge
+        self.sensor_card.grid(row=0, column=col_a, padx=pad_a, sticky="nsew")
+        self.sensors_text = make_console_box(self.sensor_card, 210, L)
 
-        self.sensors_text = ctk.CTkTextbox(self.sensor_card, height=220, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.sensors_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        self.camera_card, badge = make_card(
+            hw_grid, self._L(self._tr("card_cameras")), ACCENT_CYAN, L, show_badge=True, pack_card=False
+        )
+        self.status_pills["cameras"] = badge
+        self.camera_card.grid(row=0, column=col_b, padx=pad_b, sticky="nsew")
+        self.camera_text = make_console_box(self.camera_card, 210, L)
 
-        # Cameras & Audio Card
-        self.camera_card = ctk.CTkFrame(hw_grid, fg_color="#161b22", corner_radius=8)
-        self.camera_card.grid(row=0, column=1, padx=(8, 0), pady=0, sticky="nsew")
-        ctk.CTkLabel(self.camera_card, text=self._tr("card_cameras"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
+        # Content Grid 2: Low-Level Peripherals
+        periph_grid = ctk.CTkFrame(wrap, fg_color="transparent")
+        periph_grid.pack(fill="both", expand=True)
+        periph_grid.grid_columnconfigure((0, 1), weight=1, uniform="hw_dual_bot")
 
-        self.camera_text = ctk.CTkTextbox(self.camera_card, height=220, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.camera_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        def _grid_card(row: int, col: int, padx: tuple[int, int], pady: tuple[int, int], title_key: str, accent: str, pill_key: str | None, height: int, init_key: str | None = None):
+            card, bdg = make_card(
+                periph_grid,
+                self._L(self._tr(title_key)),
+                accent,
+                L,
+                show_badge=(pill_key is not None),
+                pack_card=False,
+            )
+            if pill_key and bdg is not None:
+                self.status_pills[pill_key] = bdg
+            card.grid(row=row, column=col, padx=padx, pady=pady, sticky="nsew")
+            init_txt = self._L(self._tr(init_key)) if init_key else ""
+            box = make_console_box(card, height, L, init_txt)
+            return card, box
 
-        # Content Grid 2: Low-Level Peripherals (Fingerprint, Keys, SIM, Display Backlight)
-        periph_grid = ctk.CTkFrame(tab, fg_color="transparent")
-        periph_grid.pack(fill="both", expand=True, padx=15, pady=0)
-        periph_grid.grid_columnconfigure((0, 1), weight=1)
+        self.fp_card, self.fp_text = _grid_card(0, col_a, pad_a, (0, 12), "card_fingerprint", ACCENT_BLUE, "fp", 140)
+        self.keys_card, self.keys_text = _grid_card(0, col_b, pad_b, (0, 12), "card_keys", ACCENT_GREEN, "keys", 140)
 
-        # Fingerprint Sensor Card
-        self.fp_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
-        self.fp_card.grid(row=0, column=0, padx=(0, 8), pady=(0, 15), sticky="nsew")
-        ctk.CTkLabel(self.fp_card, text=self._tr("card_fingerprint"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
+        self.sim_card, self.sim_text = _grid_card(1, col_a, pad_a, (0, 12), "card_sim", ACCENT_CYAN, "sim", 140)
+        self.backlight_card, self.backlight_text = _grid_card(1, col_b, pad_b, (0, 12), "card_backlight", ACCENT_AMBER, "backlight", 140)
 
-        self.fp_text = ctk.CTkTextbox(self.fp_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.fp_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        self.wifi_card, self.wifi_text = _grid_card(2, col_a, pad_a, (0, 12), "card_wifi", ACCENT_BLUE, "wifi", 140)
+        self.bt_card, self.bt_text = _grid_card(2, col_b, pad_b, (0, 12), "card_bluetooth", ACCENT_PURPLE, "bt", 140)
 
-        # Physical Keys Continuity Card
-        self.keys_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
-        self.keys_card.grid(row=0, column=1, padx=(8, 0), pady=(0, 15), sticky="nsew")
-        ctk.CTkLabel(self.keys_card, text=self._tr("card_keys"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
+        self.chips_card, badge = make_card(
+            periph_grid, self._L(self._tr("card_chips")), ACCENT_CYAN, L, show_badge=True, pack_card=False
+        )
+        self.status_pills["chips"] = badge
+        self.chips_card.grid(row=3, column=0, columnspan=2, padx=0, pady=(0, 12), sticky="nsew")
+        self.chips_text = make_console_box(self.chips_card, 110, L)
 
-        self.keys_text = ctk.CTkTextbox(self.keys_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.keys_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        self.storage_card, self.storage_text = _grid_card(
+            4, col_a, pad_a, (0, 12), "card_storage_bench", ACCENT_PURPLE, "storage", 145, "ui.click_test_storage_wear_speed_to"
+        )
+        self.touch_card, self.touch_text = _grid_card(
+            4, col_b, pad_b, (0, 12), "card_touch_matrix", ACCENT_CYAN, None, 145, "ui.click_interactive_touch_digitizer_grid_test"
+        )
 
-        # SIM Card Tray & Baseband Card
-        self.sim_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
-        self.sim_card.grid(row=1, column=0, padx=(0, 8), pady=0, sticky="nsew")
-        ctk.CTkLabel(self.sim_card, text=self._tr("card_sim"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.sim_text = ctk.CTkTextbox(self.sim_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.sim_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-
-        # Display Panel & Backlight IC Card
-        self.backlight_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
-        self.backlight_card.grid(row=1, column=1, padx=(8, 0), pady=0, sticky="nsew")
-        ctk.CTkLabel(self.backlight_card, text=self._tr("card_backlight"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.backlight_text = ctk.CTkTextbox(self.backlight_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.backlight_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-
-        # Wi-Fi Chipset Card
-        self.wifi_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
-        self.wifi_card.grid(row=2, column=0, padx=(0, 8), pady=(15, 15), sticky="nsew")
-        ctk.CTkLabel(self.wifi_card, text=self._tr("card_wifi"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.wifi_text = ctk.CTkTextbox(self.wifi_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.wifi_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-
-        # Bluetooth Card
-        self.bt_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
-        self.bt_card.grid(row=2, column=1, padx=(8, 0), pady=(15, 15), sticky="nsew")
-        ctk.CTkLabel(self.bt_card, text=self._tr("card_bluetooth"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.bt_text = ctk.CTkTextbox(self.bt_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.bt_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-
-        # Additional Peripherals (GPS, NFC, OTG)
-        self.chips_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
-        self.chips_card.grid(row=3, column=0, columnspan=2, padx=0, pady=(0, 15), sticky="nsew")
-        ctk.CTkLabel(self.chips_card, text=self._tr("card_chips"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.chips_text = ctk.CTkTextbox(self.chips_card, height=105, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.chips_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-
-        # Storage Benchmark & Wear-out Card (eMMC / UFS)
-        self.storage_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
-        self.storage_card.grid(row=4, column=0, padx=(0, 8), pady=0, sticky="nsew")
-        ctk.CTkLabel(self.storage_card, text=self._tr("card_storage_bench"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#a78bfa").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.storage_text = ctk.CTkTextbox(self.storage_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.storage_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        self.storage_text.insert("end", self._tr("ui.click_test_storage_wear_speed_to"))
-
-        # Touch Matrix Digitizer Card
-        self.touch_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
-        self.touch_card.grid(row=4, column=1, padx=(8, 0), pady=0, sticky="nsew")
-        ctk.CTkLabel(self.touch_card, text=self._tr("card_touch_matrix"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#38bdf8").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.touch_text = ctk.CTkTextbox(self.touch_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.touch_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        self.touch_text.insert("end", self._tr("ui.click_interactive_touch_digitizer_grid_test"))
-
-        # Audio Codec IC & ALSA Soundcards Card
-        self.audio_codec_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
-        self.audio_codec_card.grid(row=5, column=0, padx=(0, 8), pady=(15, 0), sticky="nsew")
-        ctk.CTkLabel(self.audio_codec_card, text=self._tr("card_audio_codec"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#f472b6").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.audio_codec_text = ctk.CTkTextbox(self.audio_codec_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.audio_codec_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        self.audio_codec_text.insert("end", self._tr("ui.inspects_alsa_soundcards_audio_codec_ic"))
-
-        # Display panel info & verified boot state card
-        self.panel_info_card = ctk.CTkFrame(periph_grid, fg_color="#161b22", corner_radius=8)
-        self.panel_info_card.grid(row=5, column=1, padx=(8, 0), pady=(15, 0), sticky="nsew")
-        ctk.CTkLabel(self.panel_info_card, text=self._tr("card_panel_info"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#fbbf24").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.panel_info_text = ctk.CTkTextbox(self.panel_info_card, height=140, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.panel_info_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        self.panel_info_text.insert("end", self._tr("ui.reads_the_kernel_reported_display_controller"))
+        self.audio_codec_card, self.audio_codec_text = _grid_card(
+            5, col_a, pad_a, (0, 0), "card_audio_codec", "#f472b6", "audio_codec", 145, "ui.inspects_alsa_soundcards_audio_codec_ic"
+        )
+        self.panel_info_card, self.panel_info_text = _grid_card(
+            5, col_b, pad_b, (0, 0), "card_panel_info", ACCENT_AMBER, "panel_info", 145, "ui.reads_the_kernel_reported_display_controller"
+        )
 
     # =========================================================================
     # TAB 4: MALWARE HUNTER & SPYWARE AUDITOR
     # =========================================================================
     def _build_malware_hunter_tab(self):
-        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color="#0d1117")
+        L = self._layout()
+        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color=BG_CANVAS)
         self.tab_frames["malware_hunter"] = tab
 
-        header = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        header.pack(fill="x", padx=15, pady=(15, 10))
-        ctk.CTkLabel(header, text=self._tr("malware_title"), font=ctk.CTkFont(size=18, weight="bold"), text_color="#58a6ff").pack(anchor="w", padx=15, pady=(10, 2))
-        ctk.CTkLabel(header, text=self._tr("malware_sub"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(anchor="w", padx=15, pady=(0, 10))
+        wrap = ctk.CTkFrame(tab, fg_color="transparent")
+        wrap.pack(fill="both", expand=True, padx=14, pady=12)
 
-        # Action Buttons
-        btn_bar = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        btn_bar.pack(fill="x", padx=15, pady=(0, 15))
+        make_hero_header(
+            wrap,
+            self._L(self._tr("malware_title")),
+            self._L(self._tr("malware_sub")),
+            L,
+            accent_color=ACCENT_RED,
+        )
 
-        self.btn_run_sec = ctk.CTkButton(btn_bar, text=self._tr("btn_run_sec"), command=self.run_security_audit_async, fg_color="#da3633", hover_color="#f85149")
-        self.btn_run_sec.pack(side="left", padx=15, pady=10)
+        # Responsive 3x2 Button Grid
+        sec_specs = [
+            (self._L(self._tr("btn_run_sec")), self.run_security_audit_async, "danger"),
+            (self._L(self._tr("btn_sniff_net")), self.run_network_sniff_async, "secondary"),
+            (self._L(self._tr("btn_scan_bloat")), self.run_oem_bloat_scan_async, "purple"),
+            (self._L(self._tr("btn_debloat_selected")), self.run_safe_debloat_all_async, "danger"),
+            (self._L(self._tr("btn_restore_debloat")), self.run_restore_all_debloated_async, "success"),
+            (self._L(self._tr("btn_rollback")), self._show_rollback_dialog, "secondary"),
+        ]
+        _, s_btns = pack_button_grid(
+            wrap, sec_specs, cols=3, is_rtl=L["is_rtl"], pady=(0, 10), height=36
+        )
+        (
+            self.btn_run_sec,
+            self.btn_sniff_net,
+            self.btn_scan_bloat,
+            self.btn_debloat_all,
+            self.btn_restore_bloat,
+            self.btn_view_rollback,
+        ) = s_btns
 
-        self.btn_sniff_net = ctk.CTkButton(btn_bar, text=self._tr("btn_sniff_net"), command=self.run_network_sniff_async, fg_color="#21262d", hover_color="#30363d")
-        self.btn_sniff_net.pack(side="left", padx=5, pady=10)
-
-        self.btn_scan_bloat = ctk.CTkButton(btn_bar, text=self._tr("btn_scan_bloat"), command=self.run_oem_bloat_scan_async, fg_color="#7c3aed", hover_color="#6d28d9")
-        self.btn_scan_bloat.pack(side="left", padx=5, pady=10)
-
-        self.btn_debloat_all = ctk.CTkButton(btn_bar, text=self._tr("btn_debloat_selected"), command=self.run_safe_debloat_all_async, fg_color="#b91c1c", hover_color="#991b1b")
-        self.btn_debloat_all.pack(side="left", padx=5, pady=10)
-
-        self.btn_restore_bloat = ctk.CTkButton(btn_bar, text=self._tr("btn_restore_debloat"), command=self.run_restore_all_debloated_async, fg_color="#059669", hover_color="#047857")
-        self.btn_restore_bloat.pack(side="left", padx=5, pady=10)
-
-        self.btn_view_rollback = ctk.CTkButton(btn_bar, text=self._tr("btn_rollback"), command=self._show_rollback_dialog, fg_color="#21262d", hover_color="#30363d")
-        self.btn_view_rollback.pack(side="left", padx=5, pady=10)
-
-        # Scan Status Bar
-        self.sec_progress = ctk.CTkProgressBar(tab, height=10, progress_color="#da3633")
+        # Scan Status Card
+        prog_card = ctk.CTkFrame(
+            wrap,
+            fg_color=BG_CARD,
+            corner_radius=10,
+            border_width=1,
+            border_color=BORDER_SUBTLE,
+        )
+        prog_card.pack(fill="x", pady=(0, 12))
+        self.sec_progress = ctk.CTkProgressBar(
+            prog_card, height=10, corner_radius=5, fg_color=BORDER_SUBTLE, progress_color=ACCENT_RED
+        )
         self.sec_progress.set(0)
-        self.sec_progress.pack(fill="x", padx=15, pady=(0, 5))
-
-        self.sec_status_lbl = ctk.CTkLabel(tab, text=self._tr("ui.scanner_ready"), font=ctk.CTkFont(size=12), text_color="#8b949e")
-        self.sec_status_lbl.pack(anchor="w", padx=15, pady=(0, 15))
+        self.sec_progress.pack(fill="x", padx=14, pady=(12, 6))
+        self.sec_status_lbl = ctk.CTkLabel(
+            prog_card,
+            text=self._L(self._tr("ui.scanner_ready")),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            text_color=TEXT_SECONDARY,
+            anchor=L["anchor"],
+            justify=L["justify"],
+        )
+        self.sec_status_lbl.pack(fill="x", padx=14, pady=(0, 10))
 
         # Flagged Threats Box
-        self.threats_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.threats_card.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        ctk.CTkLabel(self.threats_card, text=self._tr("card_threats"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
+        self.threats_card, badge = make_card(
+            wrap, self._L(self._tr("card_threats")), ACCENT_RED, L, show_badge=True
+        )
+        self.status_pills["user_ca"] = badge
+        self.threats_text = make_console_box(self.threats_card, 210, L, pady=(0, 10))
 
-        self.threats_text = ctk.CTkTextbox(self.threats_card, height=220, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.threats_text.pack(fill="both", expand=True, padx=15, pady=(0, 10))
-
-        # Package Neutralization Row
+        # Responsive Neutralization Row
         neutral_bar = ctk.CTkFrame(self.threats_card, fg_color="transparent")
-        neutral_bar.pack(fill="x", padx=15, pady=(0, 15))
+        neutral_bar.pack(fill="x", padx=14, pady=(0, 14))
+        neutral_bar.grid_columnconfigure(1 if L["is_rtl"] else 1, weight=1)
 
-        ctk.CTkLabel(neutral_bar, text=self._tr("target_pkg"), font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 8))
-        self.neutral_pkg_entry = ctk.CTkEntry(neutral_bar, placeholder_text="com.suspicious.app", width=260)
-        self.neutral_pkg_entry.pack(side="left", padx=(0, 10))
+        self.neutral_pkg_entry = ctk.CTkEntry(
+            neutral_bar, placeholder_text="com.suspicious.app", height=32
+        )
+        style_entry(self.neutral_pkg_entry, L)
 
-        ctk.CTkButton(neutral_bar, text=self._tr("btn_restrict"), command=lambda: self._neutralize_selected("restrict"), fg_color="#21262d", hover_color="#30363d").pack(side="left", padx=4)
-        ctk.CTkButton(neutral_bar, text=self._tr("btn_disable"), command=lambda: self._neutralize_selected("disable"), fg_color="#d97706", hover_color="#b45309").pack(side="left", padx=4)
-        ctk.CTkButton(neutral_bar, text=self._tr("btn_uninstall"), command=lambda: self._neutralize_selected("uninstall"), fg_color="#da3633", hover_color="#b91c1c").pack(side="left", padx=4)
+        lbl_pkg = ctk.CTkLabel(
+            neutral_bar,
+            text=self._L(self._tr("target_pkg")),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            text_color=TEXT_SECONDARY,
+            anchor=L["anchor"],
+        )
+        btn_res = make_button(
+            neutral_bar, self._L(self._tr("btn_restrict")), lambda: self._neutralize_selected("restrict"), variant="secondary", height=32
+        )
+        btn_dis = make_button(
+            neutral_bar, self._L(self._tr("btn_disable")), lambda: self._neutralize_selected("disable"), variant="warning", height=32
+        )
+        btn_uni = make_button(
+            neutral_bar, self._L(self._tr("btn_uninstall")), lambda: self._neutralize_selected("uninstall"), variant="danger", height=32
+        )
+
+        if L["is_rtl"]:
+            neutral_bar.grid_columnconfigure(3, weight=1)
+            btn_uni.grid(row=0, column=0, padx=3)
+            btn_dis.grid(row=0, column=1, padx=3)
+            btn_res.grid(row=0, column=2, padx=3)
+            self.neutral_pkg_entry.grid(row=0, column=3, padx=6, sticky="ew")
+            lbl_pkg.grid(row=0, column=4, padx=(6, 0))
+        else:
+            neutral_bar.grid_columnconfigure(1, weight=1)
+            lbl_pkg.grid(row=0, column=0, padx=(0, 6))
+            self.neutral_pkg_entry.grid(row=0, column=1, padx=6, sticky="ew")
+            btn_res.grid(row=0, column=2, padx=3)
+            btn_dis.grid(row=0, column=3, padx=3)
+            btn_uni.grid(row=0, column=4, padx=3)
 
         # Network Sockets Box
-        self.net_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.net_card.pack(fill="both", expand=True, padx=15, pady=0)
-        ctk.CTkLabel(self.net_card, text=self._tr("card_net"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.net_text = ctk.CTkTextbox(self.net_card, height=160, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.net_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        self.net_card, _ = make_card(wrap, self._L(self._tr("card_net")), ACCENT_CYAN, L)
+        self.net_text = make_console_box(self.net_card, 160, L)
 
         # Safe OEM System Debloater Card (UAD-ng)
-        self.bloat_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.bloat_card.pack(fill="both", expand=True, padx=15, pady=(15, 15))
-        ctk.CTkLabel(self.bloat_card, text=self._tr("card_bloatware"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#c084fc").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.bloat_text = ctk.CTkTextbox(self.bloat_card, height=150, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.bloat_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        self.bloat_text.insert("end", self._tr("ui.click_scan_oem_bloatware_to_audit"))
+        self.bloat_card, _ = make_card(
+            wrap, self._L(self._tr("card_bloatware")), ACCENT_PURPLE, L, pady=(0, 0)
+        )
+        self.bloat_text = make_console_box(
+            self.bloat_card,
+            150,
+            L,
+            self._L(self._tr("ui.click_scan_oem_bloatware_to_audit")),
+        )
 
     # =========================================================================
     # TAB 5: SYSTEM OPTIMIZER
     # =========================================================================
     def _build_optimizer_tab(self):
-        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color="#0d1117")
+        L = self._layout()
+        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color=BG_CANVAS)
         self.tab_frames["optimizer"] = tab
 
-        header = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        header.pack(fill="x", padx=15, pady=(15, 10))
-        ctk.CTkLabel(header, text=self._tr("opt_title"), font=ctk.CTkFont(size=18, weight="bold"), text_color="#58a6ff").pack(anchor="w", padx=15, pady=(10, 2))
-        ctk.CTkLabel(header, text=self._tr("opt_sub"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(anchor="w", padx=15, pady=(0, 10))
+        wrap = ctk.CTkFrame(tab, fg_color="transparent")
+        wrap.pack(fill="both", expand=True, padx=14, pady=12)
 
-        # Optimizer Action Bar
-        btn_bar = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        btn_bar.pack(fill="x", padx=15, pady=(0, 15))
+        make_hero_header(
+            wrap,
+            self._L(self._tr("opt_title")),
+            self._L(self._tr("opt_sub")),
+            L,
+            accent_color=ACCENT_GREEN,
+        )
 
-        self.btn_run_opt = ctk.CTkButton(btn_bar, text=self._tr("btn_run_opt"), command=self.run_optimizer_async, fg_color="#238636", hover_color="#2ea043", font=ctk.CTkFont(weight="bold"))
-        self.btn_run_opt.pack(side="left", padx=15, pady=10)
+        # Action & Progress Card
+        act_card = ctk.CTkFrame(
+            wrap,
+            fg_color=BG_CARD,
+            corner_radius=12,
+            border_width=1,
+            border_color=BORDER_SUBTLE,
+        )
+        act_card.pack(fill="x", pady=(0, 12))
 
-        # Progress bar
-        self.opt_progress = ctk.CTkProgressBar(tab, height=12, progress_color="#238636")
+        top_row = ctk.CTkFrame(act_card, fg_color="transparent")
+        top_row.pack(fill="x", padx=14, pady=(12, 8))
+
+        self.btn_run_opt = make_button(
+            top_row,
+            self._L(self._tr("btn_run_opt")),
+            self.run_optimizer_async,
+            variant="success",
+            height=38,
+        )
+        self.btn_run_opt.pack(side=L["lead"])
+
+        self.opt_progress = ctk.CTkProgressBar(
+            act_card, height=11, corner_radius=6, fg_color=BORDER_SUBTLE, progress_color=ACCENT_GREEN
+        )
         self.opt_progress.set(0)
-        self.opt_progress.pack(fill="x", padx=15, pady=(0, 5))
+        self.opt_progress.pack(fill="x", padx=14, pady=(2, 6))
 
-        self.opt_status_lbl = ctk.CTkLabel(tab, text=self._tr("ui.optimizer_idle"), font=ctk.CTkFont(size=12), text_color="#8b949e")
-        self.opt_status_lbl.pack(anchor="w", padx=15, pady=(0, 15))
+        self.opt_status_lbl = ctk.CTkLabel(
+            act_card,
+            text=self._L(self._tr("ui.optimizer_idle")),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            text_color=TEXT_SECONDARY,
+            anchor=L["anchor"],
+            justify=L["justify"],
+        )
+        self.opt_status_lbl.pack(fill="x", padx=14, pady=(0, 12))
 
         # Before & After Comparison Cards
-        comp_grid = ctk.CTkFrame(tab, fg_color="transparent")
-        comp_grid.pack(fill="x", padx=15, pady=0)
-        comp_grid.grid_columnconfigure((0, 1, 2), weight=1)
+        comp_grid = ctk.CTkFrame(wrap, fg_color="transparent")
+        comp_grid.pack(fill="x", pady=(0, 12))
+        comp_grid.grid_columnconfigure((0, 1, 2), weight=1, uniform="opt_kpi")
 
-        # RAM Freed Card
-        self.card_ram_gain = ctk.CTkFrame(comp_grid, fg_color="#161b22", corner_radius=8)
-        self.card_ram_gain.grid(row=0, column=0, padx=(0, 6), sticky="nsew")
-        ctk.CTkLabel(self.card_ram_gain, text=self._tr("gain_ram"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(padx=10, pady=(10, 2))
-        self.lbl_ram_gain = ctk.CTkLabel(self.card_ram_gain, text=self._tr("ui.0_0_mb"), font=ctk.CTkFont(size=22, weight="bold"), text_color="#58a6ff")
-        self.lbl_ram_gain.pack(padx=10, pady=(0, 10))
+        o_cols = (2, 1, 0) if L["is_rtl"] else (0, 1, 2)
+        self.card_ram_gain, self.lbl_ram_gain = make_telemetry_tile(
+            comp_grid, self._L(self._tr("gain_ram")), self._tr("ui.0_0_mb"), ACCENT_BLUE, L
+        )
+        self.card_ram_gain.grid(row=0, column=o_cols[0], padx=4, sticky="nsew")
 
-        # Storage Cleaned Card
-        self.card_storage_gain = ctk.CTkFrame(comp_grid, fg_color="#161b22", corner_radius=8)
-        self.card_storage_gain.grid(row=0, column=1, padx=6, sticky="nsew")
-        ctk.CTkLabel(self.card_storage_gain, text=self._tr("gain_storage"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(padx=10, pady=(10, 2))
-        self.lbl_storage_gain = ctk.CTkLabel(self.card_storage_gain, text=self._tr("ui.0_0_mb"), font=ctk.CTkFont(size=22, weight="bold"), text_color="#238636")
-        self.lbl_storage_gain.pack(padx=10, pady=(0, 10))
+        self.card_storage_gain, self.lbl_storage_gain = make_telemetry_tile(
+            comp_grid, self._L(self._tr("gain_storage")), self._tr("ui.0_0_mb"), ACCENT_GREEN, L
+        )
+        self.card_storage_gain.grid(row=0, column=o_cols[1], padx=4, sticky="nsew")
 
-        # Battery drain card (not measured)
-        self.card_drain_gain = ctk.CTkFrame(comp_grid, fg_color="#161b22", corner_radius=8)
-        self.card_drain_gain.grid(row=0, column=2, padx=(6, 0), sticky="nsew")
-        ctk.CTkLabel(self.card_drain_gain, text=self._tr("gain_drain"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(padx=10, pady=(10, 2))
-        self.lbl_drain_gain = ctk.CTkLabel(self.card_drain_gain, text=self._tr("ui.0_0_ma"), font=ctk.CTkFont(size=22, weight="bold"), text_color="#f59e0b")
-        self.lbl_drain_gain.pack(padx=10, pady=(0, 10))
+        self.card_drain_gain, self.lbl_drain_gain = make_telemetry_tile(
+            comp_grid, self._L(self._tr("gain_drain")), self._tr("ui.0_0_ma"), ACCENT_AMBER, L
+        )
+        self.card_drain_gain.grid(row=0, column=o_cols[2], padx=4, sticky="nsew")
 
         # Live Execution Terminal
-        self.opt_log_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.opt_log_card.pack(fill="both", expand=True, padx=15, pady=15)
-        ctk.CTkLabel(self.opt_log_card, text=self._tr("card_opt_log"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.opt_log_text = ctk.CTkTextbox(self.opt_log_card, height=260, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.opt_log_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        self.opt_log_card, badge = make_card(
+            wrap, self._L(self._tr("card_opt_log")), ACCENT_GREEN, L, show_badge=True, pady=(0, 0)
+        )
+        self.status_pills["maint"] = badge
+        self.opt_log_text = make_console_box(self.opt_log_card, 260, L)
 
     # =========================================================================
     # TAB 6: RESCUE & SYSTEM RECOVERY
     # =========================================================================
     def _build_rescue_tab(self):
-        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color="#0d1117")
+        L = self._layout()
+        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color=BG_CANVAS)
         self.tab_frames["rescue_center"] = tab
 
-        header = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        header.pack(fill="x", padx=15, pady=(15, 10))
-        ctk.CTkLabel(header, text=self._tr("rescue_title"), font=ctk.CTkFont(size=18, weight="bold"), text_color="#58a6ff").pack(anchor="w", padx=15, pady=(10, 2))
-        ctk.CTkLabel(header, text=self._tr("rescue_sub"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(anchor="w", padx=15, pady=(0, 10))
+        wrap = ctk.CTkFrame(tab, fg_color="transparent")
+        wrap.pack(fill="both", expand=True, padx=14, pady=12)
 
-        # Scrcpy Mirroring Card
-        mirror_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        mirror_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(mirror_card, text=self._tr("card_mirror"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        mirror_btns = ctk.CTkFrame(mirror_card, fg_color="transparent")
-        mirror_btns.pack(fill="x", padx=15, pady=(0, 15))
-
-        self.btn_launch_mirror = ctk.CTkButton(mirror_btns, text=self._tr("btn_launch_mirror"), command=self._launch_scrcpy, fg_color="#1f6feb", hover_color="#388bfd")
-        self.btn_launch_mirror.pack(side="left", padx=(0, 8))
-
-        self.btn_stop_mirror = ctk.CTkButton(mirror_btns, text=self._tr("btn_stop_mirror"), command=self._stop_scrcpy, fg_color="#21262d", hover_color="#30363d")
-        self.btn_stop_mirror.pack(side="left", padx=8)
-
-        self.btn_launch_otg = ctk.CTkButton(mirror_btns, text=self._tr("btn_scrcpy_otg"), command=self._launch_scrcpy_otg, fg_color="#9333ea", hover_color="#7e22ce")
-        self.btn_launch_otg.pack(side="left", padx=8)
-
-        self.mirror_off_var = tk.BooleanVar(value=True)
-        ctk.CTkCheckBox(mirror_btns, text=self._tr("check_turn_off"), variable=self.mirror_off_var).pack(side="left", padx=15)
-
-        # Virtual On-Screen Control Pad Card
-        self.vpad_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.vpad_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(self.vpad_card, text=self._tr("card_vpad"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#38bdf8").pack(anchor="w", padx=15, pady=(10, 5))
-
-        # PIN / Password row
-        vpad_row1 = ctk.CTkFrame(self.vpad_card, fg_color="transparent")
-        vpad_row1.pack(fill="x", padx=15, pady=(5, 8))
-        ctk.CTkLabel(vpad_row1, text=self._tr("lbl_vpad_pin"), font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 8))
-        self.vpad_pin_entry = ctk.CTkEntry(vpad_row1, placeholder_text="1234", width=140)
-        self.vpad_pin_entry.pack(side="left", padx=(0, 8))
-        ctk.CTkButton(vpad_row1, text=self._tr("btn_send_pin"), command=self._send_virtual_pin, fg_color="#2563eb", hover_color="#1d4ed8", width=110).pack(side="left", padx=4)
-        ctk.CTkButton(vpad_row1, text=self._tr("btn_send_enter"), command=lambda: self._send_virtual_key(66), fg_color="#21262d", hover_color="#30363d", width=80).pack(side="left", padx=4)
-        ctk.CTkButton(vpad_row1, text=self._tr("btn_swipe_unlock"), command=self._send_virtual_swipe, fg_color="#059669", hover_color="#047857", width=140).pack(side="left", padx=8)
-
-        # Hardware Keys Simulation row
-        vpad_row2 = ctk.CTkFrame(self.vpad_card, fg_color="transparent")
-        vpad_row2.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkButton(vpad_row2, text=self._tr("btn_key_power"), command=lambda: self._send_virtual_key(26), fg_color="#dc2626", hover_color="#b91c1c", width=90).pack(side="left", padx=4)
-        ctk.CTkButton(vpad_row2, text=self._tr("btn_key_vol_up"), command=lambda: self._send_virtual_key(24), fg_color="#21262d", hover_color="#30363d", width=90).pack(side="left", padx=4)
-        ctk.CTkButton(vpad_row2, text=self._tr("btn_key_vol_down"), command=lambda: self._send_virtual_key(25), fg_color="#21262d", hover_color="#30363d", width=90).pack(side="left", padx=4)
-        ctk.CTkButton(vpad_row2, text=self._tr("btn_key_home"), command=lambda: self._send_virtual_key(3), fg_color="#21262d", hover_color="#30363d", width=80).pack(side="left", padx=4)
-        ctk.CTkButton(vpad_row2, text=self._tr("btn_key_back"), command=lambda: self._send_virtual_key(4), fg_color="#21262d", hover_color="#30363d", width=80).pack(side="left", padx=4)
-        ctk.CTkButton(vpad_row2, text=self._tr("btn_key_menu"), command=lambda: self._send_virtual_key(82), fg_color="#21262d", hover_color="#30363d", width=80).pack(side="left", padx=4)
-
-        # Wireless ADB Card
-        self.wireless_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        self.wireless_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(self.wireless_card, text=self._tr("card_wireless_adb"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#10b981").pack(anchor="w", padx=15, pady=(10, 5))
-
-        # Row 1: Enable TCP/IP over USB
-        w_row1 = ctk.CTkFrame(self.wireless_card, fg_color="transparent")
-        w_row1.pack(fill="x", padx=15, pady=(5, 8))
-        ctk.CTkButton(w_row1, text=self._tr("btn_enable_wireless"), command=self._enable_wireless_adb, fg_color="#059669", hover_color="#047857").pack(side="left", padx=(0, 10))
-        self.lbl_wireless_ip = ctk.CTkLabel(w_row1, text=self._tr("ui.ip"), font=ctk.CTkFont(size=12, weight="bold"), text_color="#34d399")
-        self.lbl_wireless_ip.pack(side="left", padx=10)
-
-        # Row 2: Connect / Disconnect
-        w_row2 = ctk.CTkFrame(self.wireless_card, fg_color="transparent")
-        w_row2.pack(fill="x", padx=15, pady=(0, 8))
-        ctk.CTkLabel(w_row2, text=self._tr("lbl_wireless_target"), font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 8))
-        self.entry_wireless_addr = ctk.CTkEntry(w_row2, placeholder_text="192.168.1.100:5555", width=200)
-        self.entry_wireless_addr.pack(side="left", padx=(0, 8))
-        ctk.CTkButton(w_row2, text=self._tr("btn_wireless_connect"), command=self._connect_wireless_adb, fg_color="#2563eb", hover_color="#1d4ed8", width=90).pack(side="left", padx=4)
-        ctk.CTkButton(w_row2, text=self._tr("btn_disconnect_wireless"), command=self._disconnect_wireless_adb, fg_color="#21262d", hover_color="#30363d", width=120).pack(side="left", padx=4)
-
-        # Row 3: Android 11+ Pairing
-        w_row3 = ctk.CTkFrame(self.wireless_card, fg_color="transparent")
-        w_row3.pack(fill="x", padx=15, pady=(0, 10))
-        ctk.CTkLabel(w_row3, text=self._tr("lbl_wireless_pair"), font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 8))
-        self.entry_pair_addr = ctk.CTkEntry(w_row3, placeholder_text="192.168.1.100:37123", width=180)
-        self.entry_pair_addr.pack(side="left", padx=(0, 8))
-        ctk.CTkLabel(w_row3, text=self._tr("lbl_wireless_code"), font=ctk.CTkFont(size=12)).pack(side="left", padx=(8, 4))
-        self.entry_pair_code = ctk.CTkEntry(w_row3, placeholder_text="123456", width=100)
-        self.entry_pair_code.pack(side="left", padx=(0, 8))
-        ctk.CTkButton(w_row3, text=self._tr("btn_pair_wireless"), command=self._pair_wireless_adb, fg_color="#7c3aed", hover_color="#6d28d9", width=120).pack(side="left", padx=4)
-
-        self.wireless_log_text = ctk.CTkTextbox(self.wireless_card, height=80, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.wireless_log_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.wireless_log_text.insert("end", self._tr("ui.to_enable_wireless_adb_connect_device"))
-
-        # Setup Wizard & System Provisioning Card
-        prov_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        prov_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(prov_card, text=self._tr("card_provisioning"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        prov_btns = ctk.CTkFrame(prov_card, fg_color="transparent")
-        prov_btns.pack(fill="x", padx=15, pady=(0, 10))
-
-        ctk.CTkButton(prov_btns, text=self._tr("btn_check_prov"), command=self._check_provisioning, fg_color="#21262d", hover_color="#30363d").pack(side="left", padx=(0, 8))
-        ctk.CTkButton(prov_btns, text=self._tr("btn_fix_prov"), command=self._fix_provisioning, fg_color="#238636", hover_color="#2ea043").pack(side="left", padx=8)
-        ctk.CTkButton(prov_btns, text=self._tr("btn_open_settings"), command=self._launch_settings, fg_color="#1f6feb", hover_color="#388bfd").pack(side="left", padx=8)
-
-        self.prov_log_text = ctk.CTkTextbox(prov_card, height=90, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.prov_log_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.prov_log_text.insert("end", self._tr("ui.click_inspect_setup_flags_to_verify"))
-
-        # Fastboot Rescue Card
-        fb_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        fb_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(fb_card, text=self._tr("card_fb"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        fb_btns = ctk.CTkFrame(fb_card, fg_color="transparent")
-        fb_btns.pack(fill="x", padx=15, pady=(0, 10))
-
-        ctk.CTkButton(fb_btns, text=self._tr("btn_fb_vars"), command=self._read_fastboot_vars, fg_color="#21262d", hover_color="#30363d").pack(side="left", padx=(0, 8))
-        ctk.CTkButton(fb_btns, text=self._tr("btn_fix_bootloop"), command=self._fix_cache_bootloop, fg_color="#da3633", hover_color="#f85149").pack(side="left", padx=8)
-        ctk.CTkButton(fb_btns, text=self._tr("btn_fb_reboot"), command=lambda: self.bridge.fastboot_reboot("", self.current_serial.get()), fg_color="#21262d", hover_color="#30363d").pack(side="left", padx=8)
-
-        # Flash Partition Row
-        flash_bar = ctk.CTkFrame(fb_card, fg_color="transparent")
-        flash_bar.pack(fill="x", padx=15, pady=(5, 15))
-
-        ctk.CTkLabel(flash_bar, text=self._tr("lbl_partition")).pack(side="left", padx=(0, 6))
-        self.part_combo = ctk.CTkComboBox(flash_bar, values=["boot", "recovery", "vbmeta", "dtbo", "system"], width=120)
-        self.part_combo.pack(side="left", padx=(0, 10))
-
-        self.img_path_entry = ctk.CTkEntry(flash_bar, placeholder_text=self._tr("ui.path_to_image_img"), width=260)
-        self.img_path_entry.pack(side="left", padx=(0, 6))
-
-        ctk.CTkButton(flash_bar, text=self._tr("btn_browse"), width=80, command=self._browse_image_file, fg_color="#21262d", hover_color="#30363d").pack(side="left", padx=(0, 10))
-        ctk.CTkButton(flash_bar, text=self._tr("btn_flash"), command=self._flash_partition, fg_color="#1f6feb", hover_color="#388bfd").pack(side="left")
-
-        self.rescue_log_text = ctk.CTkTextbox(fb_card, height=120, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.rescue_log_text.pack(fill="x", padx=15, pady=(0, 15))
-
-        # Emergency Data Extraction Card
-        data_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        data_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(data_card, text=self._tr("card_data"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        data_bar = ctk.CTkFrame(data_card, fg_color="transparent")
-        data_bar.pack(fill="x", padx=15, pady=(0, 10))
-
-        ctk.CTkLabel(data_bar, text=self._tr("lbl_category")).pack(side="left", padx=(0, 6))
-        self.data_cat_combo = ctk.CTkComboBox(
-            data_bar,
-            values=[self._tr("ui.all_photos_all_photos_dcim"), self._tr("ui.full_storage_full_storage_dump"), self._tr("ui.whatsapp_whatsapp_media_only_chats_are"), self._tr("ui.downloads_downloads"), self._tr("ui.documents_documents")],
-            width=240
+        make_hero_header(
+            wrap,
+            self._L(self._tr("rescue_title")),
+            self._L(self._tr("rescue_sub")),
+            L,
+            accent_color=ACCENT_PURPLE,
         )
-        self.data_cat_combo.pack(side="left", padx=(0, 10))
 
-        ctk.CTkButton(data_bar, text=self._tr("btn_pull_data"), command=self._pull_emergency_data, fg_color="#238636", hover_color="#2ea043").pack(side="left", padx=(0, 8))
+        # Helper to build 3-col / N-col inline action rows inside a card without clipping
+        def _card_btn_grid(card, specs, cols=3, pady=(0, 10)):
+            bar = ctk.CTkFrame(card, fg_color="transparent")
+            bar.pack(fill="x", padx=14, pady=pady)
+            eff = max(1, min(cols, len(specs)))
+            for c in range(eff):
+                bar.grid_columnconfigure(c, weight=1, uniform=f"cgrid_{eff}")
+            out_btns = []
+            wrap_w = max(140, int(680 // eff) - 20)
+            for idx, (label, cmd, variant) in enumerate(specs):
+                r = idx // eff
+                coff = idx % eff
+                col = (eff - 1 - coff) if L["is_rtl"] else coff
+                b = make_button(bar, label, cmd, variant=variant, height=34, font_size=11)
+                try:
+                    b._text_label.configure(wraplength=wrap_w, justify="center")
+                except Exception:
+                    pass
+                b.grid(row=r, column=col, padx=4, pady=3, sticky="ew")
+                out_btns.append(b)
+            return out_btns
 
-        ctk.CTkButton(
-            data_bar,
-            text=self._tr("ui.1_click_full_photos_pull"),
-            command=self._pull_all_photos_quick,
-            fg_color="#059669",
-            hover_color="#047857"
-        ).pack(side="left")
+        # 1. Scrcpy Mirroring Card
+        mirror_card, _ = make_card(wrap, self._L(self._tr("card_mirror")), ACCENT_BLUE, L)
+        m_btns = _card_btn_grid(
+            mirror_card,
+            [
+                (self._L(self._tr("btn_launch_mirror")), self._launch_scrcpy, "primary"),
+                (self._L(self._tr("btn_stop_mirror")), self._stop_scrcpy, "secondary"),
+                (self._L(self._tr("btn_scrcpy_otg")), self._launch_scrcpy_otg, "purple"),
+            ],
+            cols=3,
+            pady=(0, 6),
+        )
+        self.btn_launch_mirror, self.btn_stop_mirror, self.btn_launch_otg = m_btns
 
-        ctk.CTkButton(
-            data_bar,
-            text=self._tr("btn_one_click_backup"),
-            command=self._one_click_customer_backup,
-            fg_color="#10b981",
-            hover_color="#059669"
-        ).pack(side="left", padx=8)
+        chk_row = ctk.CTkFrame(mirror_card, fg_color="transparent")
+        chk_row.pack(fill="x", padx=14, pady=(0, 12))
+        self.mirror_off_var = tk.BooleanVar(value=True)
+        ctk.CTkCheckBox(
+            chk_row,
+            text=self._L(self._tr("check_turn_off")),
+            variable=self.mirror_off_var,
+            text_color=TEXT_PRIMARY,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+        ).pack(side=L["lead"], padx=4)
 
-        self.data_log_text = ctk.CTkTextbox(data_card, height=110, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.data_log_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.data_log_text.insert("end", self._tr("ui.emergency_data_and_photo_pull_from"))
+        # 2. Virtual On-Screen Control Pad Card
+        self.vpad_card, _ = make_card(wrap, self._L(self._tr("card_vpad")), ACCENT_CYAN, L)
+        vpad_row1 = ctk.CTkFrame(self.vpad_card, fg_color="transparent")
+        vpad_row1.pack(fill="x", padx=14, pady=(2, 8))
 
-        # ADB Sideload OTA ROM Flasher Card
-        sideload_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        sideload_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(sideload_card, text=self._tr("card_sideload"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#38bdf8").pack(anchor="w", padx=15, pady=(10, 5))
+        lbl_pin = ctk.CTkLabel(
+            vpad_row1,
+            text=self._L(self._tr("lbl_vpad_pin")),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            text_color=TEXT_SECONDARY,
+        )
+        self.vpad_pin_entry = ctk.CTkEntry(vpad_row1, placeholder_text="1234", height=32)
+        style_entry(self.vpad_pin_entry, L)
+        b_pin = make_button(vpad_row1, self._L(self._tr("btn_send_pin")), self._send_virtual_pin, variant="primary", height=32)
+        b_ent = make_button(vpad_row1, self._L(self._tr("btn_send_enter")), lambda: self._send_virtual_key(66), variant="secondary", height=32)
+        b_swp = make_button(vpad_row1, self._L(self._tr("btn_swipe_unlock")), self._send_virtual_swipe, variant="success", height=32)
+
+        if L["is_rtl"]:
+            vpad_row1.grid_columnconfigure(3, weight=1)
+            b_swp.grid(row=0, column=0, padx=3, sticky="ew")
+            b_ent.grid(row=0, column=1, padx=3, sticky="ew")
+            b_pin.grid(row=0, column=2, padx=3, sticky="ew")
+            self.vpad_pin_entry.grid(row=0, column=3, padx=6, sticky="ew")
+            lbl_pin.grid(row=0, column=4, padx=(6, 0))
+        else:
+            vpad_row1.grid_columnconfigure(1, weight=1)
+            lbl_pin.grid(row=0, column=0, padx=(0, 6))
+            self.vpad_pin_entry.grid(row=0, column=1, padx=6, sticky="ew")
+            b_pin.grid(row=0, column=2, padx=3, sticky="ew")
+            b_ent.grid(row=0, column=3, padx=3, sticky="ew")
+            b_swp.grid(row=0, column=4, padx=3, sticky="ew")
+
+        _card_btn_grid(
+            self.vpad_card,
+            [
+                (self._L(self._tr("btn_key_power")), lambda: self._send_virtual_key(26), "danger"),
+                (self._L(self._tr("btn_key_vol_up")), lambda: self._send_virtual_key(24), "secondary"),
+                (self._L(self._tr("btn_key_vol_down")), lambda: self._send_virtual_key(25), "secondary"),
+                (self._L(self._tr("btn_key_home")), lambda: self._send_virtual_key(3), "secondary"),
+                (self._L(self._tr("btn_key_back")), lambda: self._send_virtual_key(4), "secondary"),
+                (self._L(self._tr("btn_key_menu")), lambda: self._send_virtual_key(82), "secondary"),
+            ],
+            cols=3,
+            pady=(0, 12),
+        )
+
+        # 3. Wireless ADB Card
+        self.wireless_card, _ = make_card(wrap, self._L(self._tr("card_wireless_adb")), ACCENT_GREEN, L)
+
+        w_row1 = ctk.CTkFrame(self.wireless_card, fg_color="transparent")
+        w_row1.pack(fill="x", padx=14, pady=(2, 8))
+        make_button(
+            w_row1, self._L(self._tr("btn_enable_wireless")), self._enable_wireless_adb, variant="success", height=32
+        ).pack(side=L["lead"], padx=4)
+        self.lbl_wireless_ip = ctk.CTkLabel(
+            w_row1,
+            text=self._tr("ui.ip"),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
+            text_color="#34d399",
+            fg_color=BG_TILE,
+            corner_radius=6,
+            padx=10,
+            pady=4,
+        )
+        self.lbl_wireless_ip.pack(side=L["lead"], padx=8)
+
+        w_row2 = ctk.CTkFrame(self.wireless_card, fg_color="transparent")
+        w_row2.pack(fill="x", padx=14, pady=(0, 8))
+        lbl_wt = ctk.CTkLabel(w_row2, text=self._L(self._tr("lbl_wireless_target")), font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=TEXT_SECONDARY)
+        self.entry_wireless_addr = ctk.CTkEntry(w_row2, placeholder_text="192.168.1.100:5555", height=32)
+        style_entry(self.entry_wireless_addr, L)
+        b_wc = make_button(w_row2, self._L(self._tr("btn_wireless_connect")), self._connect_wireless_adb, variant="primary", height=32)
+        b_wd = make_button(w_row2, self._L(self._tr("btn_disconnect_wireless")), self._disconnect_wireless_adb, variant="secondary", height=32)
+
+        if L["is_rtl"]:
+            w_row2.grid_columnconfigure(2, weight=1)
+            b_wd.grid(row=0, column=0, padx=3)
+            b_wc.grid(row=0, column=1, padx=3)
+            self.entry_wireless_addr.grid(row=0, column=2, padx=6, sticky="ew")
+            lbl_wt.grid(row=0, column=3, padx=(6, 0))
+        else:
+            w_row2.grid_columnconfigure(1, weight=1)
+            lbl_wt.grid(row=0, column=0, padx=(0, 6))
+            self.entry_wireless_addr.grid(row=0, column=1, padx=6, sticky="ew")
+            b_wc.grid(row=0, column=2, padx=3)
+            b_wd.grid(row=0, column=3, padx=3)
+
+        w_row3 = ctk.CTkFrame(self.wireless_card, fg_color="transparent")
+        w_row3.pack(fill="x", padx=14, pady=(0, 10))
+        lbl_wp = ctk.CTkLabel(w_row3, text=self._L(self._tr("lbl_wireless_pair")), font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=TEXT_SECONDARY)
+        self.entry_pair_addr = ctk.CTkEntry(w_row3, placeholder_text="192.168.1.100:37123", width=150, height=32)
+        style_entry(self.entry_pair_addr, L)
+        lbl_wk = ctk.CTkLabel(w_row3, text=self._L(self._tr("lbl_wireless_code")), font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=TEXT_SECONDARY)
+        self.entry_pair_code = ctk.CTkEntry(w_row3, placeholder_text="123456", width=85, height=32)
+        style_entry(self.entry_pair_code, L)
+        b_pair = make_button(w_row3, self._L(self._tr("btn_pair_wireless")), self._pair_wireless_adb, variant="purple", height=32, width=105)
+
+        if L["is_rtl"]:
+            w_row3.grid_columnconfigure(3, weight=1)
+            b_pair.grid(row=0, column=0, padx=3)
+            self.entry_pair_code.grid(row=0, column=1, padx=4)
+            lbl_wk.grid(row=0, column=2, padx=4)
+            self.entry_pair_addr.grid(row=0, column=3, padx=6, sticky="ew")
+            lbl_wp.grid(row=0, column=4, padx=(6, 0))
+        else:
+            w_row3.grid_columnconfigure(1, weight=1)
+            lbl_wp.grid(row=0, column=0, padx=(0, 6))
+            self.entry_pair_addr.grid(row=0, column=1, padx=6, sticky="ew")
+            lbl_wk.grid(row=0, column=2, padx=4)
+            self.entry_pair_code.grid(row=0, column=3, padx=4)
+            b_pair.grid(row=0, column=4, padx=3)
+
+        self.wireless_log_text = make_console_box(
+            self.wireless_card, 85, L, self._L(self._tr("ui.to_enable_wireless_adb_connect_device"))
+        )
+
+        # 4. Setup Wizard & System Provisioning Card
+        prov_card, _ = make_card(wrap, self._L(self._tr("card_provisioning")), ACCENT_BLUE, L)
+        _card_btn_grid(
+            prov_card,
+            [
+                (self._L(self._tr("btn_check_prov")), self._check_provisioning, "secondary"),
+                (self._L(self._tr("btn_fix_prov")), self._fix_provisioning, "success"),
+                (self._L(self._tr("btn_open_settings")), self._launch_settings, "primary"),
+            ],
+            cols=3,
+        )
+        self.prov_log_text = make_console_box(
+            prov_card, 90, L, self._L(self._tr("ui.click_inspect_setup_flags_to_verify"))
+        )
+
+        # 5. Fastboot Rescue Card
+        fb_card, _ = make_card(wrap, self._L(self._tr("card_fb")), ACCENT_RED, L)
+        _card_btn_grid(
+            fb_card,
+            [
+                (self._L(self._tr("btn_fb_vars")), self._read_fastboot_vars, "secondary"),
+                (self._L(self._tr("btn_fix_bootloop")), self._fix_cache_bootloop, "danger"),
+                (self._L(self._tr("btn_fb_reboot")), lambda: self.bridge.fastboot_reboot("", self.current_serial.get()), "secondary"),
+            ],
+            cols=3,
+        )
+
+        flash_bar = ctk.CTkFrame(fb_card, fg_color="transparent")
+        flash_bar.pack(fill="x", padx=14, pady=(0, 10))
+        lbl_part = ctk.CTkLabel(flash_bar, text=self._L(self._tr("lbl_partition")), font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=TEXT_SECONDARY)
+        self.part_combo = ctk.CTkComboBox(
+            flash_bar,
+            values=["boot", "recovery", "vbmeta", "dtbo", "system"],
+            width=110,
+            height=32,
+            fg_color=BG_INPUT,
+            border_color=BORDER_ACCENT,
+            button_color=ACCENT_BLUE,
+            dropdown_fg_color=BG_CARD,
+        )
+        self.img_path_entry = ctk.CTkEntry(flash_bar, placeholder_text=self._tr("ui.path_to_image_img"), width=130, height=32)
+        style_entry(self.img_path_entry)
+        b_br = make_button(flash_bar, self._L(self._tr("btn_browse")), self._browse_image_file, variant="secondary", height=32, width=80)
+        b_fl = make_button(flash_bar, self._L(self._tr("btn_flash")), self._flash_partition, variant="primary", height=32, width=90)
+
+        if L["is_rtl"]:
+            flash_bar.grid_columnconfigure(2, weight=1)
+            b_fl.grid(row=0, column=0, padx=3)
+            b_br.grid(row=0, column=1, padx=3)
+            self.img_path_entry.grid(row=0, column=2, padx=6, sticky="ew")
+            self.part_combo.grid(row=0, column=3, padx=4)
+            lbl_part.grid(row=0, column=4, padx=(6, 0))
+        else:
+            flash_bar.grid_columnconfigure(2, weight=1)
+            lbl_part.grid(row=0, column=0, padx=(0, 6))
+            self.part_combo.grid(row=0, column=1, padx=4)
+            self.img_path_entry.grid(row=0, column=2, padx=6, sticky="ew")
+            b_br.grid(row=0, column=3, padx=3)
+            b_fl.grid(row=0, column=4, padx=3)
+
+        self.rescue_log_text = make_console_box(fb_card, 120, L)
+
+        # 6. Emergency Data Extraction Card
+        data_card, _ = make_card(wrap, self._L(self._tr("card_data")), ACCENT_GREEN, L)
+
+        data_row = ctk.CTkFrame(data_card, fg_color="transparent")
+        data_row.pack(fill="x", padx=14, pady=(0, 6))
+        lbl_cat = ctk.CTkLabel(data_row, text=self._L(self._tr("lbl_category")), font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=TEXT_SECONDARY)
+        # Keep raw combo option strings untransformed so _pull_emergency_data .split()[0] works safely
+        self.data_cat_combo = ctk.CTkComboBox(
+            data_row,
+            values=[
+                self._tr("ui.all_photos_all_photos_dcim"),
+                self._tr("ui.full_storage_full_storage_dump"),
+                self._tr("ui.whatsapp_whatsapp_media_only_chats_are"),
+                self._tr("ui.downloads_downloads"),
+                self._tr("ui.documents_documents"),
+            ],
+            height=32,
+            fg_color=BG_INPUT,
+            border_color=BORDER_ACCENT,
+            button_color=ACCENT_BLUE,
+            dropdown_fg_color=BG_CARD,
+        )
+        if L["is_rtl"]:
+            data_row.grid_columnconfigure(0, weight=1)
+            self.data_cat_combo.grid(row=0, column=0, padx=(0, 8), sticky="ew")
+            lbl_cat.grid(row=0, column=1)
+        else:
+            data_row.grid_columnconfigure(1, weight=1)
+            lbl_cat.grid(row=0, column=0, padx=(0, 8))
+            self.data_cat_combo.grid(row=0, column=1, sticky="ew")
+
+        _card_btn_grid(
+            data_card,
+            [
+                (self._L(self._tr("btn_pull_data")), self._pull_emergency_data, "success"),
+                (self._L(self._tr("ui.1_click_full_photos_pull")), self._pull_all_photos_quick, "success"),
+                (self._L(self._tr("btn_one_click_backup")), self._one_click_customer_backup, "cyan"),
+            ],
+            cols=3,
+        )
+        self.data_log_text = make_console_box(
+            data_card, 110, L, self._L(self._tr("ui.emergency_data_and_photo_pull_from"))
+        )
+
+        # 7. ADB Sideload OTA ROM Flasher Card
+        sideload_card, _ = make_card(wrap, self._L(self._tr("card_sideload")), ACCENT_CYAN, L)
 
         sideload_bar = ctk.CTkFrame(sideload_card, fg_color="transparent")
-        sideload_bar.pack(fill="x", padx=15, pady=(0, 10))
+        sideload_bar.pack(fill="x", padx=14, pady=(0, 8))
+        self.sideload_entry = ctk.CTkEntry(
+            sideload_bar, placeholder_text=self._tr("ui.path_to_ota_update_package_zip"), height=32
+        )
+        style_entry(self.sideload_entry)
+        b_ota = make_button(sideload_bar, self._L(self._tr("btn_browse_ota")), self._browse_ota_file, variant="secondary", height=32)
+        b_sl = make_button(sideload_bar, self._L(self._tr("btn_flash_sideload")), self._flash_sideload, variant="cyan", height=32)
 
-        self.sideload_entry = ctk.CTkEntry(sideload_bar, placeholder_text=self._tr("ui.path_to_ota_update_package_zip"), width=380)
-        self.sideload_entry.pack(side="left", padx=(0, 8))
+        if L["is_rtl"]:
+            sideload_bar.grid_columnconfigure(2, weight=1)
+            b_sl.grid(row=0, column=0, padx=3)
+            b_ota.grid(row=0, column=1, padx=3)
+            self.sideload_entry.grid(row=0, column=2, padx=(6, 0), sticky="ew")
+        else:
+            sideload_bar.grid_columnconfigure(0, weight=1)
+            self.sideload_entry.grid(row=0, column=0, padx=(0, 6), sticky="ew")
+            b_ota.grid(row=0, column=1, padx=3)
+            b_sl.grid(row=0, column=2, padx=3)
 
-        ctk.CTkButton(sideload_bar, text=self._tr("btn_browse_ota"), width=120, command=self._browse_ota_file, fg_color="#21262d", hover_color="#30363d").pack(side="left", padx=(0, 8))
-        ctk.CTkButton(sideload_bar, text=self._tr("btn_flash_sideload"), command=self._flash_sideload, fg_color="#0284c7", hover_color="#0369a1").pack(side="left")
-
-        self.sideload_progress = ctk.CTkProgressBar(sideload_card, height=10, progress_color="#0284c7")
+        self.sideload_progress = ctk.CTkProgressBar(
+            sideload_card, height=10, corner_radius=5, fg_color=BORDER_SUBTLE, progress_color=ACCENT_CYAN
+        )
         self.sideload_progress.set(0)
-        self.sideload_progress.pack(fill="x", padx=15, pady=(5, 5))
+        self.sideload_progress.pack(fill="x", padx=14, pady=(2, 6))
 
-        self.sideload_lbl = ctk.CTkLabel(sideload_card, text=self._tr("ui.ready_put_device_in_recovery_mode"), font=ctk.CTkFont(size=12), text_color="#8b949e")
-        self.sideload_lbl.pack(anchor="w", padx=15, pady=(0, 5))
+        self.sideload_lbl = ctk.CTkLabel(
+            sideload_card,
+            text=self._L(self._tr("ui.ready_put_device_in_recovery_mode")),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            text_color=TEXT_SECONDARY,
+            anchor=L["anchor"],
+            justify=L["justify"],
+        )
+        self.sideload_lbl.pack(fill="x", padx=14, pady=(0, 6))
+        self.sideload_text = make_console_box(
+            sideload_card, 100, L, self._L(self._tr("ui.stream_official_ota_rom_update_zip"))
+        )
 
-        self.sideload_text = ctk.CTkTextbox(sideload_card, height=100, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.sideload_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.sideload_text.insert("end", self._tr("ui.stream_official_ota_rom_update_zip"))
+        # 8. Fastboot Active Slot (A/B) & Anti-Rollback (ARB) Card
+        slot_card, _ = make_card(wrap, self._L(self._tr("card_ab_slot")), ACCENT_AMBER, L)
+        _card_btn_grid(
+            slot_card,
+            [
+                (self._L(self._tr("btn_switch_slot_a")), lambda: self._switch_slot("a"), "primary"),
+                (self._L(self._tr("btn_switch_slot_b")), lambda: self._switch_slot("b"), "primary"),
+                (self._L(self._tr("btn_check_arb")), self._check_arb, "danger"),
+            ],
+            cols=3,
+        )
+        self.slot_log_text = make_console_box(
+            slot_card, 90, L, self._L(self._tr("ui.in_fastboot_switch_between_slot_a"))
+        )
 
-        # Fastboot Active Slot (A/B) & Anti-Rollback (ARB) Card
-        slot_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        slot_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(slot_card, text=self._tr("card_ab_slot"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#f59e0b").pack(anchor="w", padx=15, pady=(10, 5))
+        # 9. Critical Partitions & Radio Backup Card
+        part_card, _ = make_card(wrap, self._L(self._tr("card_partition_backup")), ACCENT_GREEN, L)
+        _card_btn_grid(
+            part_card,
+            [
+                (self._L(self._tr("btn_backup_critical")), self._backup_critical_partitions, "success"),
+                (self._L(self._tr("btn_backup_all")), self._backup_all_partitions, "cyan"),
+                (self._L(self._tr("btn_open_backups")), self._open_backups_folder, "secondary"),
+            ],
+            cols=3,
+        )
+        self.part_backup_text = make_console_box(
+            part_card, 110, L, self._L(self._tr("ui.dump_and_backup_critical_radio_calibration"))
+        )
 
-        slot_bar = ctk.CTkFrame(slot_card, fg_color="transparent")
-        slot_bar.pack(fill="x", padx=15, pady=(0, 10))
-
-        ctk.CTkButton(slot_bar, text=self._tr("btn_switch_slot_a"), command=lambda: self._switch_slot("a"), fg_color="#2563eb", hover_color="#1d4ed8").pack(side="left", padx=(0, 8))
-        ctk.CTkButton(slot_bar, text=self._tr("btn_switch_slot_b"), command=lambda: self._switch_slot("b"), fg_color="#2563eb", hover_color="#1d4ed8").pack(side="left", padx=8)
-        ctk.CTkButton(slot_bar, text=self._tr("btn_check_arb"), command=self._check_arb, fg_color="#dc2626", hover_color="#b91c1c").pack(side="left", padx=8)
-
-        self.slot_log_text = ctk.CTkTextbox(slot_card, height=90, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.slot_log_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.slot_log_text.insert("end", self._tr("ui.in_fastboot_switch_between_slot_a"))
-
-        # Critical Partitions & Radio Backup Card
-        part_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        part_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(part_card, text=self._tr("card_partition_backup"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#10b981").pack(anchor="w", padx=15, pady=(10, 5))
-
-        part_bar = ctk.CTkFrame(part_card, fg_color="transparent")
-        part_bar.pack(fill="x", padx=15, pady=(0, 10))
-
-        ctk.CTkButton(part_bar, text=self._tr("btn_backup_critical"), command=self._backup_critical_partitions, fg_color="#059669", hover_color="#047857").pack(side="left", padx=(0, 8))
-        ctk.CTkButton(part_bar, text=self._tr("btn_backup_all"), command=self._backup_all_partitions, fg_color="#047857", hover_color="#065f46").pack(side="left", padx=8)
-        ctk.CTkButton(part_bar, text=self._tr("btn_open_backups"), command=self._open_backups_folder, fg_color="#21262d", hover_color="#30363d").pack(side="left", padx=8)
-
-        self.part_backup_text = ctk.CTkTextbox(part_card, height=110, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.part_backup_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.part_backup_text.insert("end", self._tr("ui.dump_and_backup_critical_radio_calibration"))
-
-        # Batch APK Installer & Extractor Card
-        apk_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        apk_card.pack(fill="x", padx=15, pady=0)
-        ctk.CTkLabel(apk_card, text=self._tr("card_batch_apk"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#8b5cf6").pack(anchor="w", padx=15, pady=(10, 5))
-
-        apk_bar = ctk.CTkFrame(apk_card, fg_color="transparent")
-        apk_bar.pack(fill="x", padx=15, pady=(0, 10))
-
-        ctk.CTkButton(apk_bar, text=self._tr("btn_install_batch_apk"), command=self._batch_install_apks, fg_color="#7c3aed", hover_color="#6d28d9").pack(side="left", padx=(0, 8))
-        ctk.CTkButton(apk_bar, text=self._tr("btn_extract_apps"), command=self._extract_user_apps, fg_color="#6d28d9", hover_color="#5b21b6").pack(side="left", padx=8)
-
-        self.apk_log_text = ctk.CTkTextbox(apk_card, height=110, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.apk_log_text.pack(fill="x", padx=15, pady=(0, 15))
-        self.apk_log_text.insert("end", self._tr("ui.batch_install_multiple_apk_files_r"))
+        # 10. Batch APK Installer & Extractor Card
+        apk_card, _ = make_card(wrap, self._L(self._tr("card_batch_apk")), ACCENT_PURPLE, L, pady=(0, 0))
+        _card_btn_grid(
+            apk_card,
+            [
+                (self._L(self._tr("btn_install_batch_apk")), self._batch_install_apks, "purple"),
+                (self._L(self._tr("btn_extract_apps")), self._extract_user_apps, "secondary"),
+            ],
+            cols=2,
+        )
+        self.apk_log_text = make_console_box(
+            apk_card, 110, L, self._L(self._tr("ui.batch_install_multiple_apk_files_r"))
+        )
 
     # =========================================================================
     # TAB 7: REPORTS & CERTIFICATE EXPORTER
     # =========================================================================
     def _build_reports_tab(self):
-        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color="#0d1117")
+        L = self._layout()
+        tab = ctk.CTkScrollableFrame(self.content_frame, fg_color=BG_CANVAS)
         self.tab_frames["reports"] = tab
 
-        header = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        header.pack(fill="x", padx=15, pady=(15, 10))
-        ctk.CTkLabel(header, text=self._tr("reports_title"), font=ctk.CTkFont(size=18, weight="bold"), text_color="#58a6ff").pack(anchor="w", padx=15, pady=(10, 2))
-        ctk.CTkLabel(header, text=self._tr("reports_sub"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(anchor="w", padx=15, pady=(0, 10))
+        wrap = ctk.CTkFrame(tab, fg_color="transparent")
+        wrap.pack(fill="both", expand=True, padx=14, pady=12)
+
+        make_hero_header(
+            wrap,
+            self._L(self._tr("reports_title")),
+            self._L(self._tr("reports_sub")),
+            L,
+            accent_color=ACCENT_BLUE,
+        )
 
         # Customer Intake & Ticket Card
-        ticket_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        ticket_card.pack(fill="x", padx=15, pady=(0, 15))
-        ctk.CTkLabel(ticket_card, text=self._tr("card_cust_ticket"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 8))
+        ticket_card, _ = make_card(wrap, self._L(self._tr("card_cust_ticket")), ACCENT_BLUE, L)
 
         t_grid = ctk.CTkFrame(ticket_card, fg_color="transparent")
-        t_grid.pack(fill="x", padx=15, pady=(0, 12))
-        t_grid.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        t_grid.pack(fill="x", padx=14, pady=(0, 10))
+        t_grid.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="rep_form")
 
-        # Field 1: Customer Name
-        ctk.CTkLabel(t_grid, text=self._tr("lbl_cust_name"), font=ctk.CTkFont(size=12), text_color="#8b949e").grid(row=0, column=0, padx=6, pady=2, sticky="w")
-        self.cust_name_entry = ctk.CTkEntry(t_grid, placeholder_text=self._tr("ui.john_doe"))
-        self.cust_name_entry.grid(row=1, column=0, padx=6, pady=(0, 8), sticky="ew")
+        cols = (3, 2, 1, 0) if L["is_rtl"] else (0, 1, 2, 3)
 
-        # Field 2: Customer Phone
-        ctk.CTkLabel(t_grid, text=self._tr("lbl_cust_phone"), font=ctk.CTkFont(size=12), text_color="#8b949e").grid(row=0, column=1, padx=6, pady=2, sticky="w")
-        self.cust_phone_entry = ctk.CTkEntry(t_grid, placeholder_text=self._tr("ui.970_59_xxxxxxx"))
-        self.cust_phone_entry.grid(row=1, column=1, padx=6, pady=(0, 8), sticky="ew")
+        ctk.CTkLabel(
+            t_grid, text=self._L(self._tr("lbl_cust_name")), font=ctk.CTkFont(family=FONT_FAMILY, size=11), text_color=TEXT_SECONDARY, anchor=L["anchor"]
+        ).grid(row=0, column=cols[0], padx=5, pady=2, sticky="ew")
+        self.cust_name_entry = ctk.CTkEntry(t_grid, placeholder_text=self._tr("ui.john_doe"), height=32)
+        style_entry(self.cust_name_entry, L)
+        self.cust_name_entry.grid(row=1, column=cols[0], padx=5, pady=(0, 8), sticky="ew")
 
-        # Field 3: Reported Fault
-        ctk.CTkLabel(t_grid, text=self._tr("lbl_cust_fault"), font=ctk.CTkFont(size=12), text_color="#8b949e").grid(row=0, column=2, padx=6, pady=2, sticky="w")
-        self.cust_fault_entry = ctk.CTkEntry(t_grid, placeholder_text=self._tr("ui.screen_charging_issue"))
-        self.cust_fault_entry.grid(row=1, column=2, padx=6, pady=(0, 8), sticky="ew")
+        ctk.CTkLabel(
+            t_grid, text=self._L(self._tr("lbl_cust_phone")), font=ctk.CTkFont(family=FONT_FAMILY, size=11), text_color=TEXT_SECONDARY, anchor=L["anchor"]
+        ).grid(row=0, column=cols[1], padx=5, pady=2, sticky="ew")
+        self.cust_phone_entry = ctk.CTkEntry(t_grid, placeholder_text=self._tr("ui.970_59_xxxxxxx"), height=32)
+        style_entry(self.cust_phone_entry, L)
+        self.cust_phone_entry.grid(row=1, column=cols[1], padx=5, pady=(0, 8), sticky="ew")
 
-        # Field 4: Estimated Repair Cost
-        ctk.CTkLabel(t_grid, text=self._tr("lbl_repair_cost"), font=ctk.CTkFont(size=12), text_color="#8b949e").grid(row=0, column=3, padx=6, pady=2, sticky="w")
-        self.cust_cost_entry = ctk.CTkEntry(t_grid, placeholder_text="0.00")
-        self.cust_cost_entry.grid(row=1, column=3, padx=6, pady=(0, 8), sticky="ew")
+        ctk.CTkLabel(
+            t_grid, text=self._L(self._tr("lbl_cust_fault")), font=ctk.CTkFont(family=FONT_FAMILY, size=11), text_color=TEXT_SECONDARY, anchor=L["anchor"]
+        ).grid(row=0, column=cols[2], padx=5, pady=2, sticky="ew")
+        self.cust_fault_entry = ctk.CTkEntry(t_grid, placeholder_text=self._tr("ui.screen_charging_issue"), height=32)
+        style_entry(self.cust_fault_entry, L)
+        self.cust_fault_entry.grid(row=1, column=cols[2], padx=5, pady=(0, 8), sticky="ew")
 
-        # Technician Name and Certificate Buttons
+        ctk.CTkLabel(
+            t_grid, text=self._L(self._tr("lbl_repair_cost")), font=ctk.CTkFont(family=FONT_FAMILY, size=11), text_color=TEXT_SECONDARY, anchor=L["anchor"]
+        ).grid(row=0, column=cols[3], padx=5, pady=2, sticky="ew")
+        self.cust_cost_entry = ctk.CTkEntry(t_grid, placeholder_text="0.00", height=32)
+        style_entry(self.cust_cost_entry)
+        self.cust_cost_entry.grid(row=1, column=cols[3], padx=5, pady=(0, 8), sticky="ew")
+
+        # Technician Name and Certificate Action Footer
         btn_row = ctk.CTkFrame(ticket_card, fg_color="transparent")
-        btn_row.pack(fill="x", padx=15, pady=(0, 15))
+        btn_row.pack(fill="x", padx=14, pady=(0, 14))
 
-        ctk.CTkLabel(btn_row, text=self._tr("lbl_tech_name"), font=ctk.CTkFont(size=12), text_color="#8b949e").pack(side="left", padx=(0, 8))
-        self.tech_name_entry = ctk.CTkEntry(btn_row, width=220)
+        lbl_tech = ctk.CTkLabel(
+            btn_row, text=self._L(self._tr("lbl_tech_name")), font=ctk.CTkFont(family=FONT_FAMILY, size=12), text_color=TEXT_SECONDARY
+        )
+        self.tech_name_entry = ctk.CTkEntry(btn_row, height=34)
+        style_entry(self.tech_name_entry, L)
         self.tech_name_entry.insert(0, self._tr("ui.chief_hardware_technician"))
-        self.tech_name_entry.pack(side="left", padx=(0, 15))
 
-        self.btn_export_cert = ctk.CTkButton(btn_row, text=self._tr("btn_gen_signed_cert"), command=self._generate_and_open_certificate, fg_color="#238636", hover_color="#2ea043")
-        self.btn_export_cert.pack(side="left", padx=(0, 10))
+        self.btn_export_cert = make_button(
+            btn_row, self._L(self._tr("btn_gen_signed_cert")), self._generate_and_open_certificate, variant="success", height=36
+        )
+        btn_open_fld = make_button(
+            btn_row, self._L(self._tr("btn_open_folder")), lambda: webbrowser.open(REPORTS_DIR), variant="secondary", height=36
+        )
 
-        ctk.CTkButton(btn_row, text=self._tr("btn_open_folder"), command=lambda: webbrowser.open(REPORTS_DIR), fg_color="#21262d", hover_color="#30363d").pack(side="left")
+        if L["is_rtl"]:
+            btn_row.grid_columnconfigure(2, weight=1)
+            btn_open_fld.grid(row=0, column=0, padx=4)
+            self.btn_export_cert.grid(row=0, column=1, padx=4)
+            self.tech_name_entry.grid(row=0, column=2, padx=8, sticky="ew")
+            lbl_tech.grid(row=0, column=3, padx=(6, 0))
+        else:
+            btn_row.grid_columnconfigure(1, weight=1)
+            lbl_tech.grid(row=0, column=0, padx=(0, 6))
+            self.tech_name_entry.grid(row=0, column=1, padx=8, sticky="ew")
+            self.btn_export_cert.grid(row=0, column=2, padx=4)
+            btn_open_fld.grid(row=0, column=3, padx=4)
 
         # Past Reports List
-        reports_list_card = ctk.CTkFrame(tab, fg_color="#161b22", corner_radius=8)
-        reports_list_card.pack(fill="both", expand=True, padx=15, pady=0)
-        ctk.CTkLabel(reports_list_card, text=self._tr("card_past_reports"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#79c0ff").pack(anchor="w", padx=15, pady=(10, 5))
-
-        self.reports_text = ctk.CTkTextbox(reports_list_card, height=300, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#010409", text_color="#c9d1d9")
-        self.reports_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        reports_list_card, _ = make_card(
+            wrap, self._L(self._tr("card_past_reports")), ACCENT_CYAN, L, pady=(0, 0)
+        )
+        self.reports_text = make_console_box(reports_list_card, 300, L)
 
     # =========================================================================
     # DEVICE MONITORING & ASYNC LOGIC
@@ -1480,67 +2050,70 @@ class AndroidDoctorApp(ctk.CTk):
             if unauthorized_devs:
                 serials_str = ", ".join(d["serial"] for d in unauthorized_devs)
                 if hasattr(self, "alert_card"):
-                    self.alert_card.configure(fg_color="#331414", border_color="#ef4444")
+                    self.alert_card.configure(fg_color="#2a1215", border_color=ACCENT_RED)
                     self.alert_title_lbl.configure(
-                        text=self._tr("ui.device_is_unauthorized", serials_str=serials_str),
-                        text_color="#f87171"
+                        text=self._L(self._tr("ui.device_is_unauthorized", serials_str=serials_str)),
+                        text_color="#f87171",
                     )
                     self.alert_desc_lbl.configure(
-                        text=self._tr("alert_unauthorized_desc"),
-                        text_color="#fecaca"
+                        text=self._L(self._tr("alert_unauthorized_desc")),
+                        text_color="#fecaca",
                     )
-                    self.alert_card.pack(fill="x", padx=15, pady=(0, 15))
+                    self.alert_card.pack(fill="x", pady=(0, 12))
                 if hasattr(self, "guide_card"):
                     self.guide_card.pack_forget()
 
+                self.adb_status_dot.configure(fg_color=ACCENT_RED)
                 self.adb_status_label.configure(
-                    text=self._tr("ui.adb_unauthorized_accept_rsa_prompt", serials_str=serials_str),
-                    text_color="#ef4444"
+                    text=self._L(self._tr("ui.adb_unauthorized_accept_rsa_prompt", serials_str=serials_str)),
+                    text_color="#f87171",
                 )
 
             # 2. State: Physical phone detected on Windows USB PnP, but ADB debugging is OFF
             elif diag.get("has_pnp_without_adb") and pnp_phones:
                 phone_names = ", ".join(p["name"] for p in pnp_phones)
                 if hasattr(self, "alert_card"):
-                    self.alert_card.configure(fg_color="#2e1a05", border_color="#f59e0b")
+                    self.alert_card.configure(fg_color="#241807", border_color=ACCENT_AMBER)
                     self.alert_title_lbl.configure(
-                        text=self._tr("ui.phone_detected_on_usb_but_usb", phone_names=phone_names),
-                        text_color="#fbbf24"
+                        text=self._L(self._tr("ui.phone_detected_on_usb_but_usb", phone_names=phone_names)),
+                        text_color="#fbbf24",
                     )
                     desc_text = self._tr("alert_pnp_desc").replace("{names}", phone_names)
                     self.alert_desc_lbl.configure(
-                        text=desc_text,
-                        text_color="#fef3c7"
+                        text=self._L(desc_text),
+                        text_color="#fef3c7",
                     )
-                    self.alert_card.pack(fill="x", padx=15, pady=(0, 15))
+                    self.alert_card.pack(fill="x", pady=(0, 12))
                 if hasattr(self, "guide_card"):
                     self.guide_card.pack_forget()
 
+                self.adb_status_dot.configure(fg_color=ACCENT_AMBER)
                 self.adb_status_label.configure(
-                    text=self._tr("ui.usb_enable_usb_debugging", phone_names=phone_names),
-                    text_color="#f59e0b"
+                    text=self._L(self._tr("ui.usb_enable_usb_debugging", phone_names=phone_names)),
+                    text_color="#fbbf24",
                 )
 
             # 3. State: Device is offline
             elif offline_devs and not authorized_devs and not fastboot_devs:
                 serials_str = ", ".join(d["serial"] for d in offline_devs)
                 if hasattr(self, "alert_card"):
-                    self.alert_card.configure(fg_color="#2b1a10", border_color="#ea580c")
+                    self.alert_card.configure(fg_color="#28160c", border_color="#ea580c")
                     self.alert_title_lbl.configure(
-                        text=self._tr("ui.device_is_offline", serials_str=serials_str),
-                        text_color="#fb923c"
+                        text=self._L(self._tr("ui.device_is_offline", serials_str=serials_str)),
+                        text_color="#fb923c",
                     )
                     self.alert_desc_lbl.configure(
-                        text=self._tr("alert_offline_desc"),
-                        text_color="#fed7aa"
+                        text=self._L(self._tr("alert_offline_desc")),
+                        text_color="#fed7aa",
                     )
-                    self.alert_card.pack(fill="x", padx=15, pady=(0, 15))
+                    self.alert_card.pack(fill="x", pady=(0, 12))
                 if hasattr(self, "guide_card"):
                     self.guide_card.pack_forget()
 
+                self.adb_status_dot.configure(fg_color="#ea580c")
                 self.adb_status_label.configure(
-                    text=self._tr("ui.adb_offline_replug_usb_cable"),
-                    text_color="#ea580c"
+                    text=self._L(self._tr("ui.adb_offline_replug_usb_cable")),
+                    text_color="#fb923c",
                 )
 
             # 4. State: Fully authorized or Fastboot device ready!
@@ -1555,8 +2128,11 @@ class AndroidDoctorApp(ctk.CTk):
                 if hasattr(self, "alert_card"):
                     self.alert_card.pack_forget()
                 if hasattr(self, "guide_card"):
-                    self.guide_card.pack(fill="x", padx=15, pady=(0, 15))
-                self.adb_status_label.configure(text=self._tr("adb_disconnected"), text_color="#8b949e")
+                    self.guide_card.pack(fill="x", pady=(0, 12))
+                self.adb_status_dot.configure(fg_color=TEXT_MUTED)
+                self.adb_status_label.configure(
+                    text=self._L(self._tr("adb_disconnected")), text_color=TEXT_SECONDARY
+                )
 
             # Update Dropdown items
             if not options:
@@ -1574,15 +2150,27 @@ class AndroidDoctorApp(ctk.CTk):
                 chosen = (authorized_devs or fastboot_devs)[0]
                 self.current_serial.set(chosen["serial"])
                 self.device_combo.set(f"{chosen['serial']} ({chosen.get('model') or chosen.get('state')})")
-                self.adb_status_label.configure(text=self._tr("ui.adb", upper=chosen['state'].upper(), serial=chosen['serial']), text_color="#238636")
+                self.adb_status_dot.configure(fg_color=ACCENT_GREEN)
+                self.adb_status_label.configure(
+                    text=self._L(self._tr("ui.adb", upper=chosen['state'].upper(), serial=chosen['serial'])),
+                    text_color="#34d399",
+                )
                 self.run_profile_async()
             elif cur in ready_serials:
                 cur_dev = next(d for d in devices if d["serial"] == cur)
-                self.adb_status_label.configure(text=self._tr("ui.adb_2", upper=cur_dev['state'].upper(), cur=cur), text_color="#238636")
+                self.adb_status_dot.configure(fg_color=ACCENT_GREEN)
+                self.adb_status_label.configure(
+                    text=self._L(self._tr("ui.adb_2", upper=cur_dev['state'].upper(), cur=cur)),
+                    text_color="#34d399",
+                )
             elif not ready_serials:
                 self.current_serial.set("")
 
-        self.after(0, update_ui)
+        try:
+            if self.winfo_exists():
+                self.after(0, update_ui)
+        except (RuntimeError, tk.TclError):
+            pass
 
     def refresh_devices_async(self):
         threading.Thread(target=self.refresh_devices_sync, daemon=True).start()
@@ -1614,38 +2202,59 @@ class AndroidDoctorApp(ctk.CTk):
             self.current_profile = profile
 
             def update_ui():
+                self._ensure_tab("dashboard")
                 self.spec_labels["model"].configure(text=f"{profile.brand} {profile.model}")
                 self.spec_labels["serial"].configure(text=profile.serial)
                 self.spec_labels["soc"].configure(text=f"{profile.soc_chipset} ({profile.hardware})")
-                self.spec_labels["cores"].configure(text=self._tr("ui.cores", cpu_cores=profile.cpu_cores, cpu_architecture=profile.cpu_architecture))
-                self.spec_labels["android"].configure(text=self._tr("ui.android_api", android_version=profile.android_version, sdk_version=profile.sdk_version))
+                self.spec_labels["cores"].configure(text=self._L(self._tr("ui.cores", cpu_cores=profile.cpu_cores, cpu_architecture=profile.cpu_architecture)))
+                self.spec_labels["android"].configure(text=self._L(self._tr("ui.android_api", android_version=profile.android_version, sdk_version=profile.sdk_version)))
                 self.spec_labels["build_id"].configure(text=profile.build_id[:32])
                 self.spec_labels["security"].configure(text=profile.security_patch)
                 self.spec_labels["kernel"].configure(text=profile.kernel_version[:36] if profile.kernel_version else "Standard")
-                
-                root_str = self._tr("ui.rooted")
-                no_root_str = self._tr("ui.no_standard_oem")
-                self.spec_labels["root"].configure(text=root_str if profile.is_rooted else no_root_str, text_color="#da3633" if profile.is_rooted else "#238636")
-                
+
+                root_str = self._L(self._tr("ui.rooted"))
+                no_root_str = self._L(self._tr("ui.no_standard_oem"))
+                self.spec_labels["root"].configure(
+                    text=root_str if profile.is_rooted else no_root_str,
+                    text_color=ACCENT_RED if profile.is_rooted else ACCENT_GREEN,
+                )
+
                 self.spec_labels["selinux"].configure(text=profile.selinux_mode)
                 self.spec_labels["display"].configure(text=f"{profile.display_resolution} @ {profile.display_refresh_rate} ({profile.display_density})")
+
+                # Update KPI summary tiles
+                if "model" in self.kpi_labels:
+                    self.kpi_labels["model"].configure(text=f"{profile.brand} {profile.model}".strip() or "—")
+                if "android" in self.kpi_labels:
+                    self.kpi_labels["android"].configure(text=f"{profile.android_version} (API {profile.sdk_version})")
+                if "root" in self.kpi_labels:
+                    self.kpi_labels["root"].configure(
+                        text=root_str if profile.is_rooted else no_root_str,
+                        text_color=ACCENT_RED if profile.is_rooted else ACCENT_GREEN,
+                    )
+                if "selinux" in self.kpi_labels:
+                    self.kpi_labels["selinux"].configure(text=profile.selinux_mode or "—")
 
                 # Gauges
                 if profile.ram_total_mb > 0:
                     pct = profile.ram_used_pct / 100.0
                     self.ram_bar.set(pct)
-                    self.ram_title_lbl.configure(text=self._tr("ui.ram_mb_free_mb", ram_free_mb=profile.ram_free_mb, ram_total_mb=profile.ram_total_mb, ram_used_pct=profile.ram_used_pct))
+                    self.ram_title_lbl.configure(text=self._L(self._tr("ui.ram_mb_free_mb", ram_free_mb=profile.ram_free_mb, ram_total_mb=profile.ram_total_mb, ram_used_pct=profile.ram_used_pct)))
 
                 if profile.storage_total_gb > 0:
                     pct = profile.storage_used_pct / 100.0
                     self.storage_bar.set(pct)
-                    self.storage_title_lbl.configure(text=self._tr("ui.storage_gb_free_gb", storage_free_gb=profile.storage_free_gb, storage_total_gb=profile.storage_total_gb, storage_used_pct=profile.storage_used_pct))
+                    self.storage_title_lbl.configure(text=self._L(self._tr("ui.storage_gb_free_gb", storage_free_gb=profile.storage_free_gb, storage_total_gb=profile.storage_total_gb, storage_used_pct=profile.storage_used_pct)))
 
                 self.batt_bar.set(profile.battery_level_pct / 100.0)
-                self.batt_title_lbl.configure(text=self._tr("ui.battery_2", battery_level_pct=profile.battery_level_pct, battery_status=profile.battery_status))
-                self.batt_quick_lbl.configure(text=self._tr("ui.voltage_mv_temp_c_health", battery_voltage_mv=profile.battery_voltage_mv, battery_temp_c=profile.battery_temp_c, battery_health=profile.battery_health))
+                self.batt_title_lbl.configure(text=self._L(self._tr("ui.battery_2", battery_level_pct=profile.battery_level_pct, battery_status=profile.battery_status)))
+                self.batt_quick_lbl.configure(text=self._L(self._tr("ui.voltage_mv_temp_c_health", battery_voltage_mv=profile.battery_voltage_mv, battery_temp_c=profile.battery_temp_c, battery_health=profile.battery_health)))
 
-            self.after(0, update_ui)
+            try:
+                if self.winfo_exists():
+                    self.after(0, update_ui)
+            except (RuntimeError, tk.TclError):
+                pass
 
         threading.Thread(target=task, daemon=True).start()
 
@@ -1689,17 +2298,22 @@ class AndroidDoctorApp(ctk.CTk):
                 out_lines.append(format_evidence_for_display(pmic.evidence, is_ar=is_ar))
 
             def update_ui():
-                self.pmic_text.delete("1.0", "end")
-                self.pmic_text.insert("end", "\n".join(out_lines))
+                self._ensure_tab("board_diag")
+                self._set_box(self.pmic_text, "\n".join(out_lines))
+                self._set_pill("pmic", getattr(pmic, "voltage_status", "UNKNOWN"))
 
-            self.after(0, update_ui)
+            try:
+                if self.winfo_exists():
+                    self.after(0, update_ui)
+            except (RuntimeError, tk.TclError):
+                pass
 
         threading.Thread(target=task, daemon=True).start()
 
     def run_bootrom_scan_async(self):
+        self._ensure_tab("board_diag")
         is_ar = self.current_lang == "ar"
-        self.bootrom_text.delete("1.0", "end")
-        self.bootrom_text.insert("end", self._tr("ui.scanning_windows_pnp_ports_for_qualcomm"))
+        self._set_box(self.bootrom_text, self._tr("ui.scanning_windows_pnp_ports_for_qualcomm"))
 
         def task():
             diag = self.board_diag.diagnose_dead_phone_bootrom(check_cycling=True)
@@ -1721,8 +2335,9 @@ class AndroidDoctorApp(ctk.CTk):
                     lines.append(f"    {p.get('diagnosis')}")
 
             def upd():
-                self.bootrom_text.delete("1.0", "end")
-                self.bootrom_text.insert("end", "\n".join(lines))
+                self._ensure_tab("board_diag")
+                self._set_box(self.bootrom_text, "\n".join(lines))
+                self._set_pill("bootrom", "FAIL" if diag.detected_ports else "UNKNOWN")
             self.after(0, upd)
 
         threading.Thread(target=task, daemon=True).start()
@@ -1733,19 +2348,19 @@ class AndroidDoctorApp(ctk.CTk):
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
+        self._ensure_tab("board_diag")
         is_ar = self.current_lang == "ar"
         self.leakage_progress.set(0)
-        self.leakage_text.delete("1.0", "end")
-        self.leakage_text.insert("end", self._tr("ui.screen_off_battery_current_test_only"))
+        self._set_box(self.leakage_text, self._tr("ui.screen_off_battery_current_test_only"))
 
         def progress(pct, val, msg):
             def upd():
+                self._ensure_tab("board_diag")
                 self.leakage_progress.set(pct / 100.0)
                 val_txt = f"{val} mA" if val is not None else "UNKNOWN"
                 ar_msg = self._tr("ui.sample_10_battery_current", pct=int(pct/10), val_txt=val_txt)
-                self.leakage_lbl.configure(text=self._m(ar_msg))
-                self.leakage_text.insert("end", f"{ar_msg}\n")
-                self.leakage_text.see("end")
+                self.leakage_lbl.configure(text=self._L(self._m(ar_msg)))
+                self._append_box(self.leakage_text, f"{ar_msg}\n")
             self.after(0, upd)
 
         def task():
@@ -1763,8 +2378,9 @@ class AndroidDoctorApp(ctk.CTk):
                 lines.append(format_evidence_for_display(res.evidence, is_ar=is_ar))
             verdict = "\n".join(lines)
             def done():
-                self.leakage_text.insert("end", verdict + "\n")
-                self.leakage_text.see("end")
+                self._ensure_tab("board_diag")
+                self._append_box(self.leakage_text, verdict + "\n")
+                self._set_pill("leakage", res.status)
                 title = self._tr("ui.battery_current_test_result")
                 if res.status == "FAIL":
                     messagebox.showwarning(title, f"[{res.status}] {res.diagnosis}")
@@ -1794,8 +2410,9 @@ class AndroidDoctorApp(ctk.CTk):
                 out.append(f"{z.zone_id:02d} [{z.zone_type} / {z.category}]: {z.temp_c:.1f}°C — {status}")
             
             def upd():
-                self.thermal_text.delete("1.0", "end")
-                self.thermal_text.insert("end", "\n".join(out))
+                self._ensure_tab("board_diag")
+                self._set_box(self.thermal_text, "\n".join(out))
+                self._set_pill("thermal", thermal.status)
             self.after(0, upd)
 
         threading.Thread(target=task, daemon=True).start()
@@ -1828,8 +2445,9 @@ class AndroidDoctorApp(ctk.CTk):
                     out.append(f"  {p}")
 
             def upd():
-                self.panic_text.delete("1.0", "end")
-                self.panic_text.insert("end", "\n".join(out))
+                self._ensure_tab("board_diag")
+                self._set_box(self.panic_text, "\n".join(out))
+                self._set_pill("panic", panics.status)
             self.after(0, upd)
 
         threading.Thread(target=task, daemon=True).start()
@@ -1840,9 +2458,9 @@ class AndroidDoctorApp(ctk.CTk):
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
+        self._ensure_tab("board_diag")
         is_ar = self.current_lang == "ar"
-        self.blackbox_text.delete("1.0", "end")
-        self.blackbox_text.insert("end", self._tr("ui.analyzing_blackbox_forensics_dropbox_boot_reason"))
+        self._set_box(self.blackbox_text, self._tr("ui.analyzing_blackbox_forensics_dropbox_boot_reason"))
 
         def task():
             result = self.board_diag.run_blackbox_forensics(serial)
@@ -1882,24 +2500,26 @@ class AndroidDoctorApp(ctk.CTk):
                 lines.append(format_evidence_for_display(result.evidence, is_ar=is_ar))
 
             def upd():
-                self.blackbox_text.delete("1.0", "end")
-                self.blackbox_text.insert("end", "\n".join(lines))
+                self._ensure_tab("board_diag")
+                self._set_box(self.blackbox_text, "\n".join(lines))
+                self._set_pill("blackbox", result.status)
             self.after(0, upd)
 
         threading.Thread(target=task, daemon=True).start()
 
     def _toggle_live_telemetry(self):
+        self._ensure_tab("board_diag")
         is_ar = self.current_lang == "ar"
         if self._telemetry_running:
             self._telemetry_running = False
-            self.btn_toggle_telemetry.configure(text=self._tr("ui.live_telemetry_off"), fg_color="#21262d")
+            self.btn_toggle_telemetry.configure(text=self._L(self._tr("ui.live_telemetry_off")), fg_color=ACCENT_SLATE)
         else:
             serial = self.current_serial.get()
             if not serial:
                 messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
                 return
             self._telemetry_running = True
-            self.btn_toggle_telemetry.configure(text=self._tr("ui.live_telemetry_active_1_5s"), fg_color="#059669")
+            self.btn_toggle_telemetry.configure(text=self._L(self._tr("ui.live_telemetry_active_1_5s")), fg_color=ACCENT_GREEN)
             self._telemetry_thread = threading.Thread(target=self._poll_live_telemetry_loop, daemon=True)
             self._telemetry_thread.start()
 
@@ -2083,33 +2703,40 @@ class AndroidDoctorApp(ctk.CTk):
             self.last_panel_info = report.display_panel_info
 
             def upd():
-                self.sensors_text.delete("1.0", "end")
-                self.sensors_text.insert("end", "\n".join(s_lines))
-                self.camera_text.delete("1.0", "end")
-                self.camera_text.insert("end", "\n".join(c_lines))
-                self.fp_text.delete("1.0", "end")
-                self.fp_text.insert("end", "\n".join(fp_lines))
-                self.keys_text.delete("1.0", "end")
-                self.keys_text.insert("end", "\n".join(key_lines))
-                self.sim_text.delete("1.0", "end")
-                self.sim_text.insert("end", "\n".join(sim_lines))
-                self.backlight_text.delete("1.0", "end")
-                self.backlight_text.insert("end", "\n".join(disp_lines))
+                self._ensure_tab("hardware_tester")
+                self._set_box(self.sensors_text, "\n".join(s_lines))
+                self._set_pill("sensors", getattr(report, "sensors_status", "UNKNOWN"))
+
+                self._set_box(self.camera_text, "\n".join(c_lines))
+                self._set_pill("cameras", getattr(report, "cameras_status", "UNKNOWN"))
+
+                self._set_box(self.fp_text, "\n".join(fp_lines))
+                self._set_pill("fp", getattr(report.fingerprint, "status", "UNKNOWN"))
+
+                self._set_box(self.keys_text, "\n".join(key_lines))
+                self._set_pill("keys", getattr(report.buttons, "status", "UNKNOWN"))
+
+                self._set_box(self.sim_text, "\n".join(sim_lines))
+                self._set_pill("sim", getattr(report.sim_baseband, "status", "UNKNOWN"))
+
+                self._set_box(self.backlight_text, "\n".join(disp_lines))
+                self._set_pill("backlight", getattr(report.display_backlight, "status", "UNKNOWN"))
+
                 if hasattr(self, "wifi_text"):
-                    self.wifi_text.delete("1.0", "end")
-                    self.wifi_text.insert("end", "\n".join(wifi_lines))
+                    self._set_box(self.wifi_text, "\n".join(wifi_lines))
+                    self._set_pill("wifi", getattr(report.wifi, "status", "UNKNOWN"))
                 if hasattr(self, "bt_text"):
-                    self.bt_text.delete("1.0", "end")
-                    self.bt_text.insert("end", "\n".join(bt_lines))
+                    self._set_box(self.bt_text, "\n".join(bt_lines))
+                    self._set_pill("bt", getattr(report.bluetooth, "status", "UNKNOWN"))
                 if hasattr(self, "chips_text"):
-                    self.chips_text.delete("1.0", "end")
-                    self.chips_text.insert("end", "\n".join(chip_lines))
+                    self._set_box(self.chips_text, "\n".join(chip_lines))
+                    self._set_pill("chips", getattr(report.peripherals, "status", "UNKNOWN"))
                 if hasattr(self, "audio_codec_text"):
-                    self.audio_codec_text.delete("1.0", "end")
-                    self.audio_codec_text.insert("end", "\n".join(codec_lines))
+                    self._set_box(self.audio_codec_text, "\n".join(codec_lines))
+                    self._set_pill("audio_codec", getattr(report.audio_codec, "status", "UNKNOWN"))
                 if hasattr(self, "panel_info_text"):
-                    self.panel_info_text.delete("1.0", "end")
-                    self.panel_info_text.insert("end", "\n".join(panel_lines))
+                    self._set_box(self.panel_info_text, "\n".join(panel_lines))
+                    self._set_pill("panel_info", getattr(report.display_panel_info, "status", "UNKNOWN"))
                 self.pointer_location_var.set(report.pointer_location_active)
 
             self.after(0, upd)
@@ -2122,9 +2749,9 @@ class AndroidDoctorApp(ctk.CTk):
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
+        self._ensure_tab("hardware_tester")
         is_ar = self.current_lang == "ar"
-        self.keys_text.delete("1.0", "end")
-        self.keys_text.insert("end", self._tr("ui.listening_for_physical_key_presses_press"))
+        self._set_box(self.keys_text, self._tr("ui.listening_for_physical_key_presses_press"))
 
         def task():
             btn_diag = self.hardware_tester.diagnose_physical_buttons(serial)
@@ -2142,8 +2769,9 @@ class AndroidDoctorApp(ctk.CTk):
                     lines.append(f"  {ev}")
 
             def upd():
-                self.keys_text.delete("1.0", "end")
-                self.keys_text.insert("end", "\n".join(lines))
+                self._ensure_tab("hardware_tester")
+                self._set_box(self.keys_text, "\n".join(lines))
+                self._set_pill("keys", getattr(btn_diag, "status", "UNKNOWN"))
             self.after(0, upd)
 
         threading.Thread(target=task, daemon=True).start()
@@ -2170,14 +2798,16 @@ class AndroidDoctorApp(ctk.CTk):
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
+        self._ensure_tab("malware_hunter")
         self.sec_progress.set(0)
-        self.threats_text.delete("1.0", "end")
+        self._set_box(self.threats_text, "")
         is_ar = self.current_lang == "ar"
 
         def progress(pct, msg):
             def upd():
+                self._ensure_tab("malware_hunter")
                 self.sec_progress.set(pct / 100.0)
-                self.sec_status_lbl.configure(text=self._m(msg))
+                self.sec_status_lbl.configure(text=self._L(self._m(msg)))
             self.after(0, upd)
 
         def task():
@@ -2209,8 +2839,9 @@ class AndroidDoctorApp(ctk.CTk):
             t_lines.append(format_evidence_for_display(scan.evidence, is_ar=is_ar))
 
             def upd():
-                self.threats_text.delete("1.0", "end")
-                self.threats_text.insert("end", "\n".join(t_lines))
+                self._ensure_tab("malware_hunter")
+                self._set_box(self.threats_text, "\n".join(t_lines))
+                self._set_pill("user_ca", getattr(scan, "user_ca_status", "UNKNOWN"))
 
             self.after(0, upd)
 
@@ -2231,8 +2862,8 @@ class AndroidDoctorApp(ctk.CTk):
                 lines.append(self._tr("ui.no_active_external_connection_was_read"))
 
             def upd():
-                self.net_text.delete("1.0", "end")
-                self.net_text.insert("end", "\n".join(lines))
+                self._ensure_tab("malware_hunter")
+                self._set_box(self.net_text, "\n".join(lines))
             self.after(0, upd)
 
         threading.Thread(target=task, daemon=True).start()
@@ -2295,9 +2926,9 @@ class AndroidDoctorApp(ctk.CTk):
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
+        self._ensure_tab("malware_hunter")
         is_ar = self.current_lang == "ar"
-        self.bloat_text.delete("1.0", "end")
-        self.bloat_text.insert("end", self._tr("ui.scanning_installed_oem_bloatware_packages_matchi"))
+        self._set_box(self.bloat_text, self._tr("ui.scanning_installed_oem_bloatware_packages_matchi"))
 
         def task():
             bloat_list = self.malware_hunter.scan_oem_bloatware(serial)
@@ -2319,8 +2950,8 @@ class AndroidDoctorApp(ctk.CTk):
                 lines.append(self._tr("ui.clean_no_active_oem_bloatware_packages"))
 
             def upd():
-                self.bloat_text.delete("1.0", "end")
-                self.bloat_text.insert("end", "\n".join(lines))
+                self._ensure_tab("malware_hunter")
+                self._set_box(self.bloat_text, "\n".join(lines))
             self.after(0, upd)
 
         threading.Thread(target=task, daemon=True).start()
@@ -2416,15 +3047,16 @@ class AndroidDoctorApp(ctk.CTk):
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
 
+        self._ensure_tab("optimizer")
         self.opt_progress.set(0)
-        self.opt_log_text.delete("1.0", "end")
+        self._set_box(self.opt_log_text, "")
 
         def progress(pct, msg):
             def upd():
+                self._ensure_tab("optimizer")
                 self.opt_progress.set(pct / 100.0)
-                self.opt_status_lbl.configure(text=self._m(msg))
-                self.opt_log_text.insert("end", f"[{time.strftime('%H:%M:%S')}] {msg}\n")
-                self.opt_log_text.see("end")
+                self.opt_status_lbl.configure(text=self._L(self._m(msg)))
+                self._append_box(self.opt_log_text, f"[{time.strftime('%H:%M:%S')}] {msg}\n")
             self.after(0, upd)
 
         def task():
@@ -2441,11 +3073,14 @@ class AndroidDoctorApp(ctk.CTk):
                 lines.append(f"    {a.note}")
 
             def done():
+                self._ensure_tab("optimizer")
                 self.lbl_ram_gain.configure(text=f"{_fmt(res.before.ram_free_mb)} -> {_fmt(res.after.ram_free_mb, 'MB')}")
                 self.lbl_storage_gain.configure(text=_fmt(res.storage_freed_mb, "MB"))
                 self.lbl_drain_gain.configure(text="—")
-                self.opt_log_text.insert("end", "\n" + "\n".join(lines) + "\n")
-                self.opt_log_text.see("end")
+                self._append_box(self.opt_log_text, "\n" + "\n".join(lines) + "\n")
+                any_fail = any(getattr(a, "status", "") == "FAIL" for a in res.actions)
+                all_unknown = all(getattr(a, "status", "") == "UNKNOWN" for a in res.actions) if res.actions else True
+                self._set_pill("maint", "FAIL" if any_fail else ("UNKNOWN" if all_unknown else "PASS"))
                 messagebox.showinfo(self._tr("ui.maintenance_finished"),
                                     (self._tr("ui.measured_change_in_free_storage_after", mb=_fmt(res.storage_freed_mb, 'MB'))))
             self.after(0, done)
@@ -2833,9 +3468,9 @@ class AndroidDoctorApp(ctk.CTk):
         if not serial:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_phone_first"))
             return
+        self._ensure_tab("board_diag")
         is_ar = self.current_lang == "ar"
-        self.nand_text.delete("1.0", "end")
-        self.nand_text.insert("end", self._tr("ui.reading_jedec_emmc_ufs_wear_level"))
+        self._set_box(self.nand_text, self._tr("ui.reading_jedec_emmc_ufs_wear_level"))
 
         def task():
             rep = self.board_diag.read_emmc_ufs_lifespan(serial)
@@ -2850,8 +3485,9 @@ class AndroidDoctorApp(ctk.CTk):
                 self._tr("ui.diagnosis_4", diagnosis=rep.diagnosis)
             ]
             def upd():
-                self.nand_text.delete("1.0", "end")
-                self.nand_text.insert("end", "\n".join(lines))
+                self._ensure_tab("board_diag")
+                self._set_box(self.nand_text, "\n".join(lines))
+                self._set_pill("nand", getattr(rep, "status", "UNKNOWN"))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
@@ -2860,9 +3496,9 @@ class AndroidDoctorApp(ctk.CTk):
         if not serial:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_phone_first"))
             return
+        self._ensure_tab("board_diag")
         is_ar = self.current_lang == "ar"
-        self.nand_text.delete("1.0", "end")
-        self.nand_text.insert("end", self._tr("ui.running_64mb_sequential_read_write_speed"))
+        self._set_box(self.nand_text, self._tr("ui.running_64mb_sequential_read_write_speed"))
 
         def task():
             w_speed, r_speed, verdict, diag = self.board_diag.benchmark_storage_speed(serial, test_size_mb=64)
@@ -2874,8 +3510,8 @@ class AndroidDoctorApp(ctk.CTk):
                 self._tr("ui.technical_diagnosis", diag=diag)
             ]
             def upd():
-                self.nand_text.delete("1.0", "end")
-                self.nand_text.insert("end", "\n".join(lines))
+                self._ensure_tab("board_diag")
+                self._set_box(self.nand_text, "\n".join(lines))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
@@ -2884,19 +3520,19 @@ class AndroidDoctorApp(ctk.CTk):
         if not serial:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_phone_first"))
             return
+        self._ensure_tab("board_diag")
         is_ar = self.current_lang == "ar"
         self.stress_progress.set(0)
-        self.stress_text.delete("1.0", "end")
-        self.stress_text.insert("end", self._tr("ui.starting_30_second_cpu_pmic_stress"))
+        self._set_box(self.stress_text, self._tr("ui.starting_30_second_cpu_pmic_stress"))
 
         def task():
             def prog(snap: StressTestSnapshot, msg: str):
                 def update():
+                    self._ensure_tab("board_diag")
                     pct = min(1.0, snap.second / 30.0)
                     self.stress_progress.set(pct)
-                    self.stress_lbl.configure(text=self._m(msg))
-                    self.stress_text.insert("end", f"{msg}\n")
-                    self.stress_text.see("end")
+                    self.stress_lbl.configure(text=self._L(self._m(msg)))
+                    self._append_box(self.stress_text, f"{msg}\n")
                 self.after(0, update)
 
             rep = self.board_diag.run_cpu_pmic_stress_test(serial, duration_sec=30, progress_callback=prog)
@@ -2914,9 +3550,10 @@ class AndroidDoctorApp(ctk.CTk):
             ]
 
             def done():
+                self._ensure_tab("board_diag")
                 self.stress_progress.set(1.0)
-                self.stress_text.insert("end", "\n".join(lines))
-                self.stress_text.see("end")
+                self._append_box(self.stress_text, "\n".join(lines) + "\n")
+                self._set_pill("stress", getattr(rep, "status", "UNKNOWN"))
                 if rep.severe_sag_detected:
                     messagebox.showwarning(self._tr("ui.voltage_sag_alert"), self._m(rep.diagnosis))
                 else:
@@ -3065,9 +3702,9 @@ class AndroidDoctorApp(ctk.CTk):
         if not serial:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
+        self._ensure_tab("board_diag")
         is_ar = self.current_lang == "ar"
-        self.fast_charge_text.delete("1.0", "end")
-        self.fast_charge_text.insert("end", self._tr("ui.reading_charging_protocol_negotiation_voltage_an"))
+        self._set_box(self.fast_charge_text, self._tr("ui.reading_charging_protocol_negotiation_voltage_an"))
 
         def task():
             diag = self.board_diag.diagnose_fast_charge(serial)
@@ -3086,8 +3723,9 @@ class AndroidDoctorApp(ctk.CTk):
                 self._tr("ui.diagnosis_2", diagnosis=diag.diagnosis)
             ]
             def upd():
-                self.fast_charge_text.delete("1.0", "end")
-                self.fast_charge_text.insert("end", "\n".join(lines))
+                self._ensure_tab("board_diag")
+                self._set_box(self.fast_charge_text, "\n".join(lines))
+                self._set_pill("fast_charge", getattr(diag, "status", "UNKNOWN"))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
@@ -3096,12 +3734,13 @@ class AndroidDoctorApp(ctk.CTk):
         if not serial:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
+        self._ensure_tab("board_diag")
         is_ar = self.current_lang == "ar"
         def task():
             ok, msg = self.board_diag.reset_battery_stats_and_gauge(serial)
             def upd():
-                self.fast_charge_text.delete("1.0", "end")
-                self.fast_charge_text.insert("end", self._tr("ui.reset_battery_statistics", msg=msg))
+                self._ensure_tab("board_diag")
+                self._set_box(self.fast_charge_text, self._tr("ui.reset_battery_statistics", msg=msg))
                 messagebox.showinfo(
                     self._tr("ui.reset_battery_statistics_2"),
                     self._tr("ui.battery_usage_statistics_reset_successfully_note")
@@ -3114,9 +3753,9 @@ class AndroidDoctorApp(ctk.CTk):
         if not serial:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
+        self._ensure_tab("hardware_tester")
         is_ar = self.current_lang == "ar"
-        self.storage_text.delete("1.0", "end")
-        self.storage_text.insert("end", self._tr("ui.running_emmc_ufs_health_check_read"))
+        self._set_box(self.storage_text, self._tr("ui.running_emmc_ufs_health_check_read"))
 
         def task():
             report = self.storage_bench.run_full_storage_test(serial)
@@ -3136,8 +3775,9 @@ class AndroidDoctorApp(ctk.CTk):
             if report.evidence:
                 lines.append(format_evidence_for_display(report.evidence, is_ar=is_ar))
             def upd():
-                self.storage_text.delete("1.0", "end")
-                self.storage_text.insert("end", "\n".join(lines))
+                self._ensure_tab("hardware_tester")
+                self._set_box(self.storage_text, "\n".join(lines))
+                self._set_pill("storage", getattr(report, "status", "UNKNOWN"))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
@@ -3146,15 +3786,15 @@ class AndroidDoctorApp(ctk.CTk):
         if not serial:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
+        self._ensure_tab("hardware_tester")
         is_ar = self.current_lang == "ar"
-        self.touch_text.delete("1.0", "end")
-        self.touch_text.insert("end", self._tr("ui.deploying_touch_digitizer_grid_test_to"))
+        self._set_box(self.touch_text, self._tr("ui.deploying_touch_digitizer_grid_test_to"))
 
         def task():
             ok, msg = self.touch_matrix.deploy_and_launch_touch_test(serial)
             def upd():
-                self.touch_text.delete("1.0", "end")
-                self.touch_text.insert("end", self._tr("ui.touch_test", msg=msg))
+                self._ensure_tab("hardware_tester")
+                self._set_box(self.touch_text, self._tr("ui.touch_test", msg=msg))
                 if ok:
                     messagebox.showinfo(self._tr("ui.touch_test_2"), self._tr("ui.touch_test_grid_opened_on_device"))
                 else:
@@ -3216,15 +3856,15 @@ class AndroidDoctorApp(ctk.CTk):
         if not serial:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_device_first"))
             return
+        self._ensure_tab("hardware_tester")
         is_ar = self.current_lang == "ar"
-        self.touch_text.delete("1.0", "end")
-        self.touch_text.insert("end", self._tr("ui.deploying_full_screen_rgbw_dead_pixel"))
+        self._set_box(self.touch_text, self._tr("ui.deploying_full_screen_rgbw_dead_pixel"))
 
         def task():
             ok, msg = self.hardware_tester.launch_screen_color_test(serial)
             def upd():
-                self.touch_text.delete("1.0", "end")
-                self.touch_text.insert("end", self._tr("ui.screen_test_status", msg=msg))
+                self._ensure_tab("hardware_tester")
+                self._set_box(self.touch_text, self._tr("ui.screen_test_status", msg=msg))
                 if ok:
                     answer = messagebox.askyesno(
                         self._tr("ui.screen_color_test"),
@@ -3232,7 +3872,7 @@ class AndroidDoctorApp(ctk.CTk):
                     )
                     if answer:
                         self.hardware_tester.stop_screen_color_test(serial)
-                        self.touch_text.insert("end", self._tr("ui.screen_test_closed_and_touch_overlays"))
+                        self._append_box(self.touch_text, self._tr("ui.screen_test_closed_and_touch_overlays"))
                 else:
                     messagebox.showwarning(self._tr("ui.notice"), self._m(msg))
             self.after(0, upd)
@@ -3243,15 +3883,15 @@ class AndroidDoctorApp(ctk.CTk):
         if not serial:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_device_first"))
             return
+        self._ensure_tab("hardware_tester")
         is_ar = self.current_lang == "ar"
-        self.audio_codec_text.delete("1.0", "end")
-        self.audio_codec_text.insert("end", self._tr("ui.generating_pure_1000hz_sine_test_tone"))
+        self._set_box(self.audio_codec_text, self._tr("ui.generating_pure_1000hz_sine_test_tone"))
 
         def task():
             ok, msg = self.hardware_tester.play_speaker_test_tone(serial, freq=1000, duration_sec=3.0)
             def upd():
-                self.audio_codec_text.delete("1.0", "end")
-                self.audio_codec_text.insert("end", self._tr("ui.speaker_test_output", msg=msg))
+                self._ensure_tab("hardware_tester")
+                self._set_box(self.audio_codec_text, self._tr("ui.speaker_test_output", msg=msg))
                 if ok:
                     messagebox.showinfo(self._tr("ui.speaker_test"), self._tr("ui.test_tone_played_successfully_on_phone"))
                 else:
@@ -3264,9 +3904,9 @@ class AndroidDoctorApp(ctk.CTk):
         if not serial:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_device_first"))
             return
+        self._ensure_tab("hardware_tester")
         is_ar = self.current_lang == "ar"
-        self.sensors_text.delete("1.0", "end")
-        self.sensors_text.insert("end", self._tr("ui.checking_companion_apk_or_activating_zero"))
+        self._set_box(self.sensors_text, self._tr("ui.checking_companion_apk_or_activating_zero"))
 
         def task():
             ok, msg = self.hardware_tester.install_companion_apk(serial)
@@ -3277,8 +3917,8 @@ class AndroidDoctorApp(ctk.CTk):
             else:
                 diag_txt = self._tr("ui.companion_status_zero_apk_interactive_suite", msg=msg)
             def upd():
-                self.sensors_text.delete("1.0", "end")
-                self.sensors_text.insert("end", diag_txt)
+                self._ensure_tab("hardware_tester")
+                self._set_box(self.sensors_text, diag_txt)
                 messagebox.showinfo(self._tr("ui.interactive_diag"), diag_txt)
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
@@ -3288,9 +3928,9 @@ class AndroidDoctorApp(ctk.CTk):
         if not serial:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_device_first"))
             return
+        self._ensure_tab("board_diag")
         is_ar = self.current_lang == "ar"
-        self.root_forensics_text.delete("1.0", "end")
-        self.root_forensics_text.insert("end", self._tr("ui.running_root_forensics_pro_inspecting_persistent"))
+        self._set_box(self.root_forensics_text, self._tr("ui.running_root_forensics_pro_inspecting_persistent"))
 
         def task():
             rep = self.board_diag.run_root_forensics_pro(serial)
@@ -3321,8 +3961,9 @@ class AndroidDoctorApp(ctk.CTk):
                 lines.append(format_evidence_for_display(rep.evidence, is_ar=is_ar))
 
             def upd():
-                self.root_forensics_text.delete("1.0", "end")
-                self.root_forensics_text.insert("end", "\n".join(lines))
+                self._ensure_tab("board_diag")
+                self._set_box(self.root_forensics_text, "\n".join(lines))
+                self._set_pill("root_forensics", getattr(rep, "status", "UNKNOWN"))
                 if rep.is_rooted:
                     messagebox.showinfo(self._tr("ui.forensics_complete"), self._tr("ui.root_forensics_completed_successfully"))
                 else:
@@ -3335,16 +3976,17 @@ class AndroidDoctorApp(ctk.CTk):
         if not serial:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_device_first"))
             return
+        self._ensure_tab("board_diag")
         is_ar = self.current_lang == "ar"
-        self.root_forensics_text.delete("1.0", "end")
-        self.root_forensics_text.insert("end", self._tr("ui.discovering_critical_efs_nvram_modem_partitions"))
+        self._set_box(self.root_forensics_text, self._tr("ui.discovering_critical_efs_nvram_modem_partitions"))
 
         def task():
             def prog(msg):
-                self.after(0, lambda: self.root_forensics_text.insert("end", f"{msg}\n"))
+                self.after(0, lambda m=msg: self._append_box(self.root_forensics_text, f"{m}\n"))
             res = self.board_diag.backup_efs_nvram_partitions(serial=serial, progress_callback=prog)
             self.last_efs_backup = res
             def upd():
+                self._ensure_tab("board_diag")
                 lines = [
                     self._tr("ui.raw_efs_nvram_backup_report"),
                     self._tr("ui.success_2", failed_or_needs_permissions=self._tr("ui.yes_completed_3") if res.success else self._tr("ui.failed_or_needs_permissions")),
@@ -3357,7 +3999,7 @@ class AndroidDoctorApp(ctk.CTk):
                     lines.append(self._tr("ui.partition_sha_256_checksums"))
                     for p, h in res.hashes.items():
                         lines.append(f"  • {p}: {h[:16]}...")
-                self.root_forensics_text.insert("end", "\n".join(lines))
+                self._append_box(self.root_forensics_text, "\n".join(lines) + "\n")
                 if res.success:
                     messagebox.showinfo(self._tr("ui.raw_backup_complete"), self._tr("ui.raw_partitions_successfully_dumped_to", backup_folder=res.backup_folder))
                     if res.backup_folder and os.path.exists(res.backup_folder):
@@ -3437,6 +4079,7 @@ class AndroidDoctorApp(ctk.CTk):
         self._refresh_past_reports()
 
     def _refresh_past_reports(self):
+        self._ensure_tab("reports")
         reports = self.db.get_diagnostic_reports(limit=25)
         is_ar = self.current_lang == "ar"
         lines = [self._tr("ui.stored_diagnostic_reports_in_database", reports=len(reports))]
@@ -3444,5 +4087,4 @@ class AndroidDoctorApp(ctk.CTk):
             batt_pct = r.get('battery_health_pct')
             batt_str = f"{batt_pct}%" if batt_pct is not None else "UNKNOWN"
             lines.append(self._tr("ui.report_device_date_status_battery_health", id=r['id'], device_serial=r['device_serial'], timestamp=r['timestamp'], overall_status=r['overall_status'], batt_str=batt_str))
-        self.reports_text.delete("1.0", "end")
-        self.reports_text.insert("end", "\n".join(lines))
+        self._set_box(self.reports_text, "\n".join(lines))
