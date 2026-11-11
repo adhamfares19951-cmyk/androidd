@@ -18,7 +18,14 @@ Every check returns one of four statuses defined in `core/result.py` (`Status`):
 - Every check attaches one or more `Evidence` records (`source`, `raw_excerpt` trimmed at 2048 characters, and `exit_code`).
 - `exit_code` defaults to `None` when no real process exit code is known (such as legacy ADB connections without `shell_v2` or host-side ratio calculations) so an unknown exit state never looks like `0`.
 - Raw evidence is shown in the GUI and rendered inside expandable `<details>` blocks in exported HTML reports. The CLI prints statuses and details; the raw evidence is in the HTML report it writes.
-- `aggregate_status()` combines check statuses as `FAIL` if any key check failed, `UNKNOWN` if any key check is `UNKNOWN` or `NEEDS_ROOT`, and `PASS` only when all key checks pass.
+- `aggregate_status()` combines check statuses as `FAIL` if any key check failed, `UNKNOWN` if any key check is `UNKNOWN` or `NEEDS_ROOT` (or there are none), and `PASS` only when all key checks pass. Any unrecognised status string is treated as `UNKNOWN` (`coerce_status()`), never `PASS`.
+
+### One Result Type: `CheckResult`
+
+- Every judged check produces a `CheckResult` (`check_id`, `status`, `value`/`unit`, `detail`, `possible_causes`, `evidence`). Per-check classes (battery, thermal, boot reason, kernel log, charger input, storage, stress test, root forensics and all hardware subsystem checks) get `to_check_result()` from the `ProducesCheckResult` mixin; their domain fields stay available to the GUI.
+- `BoardDiagnosticResult.checks` and `HardwareAuditReport.checks` hold the key checks (`check_statuses` mirrors them); `SecurityAuditScan.check_results()` gives the user-CA check.
+- The CLI status table, the CLI overall status and the HTML report table are built from these lists. CLI stages that crash become `UNKNOWN` checks and are counted in the report's overall status too.
+- The GUI status pills use the same rules (for example, the maintenance pill uses `aggregate_status()`; the BootROM port scan reports USB modes and never shows `PASS`/`FAIL`).
 
 ### "Possible Causes" Wording
 
@@ -29,7 +36,7 @@ Board-level anomalies (abnormal boot reasons such as `THERMAL`, `UVLO`, or `WATC
 ## Features
 
 ### Device Profiler (`core/profiler.py`)
-Reads device properties (`getprop`), CPU core count (`/proc/cpuinfo`), kernel string (`uname -a`, `/proc/version`), uptime (`/proc/uptime`), RAM (`/proc/meminfo`), `/data` capacity (`df -k /data`), battery overview (`dumpsys battery`), display dimensions and refresh rate (`wm`, `dumpsys display`), SELinux mode (`getenforce`), and root availability (`su -c id`).
+Reads device properties (`getprop`), CPU core count (`/proc/cpuinfo`), kernel string (`uname -a`, `/proc/version`), uptime (`/proc/uptime`), RAM (`/proc/meminfo`), `/data` capacity (`df -k /data`), battery overview (`dumpsys battery`), display dimensions and refresh rate (`wm`, `dumpsys display`), SELinux mode (`getenforce`), and root availability (`su -c id`: root only when it really runs as `uid=0`; a `su` binary that is present but denied, e.g. by Magisk, is not root. The `su` exit status is echoed back so it is known even on ADB transports without `shell_v2`).
 
 ### Board, Power, Battery & Storage Diagnostics (`core/board_diag.py`, `core/storage_benchmark.py`, `core/jedec.py`)
 - **Battery voltage (fuel gauge)** & **Battery current**: Reads kernel `power_supply` sysfs directories (`battery`, `bms`, `sec-battery`, `qcom-battery`, `mtk-battery`) with `dumpsys battery` fallback. Distinguishes transport context in notes: over USB, `"Battery current"` explicitly notes that it includes charging current while USB is connected; over wireless ADB, it notes wireless transport without USB charging. Battery capacity vs. design ratio (`charge_full / charge_full_design`) is computed only when both values are parsed and plausible; otherwise it reports `NEEDS_ROOT` or `UNKNOWN`.
@@ -63,7 +70,7 @@ Reads device properties (`getprop`), CPU core count (`/proc/cpuinfo`), kernel st
 - Partition table discovery (`by-name`, `/proc/partitions`) and `dd` backup (`core/partition_backup.py`), bulk APK installation (`adb install -r -d -g`) and extraction (`core/batch_apk_manager.py`), and neutral setup-wizard flag reading/writing (`device_provisioned`, `user_setup_complete`) and Settings/URL intent helpers (`core/provisioning_manager.py`).
 
 ### Diagnostic Report & Persistence (`ui/report_exporter.py`, `database/db_manager.py`)
-- Generates printable dark-theme HTML **Diagnostic Report** files (saved to `reports/` by default or `--output-dir`), featuring HTML-escaped device values, a per-check status table, overall aggregated status, expandable evidence drawers, and optional vector SVG QR codes (`qrcode`). Reports are **not digitally signed** and state this in the footer.
+- Generates printable dark-theme HTML **Diagnostic Report** files (saved to `reports/` by default or `--output-dir`), featuring HTML-escaped device values, a per-check status table, overall aggregated status, expandable evidence drawers, and optional vector SVG QR codes (`qrcode`). Without a signing key the footer states that the report is **not digitally signed**; see [Report Signing](#report-signing-ed25519) for Ed25519 signatures.
 - Persists device history, diagnostic summaries, repair tickets, leakage logs, maintenance logs, and package rollbacks in SQLite (`data/android_doctor.db`).
 
 ---
@@ -92,7 +99,7 @@ Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
-`requirements.txt` lists `customtkinter`, `darkdetect`, `packaging`, `Pillow`, `arabic-reshaper`, `python-bidi` and `qrcode` (QR codes in the report are optional; the report is written without one if `qrcode` is missing).
+`requirements.txt` lists `customtkinter`, `darkdetect`, `packaging`, `Pillow`, `arabic-reshaper`, `python-bidi`, `qrcode` (QR codes in the report are optional; the report is written without one if `qrcode` is missing) and `cryptography` (needed only for report signing).
 
 ### Launching the GUI
 On Windows, double-click `run.bat` (launches `python main.py --lang ar`) or run directly:
@@ -116,13 +123,33 @@ Arguments parsed in `main.py`:
 - `--check-bins`: verify `bin/` against `bin/manifest.json` and print JSON status (no download)
 - `--repair-tools`: download/reinstall missing or mismatched packages after SHA-256 verification
 - `--output-dir OUTPUT_DIR`: custom folder for the CLI HTML report
+- `--sign-key PATH`: sign the CLI report with this Ed25519 private key (default: `ADP_SIGNING_KEY` environment variable)
+- `--gen-signing-key DIR`: create a new key pair in `DIR` (outside the program folder)
+- `--verify-report REPORT --public-key PUB [--signature SIG]`: verify a signed report
 
 CLI exit codes:
 - `0`: run completed (individual checks may still be `FAIL`, `UNKNOWN`, or `NEEDS_ROOT`; also returned after reading variables in `fastboot` mode)
 - `1`: no device found, or the given `--serial` is not connected
 - `2`: device is `unauthorized`, `offline`, or in an unsupported ADB state
 - `3`: partial results (one or more diagnostic stages failed and became `UNKNOWN`; the HTML report is still written)
-- `4`: internal error (for example, `list_devices` failure, report write error, or `--check-bins` failure)
+- `4`: internal error (for example, `list_devices` failure, report write error, signing key error, or `--check-bins` failure)
+- `5`: `--verify-report` only: the signature does not verify (report changed, other key, or bad signature file)
+
+### Report Signing (Ed25519)
+
+A key kept inside the program would let anyone sign, so the private key lives **outside** this folder and the program refuses a key path inside it.
+
+```bash
+python main.py --gen-signing-key D:\keys\adp
+```
+This writes `adp_signing_key.pem` (private: keep it secret and back it up) and `adp_signing_key.pub.pem` (public: give it to whoever verifies). An existing key is never overwritten. If `ADP_SIGNING_KEY_PASSPHRASE` is set, the private key is encrypted with it and the same variable is needed to sign.
+
+Sign reports from the CLI with `--sign-key D:\keys\adp\adp_signing_key.pem`, or set `ADP_SIGNING_KEY` to that path for both CLI and GUI. A signed report's footer names the key id (first 16 hex digits of the SHA-256 of the public key), and `<report>.html.sig` (JSON) next to it holds the Ed25519 signature of the report file's exact bytes and their SHA-256. A bad or missing key fails before any report is written.
+
+```bash
+python main.py --verify-report Diagnostic_Report_X.html --public-key D:\keys\adp\adp_signing_key.pub.pem
+```
+Exit `0` means the file is unchanged and was signed by that key; exit `5` means it was not. The signature proves who signed and that the file was not changed afterwards; it does not make the readings themselves more accurate.
 
 ### Log File Location
 Logs are written by a rotating file handler (`1 MB` per file, `5` backups) in:
@@ -156,6 +183,10 @@ All tests run against in-memory fakes (`tests/fakes.py`) or mocked bridges and s
 Test modules:
 - `tests/test_verdict_system.py`: 4-state verdict contracts, `Evidence` truncation and `exit_code=None` default, USB vs. Wi-Fi current notes, BootROM `possible_causes`, `getevent` non-root error behavior, `display.panel_info`, and HTML report terms.
 - `tests/test_status_matrix.py`: Command-routed `FakeBridge` read matrices (`normal`, `empty`, `permission denied` in stdout/stderr, `missing`, `malformed`), legacy shell vs. `shell_v2` parsing, strict integer and JEDEC parsers, and glob path handling.
+- `tests/test_root_detection.py`: Root detection (granted, denied, missing `su`, non-root uid text) and `su` exit status on legacy transports.
+- `tests/test_check_result_migration.py`: `to_check_result()` for every per-check class, `check_statuses` mirroring `checks`, report overall including failed CLI stages, legacy report dicts, and the GUI report including the screen-off current result.
+- `tests/test_report_signing.py`: Key generation and refusal inside the program folder, encrypted keys, signed and unsigned reports in Arabic and English, single-byte tampering, forged hashes, other keys, bad signature files, CLI exit codes `0`/`4`/`5`.
+- `tests/test_ui_smoke.py`: Headless build of every GUI tab in Arabic and English, width fit, language switch, and status-pill rules.
 - `tests/test_misleading_checks.py`: Preconditions for wireless-only screen-off current, per-category thermal limits, measurable vs. unmeasurable maintenance actions, `fastboot erase cache` precondition, WhatsApp media-only pulls, unsigned report notices, and granted-permission security inventories.
 - `tests/test_i18n_keys.py`: Locale key parity, placeholder parity, AST scan for hardcoded text, and `check_id` translations.
 - `tests/test_cli_and_tools.py`: CLI exit codes (`0`–`4`), isolated stage failures, `bin/manifest.json` schema, archive SHA-256 verification before extraction, path traversal rejection, and private ADB port `5038` lifecycle.
@@ -184,9 +215,9 @@ On an unrooted production Android device, SELinux restricts several paths and to
 
 ## Known Limitations
 
-- **Physical device coverage:** All 104 automated tests use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
+- **Physical device coverage:** All automated tests (146) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
 - **Non-Windows tool manifests:** Download URLs and archive SHA-256 hashes are pinned for all 5 platforms, but pre-listed per-file `scrcpy` SHA-256 entries cover `windows-x86_64` only, and non-Windows archive downloads have not been runtime-tested.
-- **Unsigned reports:** Generated HTML reports have no cryptographic signature; an external-key Ed25519 signing mechanism is planned.
+- **Signing is opt-in:** Reports are signed only when a key is configured (`--sign-key` / `ADP_SIGNING_KEY`); keeping the private key safe is the technician's job.
 
 ---
 
@@ -195,7 +226,7 @@ On an unrooted production Android device, SELinux restricts several paths and to
 ```text
 android/
 ├── bin/                   # Pinned platform-tools (37.0.1), scrcpy (5.0.1), and manifest.json
-├── core/                  # ADB shell_v2 bridge, shared readers, Result/Msg contracts, diagnostics, rescue
+├── core/                  # ADB shell_v2 bridge, shared readers, CheckResult/Msg contracts, diagnostics, rescue, report signing
 ├── data/                  # Runtime SQLite DB (android_doctor.db), fault_signatures.json, thermal_thresholds.json
 ├── database/              # SQLite schema and persistence manager (db_manager.py)
 ├── locales/               # Complete Arabic (ar.json) and English (en.json) translation files
