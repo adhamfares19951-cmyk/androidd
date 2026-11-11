@@ -24,3 +24,10 @@ bin/*.dll
 bin/*.zip
 bin/*.so
 *.rar
+
+# Local AI-agent tooling (not part of the app)
+.agents/
+skills-lock.json
+
+# Debug screenshots belong outside the repo root
+/*.png
