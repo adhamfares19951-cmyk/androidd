@@ -83,6 +83,28 @@ def parse_shell_v2_stream(data: bytes) -> Tuple[bytes, bytes, Optional[int]]:
     return out, err, code
 
 
+_SU_RC_MARKER = "__ADP_SU_RC:"
+
+
+def _strip_su_rc_marker(res: Tuple[Optional[int], str, str]) -> Tuple[Optional[int], str, str]:
+    """Remove the su exit-status marker line from stdout. When the transport gave no exit
+    code (legacy shell without shell_v2) the marker's value becomes the exit code."""
+    code, out, err = res
+    lines = out.splitlines()
+    for i in range(len(lines) - 1, -1, -1):
+        line = lines[i].strip()
+        if line.startswith(_SU_RC_MARKER):
+            value = line[len(_SU_RC_MARKER):]
+            del lines[i]
+            out = "\n".join(lines)
+            if code is None and value.isdigit():
+                code = int(value)
+            elif code == 0 and value.isdigit() and int(value) != 0:
+                code = int(value)
+            break
+    return code, out, err
+
+
 class ADBBridge:
     _instance = None
     _lock = threading.Lock()
@@ -260,8 +282,9 @@ class ADBBridge:
         """
         if root:
             escaped_cmd = command.replace('"', '\\"')
-            wrapped_cmd = f'su -c "{escaped_cmd}"'
-            res = self._shell_once(wrapped_cmd, serial, timeout, use_socket)
+            # The marker echoes su's exit status so it is known even without shell_v2.
+            wrapped_cmd = f'su -c "{escaped_cmd}"; echo "{_SU_RC_MARKER}$?"'
+            res = _strip_su_rc_marker(self._shell_once(wrapped_cmd, serial, timeout, use_socket))
             if res[0] == 0:
                 return res
         return self._shell_once(command, serial, timeout, use_socket)
@@ -499,11 +522,10 @@ class ADBBridge:
         return code == 0 and out.strip() == "device"
 
     def is_root_available(self, serial: Optional[str] = None) -> bool:
-        code, out, _ = self.shell("su -c id", serial=serial, timeout=5)
-        if code == 0 and "uid=0" in out:
-            return True
-        code2, out2, _ = self.shell("which su", serial=serial, timeout=5)
-        return code2 == 0 and "/su" in out2
+        """True only when `su -c id` really ran as uid 0. A present but denied su is not root."""
+        code, out, _ = self.shell(f'su -c id; echo "{_SU_RC_MARKER}$?"', serial=serial, timeout=5)
+        code, out, _ = _strip_su_rc_marker((code, out, ""))
+        return code == 0 and "uid=0(" in out
 
     def get_prop(self, prop_name: str, serial: Optional[str] = None) -> str:
         code, out, _ = self.shell(f"getprop {prop_name}", serial=serial, timeout=8)
