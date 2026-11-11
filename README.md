@@ -72,7 +72,7 @@ Reads device properties (`getprop`), CPU core count (`/proc/cpuinfo`), kernel st
 ### Diagnostic Report & Persistence (`ui/report_exporter.py`, `database/db_manager.py`)
 - Generates printable dark-theme HTML **Diagnostic Report** files (saved to `reports/` by default or `--output-dir`), featuring HTML-escaped device values, a per-check status table, overall aggregated status, expandable evidence drawers, and optional vector SVG QR codes (`qrcode`). Without a signing key the footer states that the report is **not digitally signed**; see [Report Signing](#report-signing-ed25519) for Ed25519 signatures.
 - Persists device history, diagnostic summaries, repair tickets, leakage logs, maintenance logs, and package rollbacks in SQLite (`data/android_doctor.db`).
-- **Where data is written** (`app_paths.py`): run from source, the database is `data/android_doctor.db` and reports go to `reports/`. In a packaged build the install folder may be read-only, so the database is `%LOCALAPPDATA%\AndroidDoctorProndroid_doctor.db` and reports go to `Documents\Android Doctor Pro\Reports\`. Media and partition backups go to the Desktop in both cases.
+- **Where data is written** (`app_paths.py`): run from source, the database is `data/android_doctor.db` and reports go to `reports/`. In a packaged build the install folder may be read-only, so the database is `%LOCALAPPDATA%\AndroidDoctorPro\android_doctor.db` and reports go to `Documents\Android Doctor Pro\Reports\`. Media and partition backups go to the Desktop in both cases.
 
 ---
 
