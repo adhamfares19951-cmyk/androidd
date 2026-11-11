@@ -203,12 +203,17 @@ def build_parser():
                         help="verify REPORT against REPORT.sig with --public-key")
     parser.add_argument("--public-key", type=str, default=None, help="public key for --verify-report")
     parser.add_argument("--signature", type=str, default=None, help="signature file (default: REPORT.sig)")
+    parser.add_argument("--verify-qr", type=str, metavar="TEXT", default=None,
+                        help="verify the text (or link) of a signed report QR code with --public-key")
+    parser.add_argument("--export-verifier", type=str, metavar="DIR", default=None,
+                        help="write DIR/adp_verify.html, an offline QR verification page for --public-key")
     return parser
 
 
 def run_signing_command(args) -> int:
-    """--gen-signing-key / --verify-report. Exit: 0 ok, 5 signature does not verify, 4 error."""
-    from core.report_signing import SigningError, generate_keypair, verify_file
+    """--gen-signing-key / --verify-report / --verify-qr / --export-verifier.
+    Exit: 0 ok, 5 signature does not verify, 4 error."""
+    from core.report_signing import SigningError, generate_keypair, verify_file, verify_signed_summary
     from ui.i18n import t, render, set_current_language
     set_current_language(args.lang)
     try:
@@ -217,8 +222,17 @@ def run_signing_command(args) -> int:
             print(t("cli.signing_key_written", args.lang, private=priv, public=pub, key_id=key_id))
             return EXIT_OK
         if not args.public_key:
-            print(t("cli.public_key_required", args.lang))
+            print(t("cli.public_key_needed", args.lang))
             return EXIT_INTERNAL
+        if args.export_verifier:
+            from ui.verifier_page import export_verifier
+            path, key_id = export_verifier(args.export_verifier, args.public_key, args.lang)
+            print(t("cli.verifier_written", args.lang, path=path, key_id=key_id))
+            return EXIT_OK
+        if args.verify_qr is not None:
+            ok, msg, _ = verify_signed_summary(args.verify_qr, args.public_key)
+            print(render(msg, args.lang))
+            return EXIT_OK if ok else EXIT_BAD_SIGNATURE
         ok, msg = verify_file(args.verify_report, args.public_key, args.signature)
         print(render(msg, args.lang))
         return EXIT_OK if ok else EXIT_BAD_SIGNATURE
@@ -241,7 +255,7 @@ def main() -> int:
         print(json.dumps(status, indent=2))
         return EXIT_OK if status["ok"] else EXIT_INTERNAL
 
-    if args.gen_signing_key or args.verify_report:
+    if args.gen_signing_key or args.verify_report or args.verify_qr is not None or args.export_verifier:
         return run_signing_command(args)
 
     if args.cli:

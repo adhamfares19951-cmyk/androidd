@@ -154,6 +154,8 @@ Arguments parsed in `main.py`:
 - `--all-devices`: with `--cli`, diagnose every connected device in parallel (`--workers N`, default 4); one report per device, a summary table at the end, and the exit code of the worst device (`4` > `3` > `2` > `0`)
 - `--pdf`: also write a PDF copy of the CLI report (signed too when a signing key is used)
 - `--sign-key PATH`: sign the CLI report with this Ed25519 private key (default: `ADP_SIGNING_KEY` environment variable)
+- `--verify-qr TEXT --public-key PUB`: verify a report QR code (text or link)
+- `--export-verifier DIR --public-key PUB`: write the offline QR verification page `DIR/adp_verify.html`
 - `--gen-signing-key DIR`: create a new key pair in `DIR` (outside the program folder)
 - `--verify-report REPORT --public-key PUB [--signature SIG]`: verify a signed report
 
@@ -180,6 +182,20 @@ Sign reports from the CLI with `--sign-key D:\keys\adp\adp_signing_key.pem`, or 
 python main.py --verify-report Diagnostic_Report_X.html --public-key D:\keys\adp\adp_signing_key.pub.pem
 ```
 Exit `0` means the file is unchanged and was signed by that key; exit `5` means it was not. The signature proves that the holder of that private key signed this exact file and that it was not changed afterwards; it does not make the readings themselves more accurate.
+
+### Verifying a Printed Report (QR code)
+A signed report's QR code carries a signed summary, so the result can be checked from the paper or PDF alone:
+`ADP1;reference;serial;model;overall result;date;key id;signature` (fields URL-encoded; Ed25519 signature over everything before the last `;`). Without a signing key the QR keeps the plain, unsigned summary.
+
+```bash
+python main.py --verify-qr "ADP1;..." --public-key D:\keys\adp\adp_signing_key.pub.pem
+```
+Exit `0` = genuine, `5` = changed or signed with another key.
+
+```bash
+python main.py --export-verifier D:\site --public-key D:\keys\adp\adp_signing_key.pub.pem --lang ar
+```
+writes `adp_verify.html`, a single offline page with the shop's public key built in. It checks the QR text (pasted, scanned with the camera where the browser supports it, or passed after `#` in the link) with the browser's own Ed25519; nothing is sent anywhere. Publish it on an `https://` address and set `ADP_VERIFY_URL` to that address: report QR codes then become links that open the page and verify immediately on the customer's phone.
 
 ### Log File Location
 Logs are written by a rotating file handler (`1 MB` per file, `5` backups) in:
@@ -219,6 +235,7 @@ Test modules:
 - `tests/test_pdf_export.py`: Browser lookup, stale or non-PDF output rejected, timeout, private browser profile, bad key fails before printing, CLI `--pdf` exit codes, and a real Arabic report printed and signed when Edge/Chrome is installed.
 - `tests/test_model_db.py`: Sourced entries only (missing URL, implausible or swapped capacities rejected), `/DS` suffix and case, user file overrides, rated capacity preferred, spec fills a missing design value but never a missing reading, kernel value wins with a note when it differs by more than 10%.
 - `tests/test_multi_device.py`: Parallel runs (timed), worker limit, order kept, one crash isolated, database closed once, combined exit code, `--all-devices` CLI with one report per authorized device, the GUI button end to end, per-device ADB locks (different phones do not wait, the same phone stays in order).
+- `tests/test_qr_verify.py`: Signed QR summary round trip, any changed field or another key rejected, link and percent-encoded forms, the report QR content (signed, https link only, unsigned plain), the offline page contents, the page checking signatures in a real Edge/Chrome, and CLI exit codes.
 - `tests/test_app_paths.py`: Database/report paths unchanged from source, outside the install folder in a packaged build.
 - `tests/test_ui_smoke.py`: Headless build of every GUI tab in Arabic and English, width fit, language switch, and status-pill rules.
 - `tests/test_misleading_checks.py`: Preconditions for wireless-only screen-off current, per-category thermal limits, measurable vs. unmeasurable maintenance actions, `fastboot erase cache` precondition, WhatsApp media-only pulls, unsigned report notices, and granted-permission security inventories.
@@ -249,7 +266,7 @@ On an unrooted production Android device, SELinux restricts several paths and to
 
 ## Known Limitations
 
-- **Physical device coverage:** All automated tests (184) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
+- **Physical device coverage:** All automated tests (197) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
 - **Non-Windows tool manifests:** Download URLs and archive SHA-256 hashes are pinned for all 5 platforms, but pre-listed per-file `scrcpy` SHA-256 entries cover `windows-x86_64` only, and non-Windows archive downloads have not been runtime-tested.
 - **Signing is opt-in:** Reports are signed only when a key is configured (`--sign-key` / `ADP_SIGNING_KEY`); keeping the private key safe is the technician's job.
 

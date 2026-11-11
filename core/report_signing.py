@@ -174,3 +174,74 @@ def verify_file(report_path: str, public_key_path: str, sig_path: Optional[str] 
     except (InvalidSignature, ValueError):
         return False, M("sign.verify.bad_signature")
     return True, M("sign.verify.ok", key_id=key_id)
+
+
+# ---------------------------------------------------------------------------------------------
+# Signed QR summary: proves the printed result (reference, serial, model, overall status, date)
+# came from the holder of the signing key, even when only the paper or PDF is left.
+# Text: ADP1;ref;serial;model;status;date;keyid;signature  (fields URL-encoded, signature
+# base64url without padding over everything before the last ';').
+# ---------------------------------------------------------------------------------------------
+QR_PREFIX = "ADP1"
+QR_FIELDS = ("ref", "serial", "model", "status", "date")
+VERIFY_URL_ENV = "ADP_VERIFY_URL"
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def _b64url_decode(text: str) -> bytes:
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def make_signed_summary(private_key, fields: dict) -> str:
+    from urllib.parse import quote
+    parts = [QR_PREFIX] + [quote(str(fields.get(k, "") or ""), safe="") for k in QR_FIELDS]
+    parts.append(key_id_from_public(private_key.public_key()))
+    message = ";".join(parts)
+    return message + ";" + _b64url(private_key.sign(message.encode("utf-8")))
+
+
+def parse_signed_summary(text: str) -> Optional[Tuple[dict, str, bytes, str]]:
+    """(fields, key_id, signature, signed_message) or None if the text is not an ADP1 summary.
+    A verification link (https://...#ADP1;...) is accepted too."""
+    from urllib.parse import unquote
+    text = (text or "").strip()
+    if "#" in text and not text.startswith(QR_PREFIX + ";"):
+        text = text.split("#", 1)[1]
+    if not text.startswith(QR_PREFIX + ";"):
+        text = unquote(text)  # some scanners/browsers percent-encode the whole text
+    parts = text.split(";")
+    if len(parts) != len(QR_FIELDS) + 3 or parts[0] != QR_PREFIX:
+        return None
+    try:
+        sig = _b64url_decode(parts[-1])
+    except (ValueError, TypeError):
+        return None
+    fields = {k: unquote(v) for k, v in zip(QR_FIELDS, parts[1:1 + len(QR_FIELDS)])}
+    return fields, parts[-2], sig, ";".join(parts[:-1])
+
+
+def verify_signed_summary(text: str, public_key_path: str) -> Tuple[bool, Msg, Optional[dict]]:
+    """(True, msg, fields) only when the summary's signature verifies with this public key."""
+    _, _, InvalidSignature = _crypto()
+    public_key = load_public_key(public_key_path)
+    parsed = parse_signed_summary(text)
+    if parsed is None:
+        return False, M("qr.verify.bad_format"), None
+    fields, kid, sig, message = parsed
+    key_id = key_id_from_public(public_key)
+    if kid != key_id:
+        return False, M("sign.verify.other_key", expected=key_id, found=kid), fields
+    try:
+        public_key.verify(sig, message.encode("utf-8"))
+    except (InvalidSignature, ValueError):
+        return False, M("qr.verify.bad_signature"), fields
+    return True, M("qr.verify.ok", key_id=key_id, **fields), fields
+
+
+def public_key_raw_b64(public_key_path: str) -> str:
+    serialization, _, _ = _crypto()
+    raw = load_public_key(public_key_path).public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    return base64.b64encode(raw).decode("ascii")

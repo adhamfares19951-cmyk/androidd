@@ -95,6 +95,7 @@ class TestKeysUsedInCode(unittest.TestCase):
         from core.malware_hunter import OEM_DEBLOAT_PACKAGES, SENSITIVE_PERMISSIONS
         from core import jedec
         from core.board_diag import MotherboardDiagnostics
+        from ui.verifier_page import _STRINGS as verifier_strings
         families = {
             "camera.facing.": ["Front", "Back", "External", "UNKNOWN"],
             "keys.state.": ["PASS", "DOWN_NO_UP", "NOT_PRESSED", "UNKNOWN"],
@@ -105,6 +106,7 @@ class TestKeysUsedInCode(unittest.TestCase):
             "bloat.safety.": sorted({v["safety"] for v in OEM_DEBLOAT_PACKAGES.values()}),
             "cli.stage.": ["profile", "board", "hardware", "security"],
             "cli.state.": ["unauthorized", "offline"],
+            "verifier.": list(verifier_strings),
         }
         unknown = sorted(set(self.dynamic) - set(families))
         self.assertEqual(unknown, [], "dynamic key prefix without an enumerated test family")

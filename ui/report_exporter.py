@@ -58,16 +58,18 @@ details.evidence-box pre { margin-top: 4px; color: #8b949e; white-space: pre-wra
 """
 
 
-def _qr_svg(data: Dict[str, Any]) -> str:
+def _qr_svg(data: Any, size_px: int = 90) -> str:
+    """QR code as inline SVG: a dict is encoded as JSON, a string as is (signed summary / link)."""
     try:
         import qrcode
         import qrcode.image.svg
-        img = qrcode.make(json.dumps(data, ensure_ascii=False), image_factory=qrcode.image.svg.SvgPathImage, box_size=8)
+        text = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
+        img = qrcode.make(text, image_factory=qrcode.image.svg.SvgPathImage, box_size=8)
         svg = img.to_string(encoding="unicode")
         if "<?xml" in svg:
             svg = svg.split("?>", 1)[-1].strip()
-        svg = re.sub(r'width="[^"]+"', 'width="90"', svg, count=1)
-        svg = re.sub(r'height="[^"]+"', 'height="90"', svg, count=1)
+        svg = re.sub(r'width="[^"]+"', f'width="{size_px}"', svg, count=1)
+        svg = re.sub(r'height="[^"]+"', f'height="{size_px}"', svg, count=1)
         return svg
     except Exception as e:
         logger.debug(f"QR code not rendered: {e}")
@@ -414,7 +416,18 @@ class DiagnosticReportExporter:
             signature_note = tr("report.signed", key_id=key_id_from_public(signing_key.public_key()))
         else:
             signature_note = tr("report.not_signed")
-        qr = _qr_svg({"ref": report_id, "sn": serial, "status": overall, "date": timestamp_str, "ticket": ticket_id or None})
+        if signing_key is not None:
+            # Signed summary: verifiable from the printed QR alone (core/report_signing.py)
+            from core.report_signing import VERIFY_URL_ENV, make_signed_summary
+            model_text = f"{dev.get('brand', '')} {dev.get('model', '')}".strip()
+            qr_text = make_signed_summary(signing_key, {"ref": report_id, "serial": serial, "model": model_text,
+                                                        "status": overall, "date": timestamp_str})
+            verify_url = os.environ.get(VERIFY_URL_ENV, "").strip()
+            if verify_url.startswith("https://"):
+                qr_text = f"{verify_url.split('#', 1)[0]}#{qr_text}"
+            qr = _qr_svg(qr_text, size_px=128)
+        else:
+            qr = _qr_svg({"ref": report_id, "sn": serial, "status": overall, "date": timestamp_str, "ticket": ticket_id or None})
         direction = "rtl" if lang == "ar" else "ltr"
         page = f"""<!DOCTYPE html>
 <html lang="{html.escape(lang)}" dir="{direction}">
