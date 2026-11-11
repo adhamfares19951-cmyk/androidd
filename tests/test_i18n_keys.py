@@ -16,7 +16,8 @@ sys.path.insert(0, ROOT)
 
 from ui.i18n import STRINGS, available_languages  # noqa: E402
 
-CODE_FILES = sorted(glob.glob(os.path.join(ROOT, "core", "*.py")) + glob.glob(os.path.join(ROOT, "ui", "*.py"))
+CODE_FILES = sorted(glob.glob(os.path.join(ROOT, "core", "**", "*.py"), recursive=True)
+                    + glob.glob(os.path.join(ROOT, "ui", "**", "*.py"), recursive=True)
                     + [os.path.join(ROOT, "main.py"), os.path.join(ROOT, "setup_bins.py")])
 KEY_CALLS = {"M", "Msg", "t", "_tr", "tr"}
 ARABIC = re.compile(r"[؀-ۿ]")
