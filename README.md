@@ -149,7 +149,7 @@ Sign reports from the CLI with `--sign-key D:\keys\adp\adp_signing_key.pem`, or 
 ```bash
 python main.py --verify-report Diagnostic_Report_X.html --public-key D:\keys\adp\adp_signing_key.pub.pem
 ```
-Exit `0` means the file is unchanged and was signed by that key; exit `5` means it was not. The signature proves who signed and that the file was not changed afterwards; it does not make the readings themselves more accurate.
+Exit `0` means the file is unchanged and was signed by that key; exit `5` means it was not. The signature proves that the holder of that private key signed this exact file and that it was not changed afterwards; it does not make the readings themselves more accurate.
 
 ### Log File Location
 Logs are written by a rotating file handler (`1 MB` per file, `5` backups) in:
