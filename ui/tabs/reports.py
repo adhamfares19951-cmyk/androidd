@@ -3,8 +3,9 @@
 import logging
 import os
 import time
+import threading
 import webbrowser
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from ui.theme import (
     BG_CANVAS,
@@ -93,25 +94,25 @@ class ReportsTabMixin:
         style_entry(self.tech_name_entry, L)
         self.tech_name_entry.insert(0, self._tr("ui.chief_hardware_technician"))
 
+        actions = ctk.CTkFrame(btn_row, fg_color="transparent")
         self.btn_export_cert = make_button(
-            btn_row, self._L(self._tr("btn_gen_signed_cert")), self._generate_and_open_certificate, variant="success", height=36
+            actions, self._L(self._tr("btn_gen_signed_cert")), self._generate_and_open_certificate, variant="primary", height=36
+        )
+        self.btn_export_pdf = make_button(
+            actions, self._L(self._tr("btn_export_pdf")), self._export_pdf_async, variant="secondary", height=36
         )
         btn_open_fld = make_button(
-            btn_row, self._L(self._tr("btn_open_folder")), lambda: (os.makedirs(REPORTS_DIR, exist_ok=True), webbrowser.open(REPORTS_DIR)), variant="secondary", height=36
+            actions, self._L(self._tr("btn_open_folder")), lambda: (os.makedirs(REPORTS_DIR, exist_ok=True), webbrowser.open(REPORTS_DIR)), variant="secondary", height=36
         )
 
-        if L["is_rtl"]:
-            btn_row.grid_columnconfigure(2, weight=1)
-            btn_open_fld.grid(row=0, column=0, padx=4)
-            self.btn_export_cert.grid(row=0, column=1, padx=4)
-            self.tech_name_entry.grid(row=0, column=2, padx=8, sticky="ew")
-            lbl_tech.grid(row=0, column=3, padx=(6, 0))
-        else:
-            btn_row.grid_columnconfigure(1, weight=1)
-            lbl_tech.grid(row=0, column=0, padx=(0, 6))
-            self.tech_name_entry.grid(row=0, column=1, padx=8, sticky="ew")
-            self.btn_export_cert.grid(row=0, column=2, padx=4)
-            btn_open_fld.grid(row=0, column=3, padx=4)
+        # Row 0: technician name (label on the reading-start side). Row 1: actions, main one first.
+        entry_col, label_col = (0, 1) if L["is_rtl"] else (1, 0)
+        btn_row.grid_columnconfigure(entry_col, weight=1)
+        lbl_tech.grid(row=0, column=label_col, padx=(6, 0) if L["is_rtl"] else (0, 6), sticky=L["anchor"])
+        self.tech_name_entry.grid(row=0, column=entry_col, sticky="ew")
+        actions.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        for b in (self.btn_export_cert, self.btn_export_pdf, btn_open_fld):
+            b.pack(side=L["lead"], padx=(0, 8) if L["lead"] == "left" else (8, 0))
 
         # Past Reports List
         reports_list_card, _ = make_card(
@@ -194,8 +195,45 @@ class ReportsTabMixin:
             messagebox.showerror(self._tr("ui.notice"), self._tr("cli.signing_failed", error=self._m(e.msg)))
             return
 
+        self.last_report_path = report_path
         webbrowser.open(f"file:///{os.path.abspath(report_path)}")
         self._refresh_past_reports()
+
+    def _export_pdf_async(self):
+        """PDF copy of the last report made here, or of one the technician picks."""
+        from core.report_signing import KEY_PATH_ENV
+        from ui.pdf_export import PdfExportError, export_pdf
+        from core.report_signing import SigningError
+
+        html_path = getattr(self, "last_report_path", None)
+        if not html_path or not os.path.isfile(html_path):
+            os.makedirs(REPORTS_DIR, exist_ok=True)
+            html_path = filedialog.askopenfilename(
+                title=self._tr("ui.pdf_choose_report"), initialdir=REPORTS_DIR,
+                filetypes=[("HTML", "*.html")])
+            if not html_path:
+                return
+        self.btn_export_pdf.configure(state="disabled")
+        key_path = os.environ.get(KEY_PATH_ENV) or None
+
+        def task():
+            try:
+                pdf_path, _ = export_pdf(html_path, key_path)
+                error = None
+            except (PdfExportError, SigningError) as e:
+                pdf_path, error = None, e.msg
+            except Exception as e:  # never leave the button disabled
+                logger.error(f"PDF export failed: {e}")
+                pdf_path, error = None, str(e)
+
+            def done():
+                self.btn_export_pdf.configure(state="normal")
+                if error is not None:
+                    messagebox.showerror(self._tr("ui.notice"), self._tr("cli.pdf_failed", error=self._m(error)))
+                    return
+                webbrowser.open(f"file:///{os.path.abspath(pdf_path)}")
+            self.after(0, done)
+        threading.Thread(target=task, daemon=True).start()
 
     def _refresh_past_reports(self):
         self._ensure_tab("reports")

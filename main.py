@@ -113,7 +113,7 @@ def print_status_table(rows: List[Tuple[str, str, Any]], lang: str) -> None:
 
 
 def run_cli_diagnostics(serial: str = "", lang: str = "ar", output_dir: Optional[str] = None,
-                        signing_key: Optional[str] = None) -> int:
+                        signing_key: Optional[str] = None, pdf: bool = False) -> int:
     from core.adb_bridge import ADBBridge
     from core.result import aggregate_status, CheckResult, Status, M
     from core.report_signing import SigningError
@@ -224,6 +224,16 @@ def run_cli_diagnostics(serial: str = "", lang: str = "ar", output_dir: Optional
             if signing_key:
                 from core.report_signing import signature_path_for
                 print(t("cli.signature_written", lang, path=signature_path_for(report_file)))
+            if pdf:
+                from ui.pdf_export import PdfExportError, export_pdf
+                try:
+                    pdf_file, pdf_sig = export_pdf(report_file, signing_key)
+                except PdfExportError as e:
+                    print(t("cli.pdf_failed", lang, error=render(e.msg, lang)))
+                    return EXIT_INTERNAL
+                print(t("cli.pdf_written", lang, path=pdf_file))
+                if pdf_sig:
+                    print(t("cli.signature_written", lang, path=pdf_sig))
         except SigningError as e:
             print(t("cli.signing_failed", lang, error=render(e.msg, lang)))
             return EXIT_INTERNAL
@@ -248,6 +258,8 @@ def build_parser():
     parser.add_argument("--check-bins", action="store_true", help="verify bin/ against bin/manifest.json (no download)")
     parser.add_argument("--repair-tools", action="store_true", help="download and re-install broken tools (hash-checked)")
     parser.add_argument("--output-dir", type=str, default=None, help="folder for the HTML report (CLI)")
+    parser.add_argument("--pdf", action="store_true",
+                        help="also write a PDF copy of the CLI report (printed by the installed Edge/Chrome)")
     parser.add_argument("--sign-key", type=str, default=None,
                         help="Ed25519 private key (outside this folder) to sign the report; default: $ADP_SIGNING_KEY")
     parser.add_argument("--gen-signing-key", type=str, metavar="DIR", default=None,
@@ -300,7 +312,8 @@ def main() -> int:
     if args.cli:
         try:
             return run_cli_diagnostics(args.serial, args.lang, args.output_dir,
-                                       args.sign_key or os.environ.get("ADP_SIGNING_KEY") or None)
+                                       args.sign_key or os.environ.get("ADP_SIGNING_KEY") or None,
+                                       pdf=args.pdf)
         except Exception:
             logger.critical(f"Internal error\n{traceback.format_exc()}")
             return EXIT_INTERNAL

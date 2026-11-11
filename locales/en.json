@@ -1154,5 +1154,13 @@
   "cli.signing_key_written": "New Ed25519 key pair (key {key_id}):\n  private (keep secret, back it up): {private}\n  public (give to whoever verifies): {public}",
   "cli.signature_written": "Signature written to:\n  {path}",
   "cli.signing_failed": "Signing error: {error}",
-  "cli.public_key_required": "--verify-report needs --public-key."
+  "cli.public_key_required": "--verify-report needs --public-key.",
+  "btn_export_pdf": "Export PDF",
+  "ui.pdf_choose_report": "Choose a report to export as PDF",
+  "pdf.err.no_report": "Report file not found: {path}",
+  "pdf.err.no_browser": "PDF export needs Microsoft Edge or Google Chrome installed on this PC.",
+  "pdf.err.timeout": "The browser did not finish the PDF within {seconds} seconds.",
+  "pdf.err.failed": "The browser did not produce a PDF: {error}",
+  "cli.pdf_written": "PDF written to:\n  {path}",
+  "cli.pdf_failed": "PDF export failed: {error}"
 }

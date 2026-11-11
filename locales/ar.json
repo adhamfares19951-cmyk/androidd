@@ -1154,5 +1154,13 @@
   "cli.signing_key_written": "زوج مفاتيح Ed25519 جديد (المفتاح {key_id}):\n  الخاص (احفظه سرّاً وخذ نسخة احتياطية): {private}\n  العام (أعطه لمن يتحقق): {public}",
   "cli.signature_written": "كُتب التوقيع في:\n  {path}",
   "cli.signing_failed": "خطأ في التوقيع: {error}",
-  "cli.public_key_required": "‎--verify-report‎ يحتاج ‎--public-key‎."
+  "cli.public_key_required": "‎--verify-report‎ يحتاج ‎--public-key‎.",
+  "btn_export_pdf": "تصدير PDF",
+  "ui.pdf_choose_report": "اختر تقريراً لتصديره بصيغة PDF",
+  "pdf.err.no_report": "ملف التقرير غير موجود: {path}",
+  "pdf.err.no_browser": "تصدير PDF يحتاج متصفح Microsoft Edge أو Google Chrome مثبتاً على هذا الجهاز.",
+  "pdf.err.timeout": "لم يُنهِ المتصفح ملف PDF خلال {seconds} ثانية.",
+  "pdf.err.failed": "لم يُنتج المتصفح ملف PDF: {error}",
+  "cli.pdf_written": "كُتب ملف PDF في:\n  {path}",
+  "cli.pdf_failed": "فشل تصدير PDF: {error}"
 }
