@@ -58,16 +58,16 @@ class BoardDiagTabMixin:
         # Responsive 4-Column Button Grid (Eliminates horizontal overflow on all widths)
         board_specs = [
             (self._L(self._tr("btn_pmic")), self.run_pmic_diag_async, "primary"),
-            (self._L(self._tr("btn_leakage")), self.run_leakage_test_async, "danger"),
+            (self._L(self._tr("btn_leakage")), self.run_leakage_test_async, "secondary"),
             (self._L(self._tr("btn_fast_charge")), self.run_fast_charge_diag_async, "success"),
-            (self._L(self._tr("btn_reset_gauge")), self.run_reset_gauge_async, "warning"),
+            (self._L(self._tr("btn_reset_gauge")), self.run_reset_gauge_async, "secondary"),
             (self._L(self._tr("btn_thermals")), self.run_thermal_scan_async, "secondary"),
             (self._L(self._tr("btn_panics")), self.run_panic_scan_async, "secondary"),
             (self._L(self._tr("btn_scan_bootrom")), self.run_bootrom_scan_async, "purple"),
             (self._L(self._tr("btn_live_telemetry")), self._toggle_live_telemetry, "cyan"),
             (self._L(self._tr("btn_nand_lifespan")), self.run_nand_lifespan_async, "purple"),
             (self._L(self._tr("btn_speed_bench")), self.run_speed_bench_async, "cyan"),
-            (self._L(self._tr("btn_stress_test")), self.run_stress_test_async, "danger"),
+            (self._L(self._tr("btn_stress_test")), self.run_stress_test_async, "secondary"),
             (self._L(self._tr("btn_run_blackbox")), self.run_blackbox_forensics_async, "secondary"),
             (self._L(self._tr("btn_run_root_forensics")), self.run_root_forensics_async, "purple"),
             (self._L(self._tr("btn_backup_efs_raw")), self.run_efs_backup_async, "success"),
@@ -179,7 +179,7 @@ class BoardDiagTabMixin:
         )
         self.status_pills["stress"] = badge
         self.stress_progress = ctk.CTkProgressBar(
-            self.stress_card, height=10, corner_radius=5, fg_color=BORDER_SUBTLE, progress_color=ACCENT_RED
+            self.stress_card, height=10, corner_radius=5, fg_color=BORDER_SUBTLE, progress_color=ACCENT_BLUE
         )
         self.stress_progress.set(0)
         self.stress_progress.pack(fill="x", padx=14, pady=(2, 6))
@@ -212,7 +212,7 @@ class BoardDiagTabMixin:
         )
         self.status_pills["leakage"] = badge
         self.leakage_progress = ctk.CTkProgressBar(
-            self.leakage_card, height=10, corner_radius=5, fg_color=BORDER_SUBTLE, progress_color=ACCENT_RED
+            self.leakage_card, height=10, corner_radius=5, fg_color=BORDER_SUBTLE, progress_color=ACCENT_BLUE
         )
         self.leakage_progress.set(0)
         self.leakage_progress.pack(fill="x", padx=14, pady=(2, 6))

@@ -48,7 +48,7 @@ class SecurityTabMixin:
 
         # Responsive 3x2 Button Grid
         sec_specs = [
-            (self._L(self._tr("btn_run_sec")), self.run_security_audit_async, "danger"),
+            (self._L(self._tr("btn_run_sec")), self.run_security_audit_async, "primary"),
             (self._L(self._tr("btn_sniff_net")), self.run_network_sniff_async, "secondary"),
             (self._L(self._tr("btn_scan_bloat")), self.run_oem_bloat_scan_async, "purple"),
             (self._L(self._tr("btn_debloat_selected")), self.run_safe_debloat_all_async, "danger"),
@@ -257,7 +257,7 @@ class SecurityTabMixin:
         dialog.title(self._tr("ui.app_rollback_history"))
         dialog.geometry("700x480")
 
-        ctk.CTkLabel(dialog, text=self._tr("ui.removed_and_disabled_apps_that_can"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#58a6ff").pack(padx=20, pady=(15, 5))
+        ctk.CTkLabel(dialog, text=self._tr("ui.removed_and_disabled_apps_that_can"), font=ctk.CTkFont(size=14, weight="bold"), text_color="#ececee").pack(padx=20, pady=(15, 5))
 
         txt = ctk.CTkTextbox(dialog, height=300, font=ctk.CTkFont(family="Consolas", size=12))
         txt.pack(fill="both", expand=True, padx=20, pady=10)
@@ -281,7 +281,7 @@ class SecurityTabMixin:
                 self.after(0, lambda: messagebox.showinfo(self._tr("ui.restore"), self._m(msg)))
             threading.Thread(target=t_task, daemon=True).start()
 
-        ctk.CTkButton(restore_bar, text=self._tr("ui.restore_app_now"), command=restore_now, fg_color="#238636").pack(side="left")
+        ctk.CTkButton(restore_bar, text=self._tr("ui.restore_app_now"), command=restore_now, fg_color="#4c8dff").pack(side="left")
 
     def run_oem_bloat_scan_async(self):
         serial = self.current_serial.get()

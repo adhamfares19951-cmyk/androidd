@@ -135,7 +135,7 @@ class RescueTabMixin:
         _card_btn_grid(
             self.vpad_card,
             [
-                (self._L(self._tr("btn_key_power")), lambda: self._send_virtual_key(26), "danger"),
+                (self._L(self._tr("btn_key_power")), lambda: self._send_virtual_key(26), "secondary"),
                 (self._L(self._tr("btn_key_vol_up")), lambda: self._send_virtual_key(24), "secondary"),
                 (self._L(self._tr("btn_key_vol_down")), lambda: self._send_virtual_key(25), "secondary"),
                 (self._L(self._tr("btn_key_home")), lambda: self._send_virtual_key(3), "secondary"),
@@ -158,7 +158,7 @@ class RescueTabMixin:
             w_row1,
             text=self._tr("ui.ip"),
             font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
-            text_color="#34d399",
+            text_color="#56d364",
             fg_color=BG_TILE,
             corner_radius=6,
             padx=10,
@@ -371,7 +371,7 @@ class RescueTabMixin:
             [
                 (self._L(self._tr("btn_switch_slot_a")), lambda: self._switch_slot("a"), "primary"),
                 (self._L(self._tr("btn_switch_slot_b")), lambda: self._switch_slot("b"), "primary"),
-                (self._L(self._tr("btn_check_arb")), self._check_arb, "danger"),
+                (self._L(self._tr("btn_check_arb")), self._check_arb, "secondary"),
             ],
             cols=3,
         )

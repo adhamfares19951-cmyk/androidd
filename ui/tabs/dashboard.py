@@ -23,6 +23,7 @@ from ui.theme import (
     make_button,
     pack_button_grid,
     make_telemetry_tile,
+    BG_CARD,
 )
 
 
@@ -55,8 +56,8 @@ class DashboardTabMixin:
         # Dynamic Connection Warning Alert Card
         self.alert_card = ctk.CTkFrame(
             banner_host,
-            fg_color="#2a1215",
-            border_color=ACCENT_RED,
+            fg_color="#2a1416",
+            border_color="#5c2427",
             border_width=1,
             corner_radius=12,
         )
@@ -64,7 +65,7 @@ class DashboardTabMixin:
             self.alert_card,
             text="",
             font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
-            text_color="#f87171",
+            text_color="#ff7b72",
             anchor=L["anchor"],
             justify=L["justify"],
         )
@@ -74,7 +75,7 @@ class DashboardTabMixin:
             self.alert_card,
             text="",
             font=ctk.CTkFont(family=FONT_FAMILY, size=12),
-            text_color="#fecaca",
+            text_color="#f0c6c3",
             justify=L["justify"],
             anchor=L["anchor"],
             wraplength=760,
@@ -88,7 +89,7 @@ class DashboardTabMixin:
             alert_btns,
             text=self._L(self._tr("ui.rescan_now")),
             command=self.refresh_devices_async,
-            variant="danger",
+            variant="primary",
             height=30,
         )
         self.btn_alert_action.pack(side=L["lead"], padx=4)
@@ -104,8 +105,8 @@ class DashboardTabMixin:
         # Connection Help Banner (Shown when no device is connected)
         self.guide_card = ctk.CTkFrame(
             banner_host,
-            fg_color="#1f1709",
-            border_color=ACCENT_AMBER,
+            fg_color=BG_CARD,
+            border_color=BORDER_SUBTLE,
             border_width=1,
             corner_radius=12,
         )
@@ -118,7 +119,7 @@ class DashboardTabMixin:
             guide_top,
             text=self._L(self._tr("guide_title")),
             font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
-            text_color="#fbbf24",
+            text_color=TEXT_PRIMARY,
             anchor=L["anchor"],
             justify=L["justify"],
         ).pack(side=L["lead"], fill="x", expand=True)
@@ -127,9 +128,9 @@ class DashboardTabMixin:
             guide_top,
             text=self._L(self._tr("guide_btn_restart_adb")),
             command=self._restart_adb_service,
-            variant="warning",
-            height=28,
-            font_size=11,
+            variant="secondary",
+            height=30,
+            font_size=12,
         ).pack(side=L["trail"], padx=4)
 
         for step_key, step_pad in (("guide_step1", 2), ("guide_step2", 2), ("guide_step3", (2, 12))):
@@ -137,7 +138,7 @@ class DashboardTabMixin:
                 self.guide_card,
                 text=self._L(self._tr(step_key)),
                 font=ctk.CTkFont(family=FONT_FAMILY, size=12),
-                text_color="#fef3c7",
+                text_color=TEXT_SECONDARY,
                 anchor=L["anchor"],
                 justify=L["justify"],
                 wraplength=820,
@@ -147,7 +148,7 @@ class DashboardTabMixin:
         _, action_btns = pack_button_grid(
             wrap,
             [
-                (self._L(self._tr("btn_full_scan")), self.run_full_deep_scan_async, "success"),
+                (self._L(self._tr("btn_full_scan")), self.run_full_deep_scan_async, "primary"),
                 (self._L(self._tr("btn_reboot_sys")), lambda: self._exec_reboot(""), "secondary"),
                 (self._L(self._tr("btn_reboot_rec")), lambda: self._exec_reboot("recovery"), "secondary"),
                 (self._L(self._tr("btn_reboot_bl")), lambda: self._exec_reboot("bootloader"), "secondary"),
@@ -286,8 +287,8 @@ class DashboardTabMixin:
             return lbl, bar, box
 
         self.ram_title_lbl, self.ram_bar, _ = _make_gauge_block("ui.ram", ACCENT_BLUE)
-        self.storage_title_lbl, self.storage_bar, _ = _make_gauge_block("ui.internal_storage", ACCENT_GREEN)
-        self.batt_title_lbl, self.batt_bar, batt_box = _make_gauge_block("ui.battery", ACCENT_AMBER)
+        self.storage_title_lbl, self.storage_bar, _ = _make_gauge_block("ui.internal_storage", ACCENT_BLUE)
+        self.batt_title_lbl, self.batt_bar, batt_box = _make_gauge_block("ui.battery", ACCENT_BLUE)
 
         self.batt_quick_lbl = ctk.CTkLabel(
             batt_box,

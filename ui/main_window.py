@@ -43,6 +43,11 @@ from ui.theme import (
     pack_button_grid,
     make_telemetry_tile,
     style_entry,
+    BG_CARD_ELEVATED,
+    BG_HOVER,
+    NAV_ICONS,
+    ICON_REFRESH,
+    icon_image,
 )
 
 from setup_bins import verify_binaries, repair_tools, get_adb_path, get_fastboot_path, get_scrcpy_path
@@ -194,161 +199,106 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
 
     def _setup_ui(self):
         L = self._layout()
-        self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=0)
         self.grid_rowconfigure(1, weight=1)
 
         # ------------------ SIDEBAR ------------------
-        self.sidebar_frame = ctk.CTkFrame(
-            self,
-            width=265,
-            corner_radius=0,
-            fg_color=BG_SIDEBAR,
-            border_width=1,
-            border_color=BORDER_SUBTLE,
-        )
-        self.sidebar_frame.grid(row=0, column=0, rowspan=2, sticky="nsew")
+        # Placed on the reading-start side: right in Arabic, left in English (_apply_direction).
+        self.sidebar_frame = ctk.CTkFrame(self, width=248, corner_radius=0, fg_color=BG_SIDEBAR, border_width=0)
         self.sidebar_frame.grid_propagate(False)
         self.sidebar_frame.grid_columnconfigure(0, weight=1)
-
         for r in range(6):
             self.sidebar_frame.grid_rowconfigure(r, weight=0)
         self.sidebar_frame.grid_rowconfigure(6, weight=1)
         self.sidebar_frame.grid_rowconfigure(7, weight=0)
+        self.sidebar_edge = ctk.CTkFrame(self, width=1, corner_radius=0, fg_color=BORDER_SUBTLE)
 
-        # Brand Header Card
-        brand_card = ctk.CTkFrame(
-            self.sidebar_frame,
-            fg_color=BG_TILE,
-            corner_radius=10,
-            border_width=1,
-            border_color=BORDER_ACCENT,
+        # Brand: monogram + name
+        brand = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
+        brand.grid(row=0, column=0, padx=18, pady=(20, 18), sticky="ew")
+        self.brand_mark = ctk.CTkLabel(
+            brand, text="AD", width=34, height=34, corner_radius=9,
+            fg_color=ACCENT_BLUE, text_color="#ffffff",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold"),
         )
-        brand_card.grid(row=0, column=0, padx=14, pady=(14, 10), sticky="ew")
-
-        brand_top = ctk.CTkFrame(brand_card, fg_color="transparent")
-        brand_top.pack(fill="x", padx=12, pady=(10, 2))
-
+        self.brand_mark.pack(side=L["lead"])
+        brand_text = ctk.CTkFrame(brand, fg_color="transparent")
+        brand_text.pack(side=L["lead"], fill="x", expand=True, padx=10)
         self.logo_label = ctk.CTkLabel(
-            brand_top,
+            brand_text,
             text=self._L(self._tr("ui.android_doctor_pro_2")),
-            font=ctk.CTkFont(family=FONT_FAMILY, size=16, weight="bold"),
-            text_color="#60a5fa",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
+            text_color=TEXT_PRIMARY,
             anchor=L["anchor"],
         )
-        self.logo_label.pack(side=L["lead"], fill="x", expand=True)
-
-        pro_pill = ctk.CTkLabel(
-            brand_top,
-            text="PRO",
-            fg_color="#172554",
-            text_color="#93c5fd",
-            corner_radius=6,
-            padx=7,
-            pady=1,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=10, weight="bold"),
-        )
-        pro_pill.pack(side=L["trail"], padx=(4, 0) if L["lead"] == "left" else (0, 4))
-
+        self.logo_label.pack(fill="x")
         self.subtitle_label = ctk.CTkLabel(
-            brand_card,
+            brand_text,
             text=self._L(self._tr("ui.hardware_diagnostics_suite")),
             font=ctk.CTkFont(family=FONT_FAMILY, size=11),
-            text_color=TEXT_SECONDARY,
+            text_color=TEXT_MUTED,
             anchor=L["anchor"],
             justify=L["justify"],
-            wraplength=210,
+            wraplength=170,
         )
-        self.subtitle_label.pack(fill="x", padx=12, pady=(0, 10))
+        self.subtitle_label.pack(fill="x")
 
-        # Language Switcher (Segmented Pill)
-        lang_bar = ctk.CTkFrame(
-            self.sidebar_frame,
-            fg_color=BG_TILE,
-            corner_radius=9,
-            border_width=1,
-            border_color=BORDER_SUBTLE,
-        )
-        lang_bar.grid(row=1, column=0, padx=14, pady=(0, 10), sticky="ew")
-        lang_bar.grid_columnconfigure((0, 1), weight=1, uniform="lang_col")
-
-        ar_active = self.current_lang == "ar"
-        self.btn_lang_ar = ctk.CTkButton(
-            lang_bar,
-            text=self._L(self._tr("ui.text")),
-            height=28,
-            corner_radius=7,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
-            fg_color=ACCENT_BLUE if ar_active else "transparent",
-            hover_color=ACCENT_BLUE_HOVER if ar_active else BG_CARD,
-            text_color="#ffffff" if ar_active else TEXT_SECONDARY,
-            command=lambda: self.switch_language("ar"),
-        )
-        self.btn_lang_ar.grid(row=0, column=0, padx=3, pady=3, sticky="ew")
-
-        en_active = self.current_lang == "en"
-        self.btn_lang_en = ctk.CTkButton(
-            lang_bar,
-            text=self._tr("ui.english"),
-            height=28,
-            corner_radius=7,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
-            fg_color=ACCENT_BLUE if en_active else "transparent",
-            hover_color=ACCENT_BLUE_HOVER if en_active else BG_CARD,
-            text_color="#ffffff" if en_active else TEXT_SECONDARY,
-            command=lambda: self.switch_language("en"),
-        )
-        self.btn_lang_en.grid(row=0, column=1, padx=3, pady=3, sticky="ew")
-
-        # Device Connection Panel
-        dev_card = ctk.CTkFrame(
-            self.sidebar_frame,
-            fg_color=BG_TILE,
-            corner_radius=10,
-            border_width=1,
-            border_color=BORDER_SUBTLE,
-        )
-        dev_card.grid(row=2, column=0, padx=14, pady=(0, 12), sticky="ew")
-
+        # Device picker
+        dev_card = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
+        dev_card.grid(row=1, column=0, padx=14, pady=(0, 14), sticky="ew")
         self.dev_select_label = ctk.CTkLabel(
             dev_card,
             text=self._L(self._tr("target_device")),
-            font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold"),
-            text_color=TEXT_SECONDARY,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            text_color=TEXT_MUTED,
             anchor=L["anchor"],
         )
-        self.dev_select_label.pack(fill="x", padx=12, pady=(10, 4))
-
+        self.dev_select_label.pack(fill="x", padx=4, pady=(0, 6))
+        dev_row = ctk.CTkFrame(dev_card, fg_color="transparent")
+        dev_row.pack(fill="x")
         self.device_combo = ctk.CTkComboBox(
-            dev_card,
+            dev_row,
             values=[self._tr("no_devices")],
             command=self._on_device_selected,
-            height=32,
+            height=34,
+            corner_radius=7,
             fg_color=BG_INPUT,
             border_color=BORDER_ACCENT,
-            button_color=ACCENT_BLUE,
-            button_hover_color=ACCENT_BLUE_HOVER,
-            dropdown_fg_color=BG_CARD,
+            border_width=1,
+            button_color=BG_CARD_ELEVATED,
+            button_hover_color=BG_HOVER,
+            dropdown_fg_color=BG_CARD_ELEVATED,
+            dropdown_hover_color=BG_HOVER,
+            dropdown_text_color=TEXT_PRIMARY,
             text_color=TEXT_PRIMARY,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            justify=L["justify"],
         )
-        self.device_combo.pack(fill="x", padx=12, pady=(0, 8))
-
-        self.btn_refresh_dev = make_button(
-            dev_card,
-            text=self._L(self._tr("refresh_devices")),
+        self.device_combo.pack(side=L["lead"], fill="x", expand=True)
+        self.btn_refresh_dev = ctk.CTkButton(
+            dev_row,
+            text="",
+            image=icon_image(ICON_REFRESH, TEXT_SECONDARY, 16),
+            width=34,
+            height=34,
+            corner_radius=7,
+            fg_color=BG_CARD_ELEVATED,
+            hover_color=BG_HOVER,
+            border_width=1,
+            border_color=BORDER_ACCENT,
             command=self.refresh_devices_async,
-            variant="secondary",
-            height=30,
-            font_size=11,
         )
-        self.btn_refresh_dev.pack(fill="x", padx=12, pady=(0, 10))
+        self.btn_refresh_dev.pack(side=L["trail"], padx=(6, 0) if L["trail"] == "right" else (0, 6))
 
-        # Navigation Menu
+        # Navigation
+        self.nav_section_label = ctk.CTkLabel(
+            self.sidebar_frame, text="", height=1, fg_color="transparent")
+        self.nav_section_label.grid(row=2, column=0, sticky="ew")
         self.nav_container = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        self.nav_container.grid(row=3, column=0, sticky="ew", padx=14, pady=(0, 6))
+        self.nav_container.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 6))
 
         self.nav_buttons = {}
+        self._nav_icons = {}
         tab_names = [
             ("dashboard", "tab_dashboard"),
             ("board_diag", "tab_board_diag"),
@@ -358,52 +308,59 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
             ("rescue_center", "tab_rescue"),
             ("reports", "tab_reports"),
         ]
-
         for key, tr_key in tab_names:
+            glyph = NAV_ICONS.get(key, "")
+            self._nav_icons[key] = (icon_image(glyph, TEXT_MUTED, 18), icon_image(glyph, ACCENT_BLUE, 18))
             btn = ctk.CTkButton(
                 self.nav_container,
                 text=self._L(self._tr(tr_key)),
+                image=self._nav_icons[key][0],
+                compound=L["lead"],
                 anchor=L["anchor"],
                 height=38,
-                corner_radius=8,
+                corner_radius=7,
                 border_width=0,
-                border_color=BORDER_SUBTLE,
                 fg_color="transparent",
                 text_color=TEXT_SECONDARY,
-                hover_color="#162033",
-                font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
+                hover_color=BG_HOVER,
+                font=ctk.CTkFont(family=FONT_FAMILY, size=13),
                 command=lambda k=key: self.select_tab(k),
             )
-            btn.pack(fill="x", pady=2)
+            btn.pack(fill="x", pady=1)
             self.nav_buttons[key] = btn
 
-        # Expanding Spacer
         self.sidebar_spacer = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
         self.sidebar_spacer.grid(row=6, column=0, sticky="nsew")
 
-        # Live ADB Status Footer Pill
-        self.status_box = ctk.CTkFrame(
-            self.sidebar_frame,
-            fg_color=BG_TILE,
-            corner_radius=10,
-            border_width=1,
-            border_color=BORDER_SUBTLE,
+        # Language switch (segmented)
+        lang_bar = ctk.CTkFrame(self.sidebar_frame, fg_color=BG_TILE, corner_radius=8,
+                                border_width=1, border_color=BORDER_SUBTLE)
+        lang_bar.grid(row=7, column=0, padx=14, pady=(0, 10), sticky="ew")
+        lang_bar.grid_columnconfigure((0, 1), weight=1, uniform="lang_col")
+        self.btn_lang_ar = ctk.CTkButton(
+            lang_bar, text=self._L(self._tr("ui.text")), height=28, corner_radius=6,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            command=lambda: self.switch_language("ar"),
         )
-        self.status_box.grid(row=7, column=0, padx=14, pady=14, sticky="ew")
+        self.btn_lang_en = ctk.CTkButton(
+            lang_bar, text=self._tr("ui.english"), height=28, corner_radius=6,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            command=lambda: self.switch_language("en"),
+        )
+        self._style_lang_buttons()
 
+        # Connection status
+        self.status_box = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
+        self.status_box.grid(row=8, column=0, padx=14, pady=(0, 16), sticky="ew")
         status_inner = ctk.CTkFrame(self.status_box, fg_color="transparent")
-        status_inner.pack(fill="x", padx=10, pady=9)
-
-        self.adb_status_dot = ctk.CTkFrame(
-            status_inner, width=9, height=9, corner_radius=5, fg_color=TEXT_MUTED
-        )
+        status_inner.pack(fill="x", padx=4)
+        self.adb_status_dot = ctk.CTkFrame(status_inner, width=8, height=8, corner_radius=4, fg_color=TEXT_MUTED)
         self.adb_status_dot.pack(side=L["lead"], padx=(0, 8) if L["lead"] == "left" else (8, 0))
-
         self.adb_status_label = ctk.CTkLabel(
             status_inner,
             text=self._L(self._tr("adb_disconnected")),
             font=ctk.CTkFont(family=FONT_FAMILY, size=11),
-            text_color=TEXT_SECONDARY,
+            text_color=TEXT_MUTED,
             anchor=L["anchor"],
             justify=L["justify"],
             wraplength=190,
@@ -413,15 +370,15 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
         # ------------------ MAIN CONTENT AREA ------------------
         self.tools_banner = ctk.CTkFrame(
             self,
-            fg_color="#2a1215",
-            corner_radius=10,
+            fg_color="#2a1416",
+            corner_radius=8,
             border_width=1,
-            border_color="#b91c1c",
+            border_color="#5c2427",
         )
         self.tools_banner_lbl = ctk.CTkLabel(
             self.tools_banner,
             text="",
-            text_color="#fca5a5",
+            text_color="#ff9b94",
             justify=L["justify"],
             anchor=L["anchor"],
             wraplength=700,
@@ -432,16 +389,17 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
             self.tools_banner,
             text=self._L(self._tr("tools.repair")),
             command=self._repair_tools_async,
-            variant="danger",
+            variant="secondary",
             height=30,
             width=150,
         )
         self.btn_repair_tools.pack(side=L["trail"], padx=14, pady=8)
 
         self.content_frame = ctk.CTkFrame(self, corner_radius=0, fg_color=BG_CANVAS)
-        self.content_frame.grid(row=1, column=1, sticky="nsew", padx=8, pady=8)
         self.content_frame.grid_columnconfigure(0, weight=1)
         self.content_frame.grid_rowconfigure(0, weight=1)
+
+        self._apply_direction()
 
         self.tab_frames = {}
         self._init_tab_builders()
@@ -450,6 +408,36 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
         self.after(300, self.refresh_devices_async)
         self.after(5000, self._auto_poll_devices)
         self.after(400, self._check_tools_background)
+
+    def _sidebar_col(self) -> int:
+        return 2 if self._layout()["is_rtl"] else 0
+
+    def _content_col(self) -> int:
+        return 0 if self._layout()["is_rtl"] else 2
+
+    def _apply_direction(self):
+        """Sidebar on the reading-start side: right for Arabic, left for English."""
+        side, content = self._sidebar_col(), self._content_col()
+        self.grid_columnconfigure(side, weight=0, minsize=248)
+        self.grid_columnconfigure(1, weight=0, minsize=1)
+        self.grid_columnconfigure(content, weight=1, minsize=0)
+        self.sidebar_frame.grid(row=0, column=side, rowspan=2, sticky="nsew")
+        self.sidebar_edge.grid(row=0, column=1, rowspan=2, sticky="ns")
+        self.content_frame.grid(row=1, column=content, sticky="nsew", padx=(28, 20) if side == 0 else (20, 28), pady=(4, 0))
+        if getattr(self, "tools_banner", None) is not None and self.tools_banner.winfo_ismapped():
+            self.tools_banner.grid(row=0, column=content, sticky="ew", padx=20, pady=(14, 0))
+
+    def _style_lang_buttons(self):
+        for btn, code, col in ((self.btn_lang_ar, "ar", 0), (self.btn_lang_en, "en", 1)):
+            active = self.current_lang == code
+            btn.configure(
+                fg_color=BG_CARD_ELEVATED if active else "transparent",
+                hover_color=BG_HOVER,
+                text_color=TEXT_PRIMARY if active else TEXT_MUTED,
+            )
+            # Arabic first on the right in RTL, English first on the left in LTR
+            pos = (1 - col) if self._layout()["is_rtl"] else col
+            btn.grid(row=0, column=pos, padx=3, pady=3, sticky="ew")
 
     def _auto_poll_devices(self):
         try:
@@ -466,18 +454,8 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
         set_current_language(lang)
         L = self._layout()
 
-        ar_active = lang == "ar"
-        en_active = lang == "en"
-        self.btn_lang_ar.configure(
-            fg_color=ACCENT_BLUE if ar_active else "transparent",
-            hover_color=ACCENT_BLUE_HOVER if ar_active else BG_CARD,
-            text_color="#ffffff" if ar_active else TEXT_SECONDARY,
-        )
-        self.btn_lang_en.configure(
-            fg_color=ACCENT_BLUE if en_active else "transparent",
-            hover_color=ACCENT_BLUE_HOVER if en_active else BG_CARD,
-            text_color="#ffffff" if en_active else TEXT_SECONDARY,
-        )
+        self._style_lang_buttons()
+        self._apply_direction()
 
         # Destroy existing tabs & rebuild with updated directional layout
         for widget in self.content_frame.winfo_children():
@@ -508,13 +486,12 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
         for k, tr_key in tab_tr.items():
             if k in self.nav_buttons:
                 self.nav_buttons[k].configure(
-                    text=self._L(self._tr(tr_key)), anchor=L["anchor"]
+                    text=self._L(self._tr(tr_key)), anchor=L["anchor"], compound=L["lead"]
                 )
 
         self.dev_select_label.configure(
             text=self._L(self._tr("target_device")), anchor=L["anchor"]
         )
-        self.btn_refresh_dev.configure(text=self._L(self._tr("refresh_devices")))
         self.adb_status_label.configure(anchor=L["anchor"], justify=L["justify"])
 
         self.select_tab(active_tab)
@@ -553,10 +530,9 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
                 frame.grid(row=0, column=0, sticky="nsew")
                 if k in self.nav_buttons:
                     self.nav_buttons[k].configure(
-                        fg_color="#172554",
-                        border_width=1,
-                        border_color=ACCENT_BLUE,
-                        text_color="#ffffff",
+                        fg_color=BG_CARD_ELEVATED,
+                        text_color=TEXT_PRIMARY,
+                        image=self._nav_icons.get(k, (None, None))[1],
                     )
             else:
                 if frame is not None:
@@ -564,9 +540,8 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
                 if k in self.nav_buttons:
                     self.nav_buttons[k].configure(
                         fg_color="transparent",
-                        border_width=0,
-                        border_color=BORDER_SUBTLE,
                         text_color=TEXT_SECONDARY,
+                        image=self._nav_icons.get(k, (None, None))[0],
                     )
 
     # ------------------ bundled tools check / repair ------------------
@@ -591,7 +566,7 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
         if status.get("error"):
             problems.append(status["error"])
         self.tools_banner_lbl.configure(text=self._tr("tools.banner", details="; ".join(problems) or "-"))
-        self.tools_banner.grid(row=0, column=1, sticky="ew", padx=10, pady=(10, 0))
+        self.tools_banner.grid(row=0, column=self._content_col(), sticky="ew", padx=20, pady=(14, 0))
 
     def _repair_tools_async(self):
         self.btn_repair_tools.configure(state="disabled")
@@ -657,14 +632,14 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
             if unauthorized_devs:
                 serials_str = ", ".join(d["serial"] for d in unauthorized_devs)
                 if hasattr(self, "alert_card"):
-                    self.alert_card.configure(fg_color="#2a1215", border_color=ACCENT_RED)
+                    self.alert_card.configure(fg_color="#2a1416", border_color="#5c2427")
                     self.alert_title_lbl.configure(
                         text=self._L(self._tr("ui.device_is_unauthorized", serials_str=serials_str)),
-                        text_color="#f87171",
+                        text_color="#ff7b72",
                     )
                     self.alert_desc_lbl.configure(
                         text=self._L(self._tr("alert_unauthorized_desc")),
-                        text_color="#fecaca",
+                        text_color="#f0c6c3",
                     )
                     self.alert_card.pack(fill="x", pady=(0, 12))
                 if hasattr(self, "guide_card"):
@@ -673,22 +648,22 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
                 self.adb_status_dot.configure(fg_color=ACCENT_RED)
                 self.adb_status_label.configure(
                     text=self._L(self._tr("ui.adb_unauthorized_accept_rsa_prompt", serials_str=serials_str)),
-                    text_color="#f87171",
+                    text_color="#ff7b72",
                 )
 
             # 2. State: Physical phone detected on Windows USB PnP, but ADB debugging is OFF
             elif diag.get("has_pnp_without_adb") and pnp_phones:
                 phone_names = ", ".join(p["name"] for p in pnp_phones)
                 if hasattr(self, "alert_card"):
-                    self.alert_card.configure(fg_color="#241807", border_color=ACCENT_AMBER)
+                    self.alert_card.configure(fg_color="#221c10", border_color="#4d3d17")
                     self.alert_title_lbl.configure(
                         text=self._L(self._tr("ui.phone_detected_on_usb_but_usb", phone_names=phone_names)),
-                        text_color="#fbbf24",
+                        text_color="#e3b341",
                     )
                     desc_text = self._tr("alert_pnp_desc").replace("{names}", phone_names)
                     self.alert_desc_lbl.configure(
                         text=self._L(desc_text),
-                        text_color="#fef3c7",
+                        text_color="#ecdcb3",
                     )
                     self.alert_card.pack(fill="x", pady=(0, 12))
                 if hasattr(self, "guide_card"):
@@ -697,30 +672,30 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
                 self.adb_status_dot.configure(fg_color=ACCENT_AMBER)
                 self.adb_status_label.configure(
                     text=self._L(self._tr("ui.usb_enable_usb_debugging", phone_names=phone_names)),
-                    text_color="#fbbf24",
+                    text_color="#e3b341",
                 )
 
             # 3. State: Device is offline
             elif offline_devs and not authorized_devs and not fastboot_devs:
                 serials_str = ", ".join(d["serial"] for d in offline_devs)
                 if hasattr(self, "alert_card"):
-                    self.alert_card.configure(fg_color="#28160c", border_color="#ea580c")
+                    self.alert_card.configure(fg_color="#221c10", border_color="#4d3d17")
                     self.alert_title_lbl.configure(
                         text=self._L(self._tr("ui.device_is_offline", serials_str=serials_str)),
-                        text_color="#fb923c",
+                        text_color="#e3b341",
                     )
                     self.alert_desc_lbl.configure(
                         text=self._L(self._tr("alert_offline_desc")),
-                        text_color="#fed7aa",
+                        text_color="#ecdcb3",
                     )
                     self.alert_card.pack(fill="x", pady=(0, 12))
                 if hasattr(self, "guide_card"):
                     self.guide_card.pack_forget()
 
-                self.adb_status_dot.configure(fg_color="#ea580c")
+                self.adb_status_dot.configure(fg_color="#d29922")
                 self.adb_status_label.configure(
                     text=self._L(self._tr("ui.adb_offline_replug_usb_cable")),
-                    text_color="#fb923c",
+                    text_color="#e3b341",
                 )
 
             # 4. State: Fully authorized or Fastboot device ready!
@@ -760,7 +735,7 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
                 self.adb_status_dot.configure(fg_color=ACCENT_GREEN)
                 self.adb_status_label.configure(
                     text=self._L(self._tr("ui.adb", upper=chosen['state'].upper(), serial=chosen['serial'])),
-                    text_color="#34d399",
+                    text_color="#56d364",
                 )
                 self.run_profile_async()
             elif cur in ready_serials:
@@ -768,7 +743,7 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
                 self.adb_status_dot.configure(fg_color=ACCENT_GREEN)
                 self.adb_status_label.configure(
                     text=self._L(self._tr("ui.adb_2", upper=cur_dev['state'].upper(), cur=cur)),
-                    text_color="#34d399",
+                    text_color="#56d364",
                 )
             elif not ready_serials:
                 self.current_serial.set("")
