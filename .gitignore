@@ -31,3 +31,7 @@ skills-lock.json
 
 # Debug screenshots belong outside the repo root
 /*.png
+
+# PyInstaller output
+/build/
+/dist/

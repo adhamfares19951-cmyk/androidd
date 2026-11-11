@@ -102,6 +102,19 @@ pip install -r requirements.txt
 ```
 `requirements.txt` lists `customtkinter`, `darkdetect`, `packaging`, `Pillow`, `arabic-reshaper`, `python-bidi`, `qrcode` (QR codes in the report are optional; the report is written without one if `qrcode` is missing) and `cryptography` (needed only for report signing).
 
+### Building the Windows Package
+```bash
+pip install -r requirements.txt -r packaging/requirements-build.txt
+```
+```bash
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+```
+`packaging/build.ps1` runs the tests first, builds `dist\AndroidDoctorPro\` with PyInstaller (`packaging/android_doctor.spec`), runs `adp-cli.exe --check-bins` inside the build (it stops if the bundled tools do not match `bin/manifest.json`), and zips the folder to `dist\AndroidDoctorPro-<date>-windows-x64.zip`. The folder holds two programs sharing one runtime:
+- `AndroidDoctorPro.exe`: the GUI (no console window), e.g. `AndroidDoctorPro.exe --lang en`
+- `adp-cli.exe`: the console commands (`--cli`, `--check-bins`, `--gen-signing-key`, `--verify-report`, ...) with the same exit codes
+
+`bin/` is copied byte-for-byte (no UPX). In the build the database and reports are written outside the program folder (see `app_paths.py`). `--repair-tools` writes into the program folder, so for an install under `Program Files` reinstall the package instead. The executables are not code-signed, so Windows SmartScreen may warn on first start.
+
 ### Launching the GUI
 On Windows, double-click `run.bat` (launches `python main.py --lang ar`) or run directly:
 ```bash
@@ -238,6 +251,7 @@ android/
 │   └── tabs/              # One mixin per GUI tab (dashboard, board_diag, hardware, security, optimizer, rescue, reports)
 ├── main.py                # Application entrypoint (GUI default, --cli console mode)
 ├── app_paths.py           # Database/report locations (source run vs. packaged build)
+├── packaging/             # PyInstaller spec, build script, build-only requirements
 ├── setup_bins.py          # Manifest verification, hash-checked repair, and port 5038 configuration
 ├── requirements.txt       # Base GUI Python package dependencies
 ├── run.bat                # Windows GUI launcher (--lang ar)
