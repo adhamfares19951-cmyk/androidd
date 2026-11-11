@@ -18,6 +18,7 @@ import traceback
 from typing import Any, Dict, List, Optional, Tuple
 
 EXIT_OK, EXIT_NO_DEVICE, EXIT_UNAUTHORIZED, EXIT_PARTIAL, EXIT_INTERNAL = 0, 1, 2, 3, 4
+EXIT_BAD_SIGNATURE = 5  # --verify-report: the signature does not verify
 
 logger = logging.getLogger("AndroidDoctorPro")
 
@@ -111,9 +112,11 @@ def print_status_table(rows: List[Tuple[str, str, Any]], lang: str) -> None:
         print(line)
 
 
-def run_cli_diagnostics(serial: str = "", lang: str = "ar", output_dir: Optional[str] = None) -> int:
+def run_cli_diagnostics(serial: str = "", lang: str = "ar", output_dir: Optional[str] = None,
+                        signing_key: Optional[str] = None) -> int:
     from core.adb_bridge import ADBBridge
     from core.result import aggregate_status, CheckResult, Status, M
+    from core.report_signing import SigningError
     from ui.i18n import t, render, set_current_language
 
     set_current_language(lang)
@@ -213,10 +216,17 @@ def run_cli_diagnostics(serial: str = "", lang: str = "ar", output_dir: Optional
                 hw_audit=hw.to_dict() if hw is not None else {},
                 sec_scan=sec.to_dict() if sec is not None else {},
                 extra_checks=[c.to_dict() for c in stage_checks],
+                signing_key_path=signing_key,
                 lang=lang,
                 output_dir=output_dir,
             )
             print(f"\n{t('cli.report_written', lang, path=report_file)}")
+            if signing_key:
+                from core.report_signing import signature_path_for
+                print(t("cli.signature_written", lang, path=signature_path_for(report_file)))
+        except SigningError as e:
+            print(t("cli.signing_failed", lang, error=render(e.msg, lang)))
+            return EXIT_INTERNAL
         except Exception as e:
             logger.error(f"Report generation failed: {e}\n{traceback.format_exc()}")
             print(t("cli.internal_error", lang, error=f"report: {e}"))
@@ -238,7 +248,36 @@ def build_parser():
     parser.add_argument("--check-bins", action="store_true", help="verify bin/ against bin/manifest.json (no download)")
     parser.add_argument("--repair-tools", action="store_true", help="download and re-install broken tools (hash-checked)")
     parser.add_argument("--output-dir", type=str, default=None, help="folder for the HTML report (CLI)")
+    parser.add_argument("--sign-key", type=str, default=None,
+                        help="Ed25519 private key (outside this folder) to sign the report; default: $ADP_SIGNING_KEY")
+    parser.add_argument("--gen-signing-key", type=str, metavar="DIR", default=None,
+                        help="create a new Ed25519 key pair in DIR (outside this folder)")
+    parser.add_argument("--verify-report", type=str, metavar="REPORT", default=None,
+                        help="verify REPORT against REPORT.sig with --public-key")
+    parser.add_argument("--public-key", type=str, default=None, help="public key for --verify-report")
+    parser.add_argument("--signature", type=str, default=None, help="signature file (default: REPORT.sig)")
     return parser
+
+
+def run_signing_command(args) -> int:
+    """--gen-signing-key / --verify-report. Exit: 0 ok, 5 signature does not verify, 4 error."""
+    from core.report_signing import SigningError, generate_keypair, verify_file
+    from ui.i18n import t, render, set_current_language
+    set_current_language(args.lang)
+    try:
+        if args.gen_signing_key:
+            priv, pub, key_id = generate_keypair(args.gen_signing_key)
+            print(t("cli.signing_key_written", args.lang, private=priv, public=pub, key_id=key_id))
+            return EXIT_OK
+        if not args.public_key:
+            print(t("cli.public_key_required", args.lang))
+            return EXIT_INTERNAL
+        ok, msg = verify_file(args.verify_report, args.public_key, args.signature)
+        print(render(msg, args.lang))
+        return EXIT_OK if ok else EXIT_BAD_SIGNATURE
+    except SigningError as e:
+        print(t("cli.signing_failed", args.lang, error=render(e.msg, args.lang)))
+        return EXIT_INTERNAL
 
 
 def main() -> int:
@@ -255,9 +294,13 @@ def main() -> int:
         print(json.dumps(status, indent=2))
         return EXIT_OK if status["ok"] else EXIT_INTERNAL
 
+    if args.gen_signing_key or args.verify_report:
+        return run_signing_command(args)
+
     if args.cli:
         try:
-            return run_cli_diagnostics(args.serial, args.lang, args.output_dir)
+            return run_cli_diagnostics(args.serial, args.lang, args.output_dir,
+                                       args.sign_key or os.environ.get("ADP_SIGNING_KEY") or None)
         except Exception:
             logger.critical(f"Internal error\n{traceback.format_exc()}")
             return EXIT_INTERNAL

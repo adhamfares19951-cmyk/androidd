@@ -4064,28 +4064,34 @@ class AndroidDoctorApp(ctk.CTk):
         leakage = getattr(self, "last_leakage", None)
         leakage_dict = leakage.to_dict() if leakage is not None else {}
 
-        report_path = DiagnosticReportExporter.generate_html_report(
-            device_profile=prof_dict,
-            board_diag=board_dict,
-            hw_audit=hw_dict,
-            sec_scan=sec_dict,
-            opt_result=opt_dict,
-            storage_report=storage_dict,
-            fast_charge=charge_dict,
-            storage_life_report=slife_dict,
-            stress_report=stress_dict,
-            audio_codec=audio_codec_dict,
-            panel_info=panel_info_dict,
-            root_forensics=root_forensics_dict,
-            leakage_result=leakage_dict,
-            technician_name=tech,
-            ticket_id=ticket_id,
-            customer_name=c_name,
-            customer_phone=c_phone,
-            reported_fault=c_fault,
-            repair_cost=c_cost,
-            lang=self.current_lang
-        )
+        from core.report_signing import SigningError, KEY_PATH_ENV
+        try:
+            report_path = DiagnosticReportExporter.generate_html_report(
+                device_profile=prof_dict,
+                board_diag=board_dict,
+                hw_audit=hw_dict,
+                sec_scan=sec_dict,
+                opt_result=opt_dict,
+                storage_report=storage_dict,
+                fast_charge=charge_dict,
+                storage_life_report=slife_dict,
+                stress_report=stress_dict,
+                audio_codec=audio_codec_dict,
+                panel_info=panel_info_dict,
+                root_forensics=root_forensics_dict,
+                leakage_result=leakage_dict,
+                signing_key_path=os.environ.get(KEY_PATH_ENV) or None,
+                technician_name=tech,
+                ticket_id=ticket_id,
+                customer_name=c_name,
+                customer_phone=c_phone,
+                reported_fault=c_fault,
+                repair_cost=c_cost,
+                lang=self.current_lang
+            )
+        except SigningError as e:
+            messagebox.showerror(self._tr("ui.notice"), self._tr("cli.signing_failed", error=self._m(e.msg)))
+            return
 
         webbrowser.open(f"file:///{os.path.abspath(report_path)}")
         self._refresh_past_reports()

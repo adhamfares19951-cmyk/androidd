@@ -2,8 +2,10 @@
 HTML diagnostic report.
 
 Every visible text is a translation key (locales/*.json); every value from the device is HTML-escaped.
-Reports are NOT signed: a hash or HMAC with a key stored in this program would prove nothing,
-so no integrity claim is made. Real signing (Ed25519 with a key kept outside the program) is planned.
+Without a signing key the report says it is NOT signed (a hash or HMAC with a key stored in this
+program would prove nothing). With `signing_key_path` (an Ed25519 key kept outside the program,
+see core/report_signing.py) the footer names the key id and `<report>.sig` holds a detached
+signature of the file's exact bytes.
 """
 
 import html
@@ -88,6 +90,7 @@ class DiagnosticReportExporter:
         panel_info: Optional[Dict[str, Any]] = None,
         root_forensics: Optional[Dict[str, Any]] = None,
         extra_checks: Optional[List[Dict[str, Any]]] = None,
+        signing_key_path: Optional[str] = None,
         technician_name: str = "",
         ticket_id: str = "",
         customer_name: str = "",
@@ -98,6 +101,12 @@ class DiagnosticReportExporter:
         output_dir: Optional[str] = None,
         lang: str = "ar"
     ) -> str:
+        # Load the key first: a bad key must fail before anything is written.
+        signing_key = None
+        if signing_key_path:
+            from core.report_signing import load_private_key
+            signing_key = load_private_key(signing_key_path)
+
         dev = device_profile or {}
         bdiag = board_diag or {}
         haudit = hw_audit or {}
@@ -397,6 +406,11 @@ class DiagnosticReportExporter:
                 row("report.estimated_cost", html.escape(f"${repair_cost:.2f}") if repair_cost > 0 else tr("report.cost_pending")),
             ]))
 
+        if signing_key is not None:
+            from core.report_signing import key_id_from_public
+            signature_note = tr("report.signed", key_id=key_id_from_public(signing_key.public_key()))
+        else:
+            signature_note = tr("report.not_signed")
         qr = _qr_svg({"ref": report_id, "sn": serial, "status": overall, "date": timestamp_str, "ticket": ticket_id or None})
         direction = "rtl" if lang == "ar" else "ltr"
         page = f"""<!DOCTYPE html>
@@ -421,11 +435,14 @@ class DiagnosticReportExporter:
 {root_card}
 <div class="footer">
   <div>{tr("report.technician")}: <strong>{html.escape(technician_name or "-")}</strong></div>
-  <div>{tr("report.not_signed")} <strong>{html.escape(report_id)}</strong></div>
+  <div>{signature_note} <strong>{html.escape(report_id)}</strong></div>
 </div>
 </div></body></html>
 """
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(page)
         logger.info(f"Diagnostic report generated at: {output_path}")
+        if signing_key is not None:
+            from core.report_signing import sign_file
+            logger.info(f"Report signature written to: {sign_file(output_path, signing_key)}")
         return output_path
