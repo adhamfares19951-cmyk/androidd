@@ -1162,5 +1162,6 @@
   "pdf.err.timeout": "لم يُنهِ المتصفح ملف PDF خلال {seconds} ثانية.",
   "pdf.err.failed": "لم يُنتج المتصفح ملف PDF: {error}",
   "cli.pdf_written": "كُتب ملف PDF في:\n  {path}",
-  "cli.pdf_failed": "فشل تصدير PDF: {error}"
+  "cli.pdf_failed": "فشل تصدير PDF: {error}",
+  "report.design_from_spec": "السعة التصميمية من مواصفات الشركة المصنّعة لـ {name} (المصدر في الأدلة)."
 }

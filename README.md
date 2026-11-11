@@ -50,6 +50,16 @@ Reads device properties (`getprop`), CPU core count (`/proc/cpuinfo`), kernel st
 - **Dead-Phone BootROM Port Scan (`diagnose_dead_phone_bootrom`)**: On Windows, queries `Get-PnpDevice` via PowerShell (`CREATE_NO_WINDOW`) for Qualcomm EDL (`9008`, `900E`), MediaTek BROM/Preloader, Samsung Odin, Android Fastboot, MTP interfaces, or USB port cycling, returning `possible_causes`.
 - **Root Forensics & EFS Backup (`run_root_forensics_pro`, `backup_efs_nvram_partitions`)**: Requires root (`su -c id`). Matches kernel logs against `data/fault_signatures.json`, collects I2C bus error lines, reads JEDEC registers, and dumps critical NVRAM/EFS/modem/persist block nodes via `dd` with SHA-256 checksums saved to `manifest.json`.
 
+### Model Database (`core/model_db.py`, `data/device_models.json`)
+Manufacturer specifications per model number (`ro.product.model`, dual-SIM suffixes such as `/DS` ignored). The database never produces a reading: it only supplies the battery's design capacity when the kernel does not expose `charge_full_design` (often blocked without root). The measured `charge_full` always comes from the phone; without it the check stays `UNKNOWN`/`NEEDS_ROOT`.
+- The manufacturer's **rated (minimum)** capacity is used when known, otherwise the typical one, so a battery is never judged against more than the manufacturer guarantees. The evidence names the model, the value used and its source URL; the report notes that the design value came from the specification.
+- If the kernel's design capacity differs from the specification by more than 10%, the evidence says so (a non-original battery or a different board revision can cause this). The kernel value is still the one used.
+- Every entry needs a source URL and a plausible capacity (500–30000 mAh); anything else is rejected and logged, never guessed. The bundled file lists only models checked against an official manufacturer page.
+- Technicians add or correct models in `%LOCALAPPDATA%\AndroidDoctorPro\device_models.json` (read after the bundled file, same format):
+```json
+{"schema": 1, "models": {"SM-A525F": {"name": "Samsung Galaxy A52", "battery": {"typical_mah": 4500, "rated_mah": 4370}, "source": "https://...", "checked": "2026-11-11"}}}
+```
+
 ### Hardware Subsystem Checks & Interactive Tools (`core/hardware_tester.py`, `core/touch_matrix.py`)
 - **Reported sensors & cameras**: Parses `dumpsys sensorservice` and `dumpsys media.camera` for reported sensors and camera modules; absent fields stay `None`. Missing common sensors are listed for reference rather than treated as an automatic fault.
 - **Subsystem checks**: Evaluates AudioFlinger/ALSA soundcards (`/proc/asound/cards`, `/proc/asound/pcm`), biometric HAL (`pm has-system-feature`, `dumpsys fingerprint`, `dumpsys biometric`, `getprop ro.hardware.fingerprint`), physical keys (interactive `getevent -l`, passing each key only on observed `DOWN` + `UP`), SIM & baseband (`getprop`, `dumpsys telephony.registry`), display backlight + DSI logs, display panel controller & verified boot state (`display.panel_info`, without claiming screen originality), Wi-Fi (`cmd wifi status`, `dumpsys wifi`), Bluetooth (`dumpsys bluetooth_manager`), and declared features (`pm has-system-feature` flags for GPS, NFC, and USB host).
@@ -202,6 +212,7 @@ Test modules:
 - `tests/test_check_result_migration.py`: `to_check_result()` for every per-check class, `check_statuses` mirroring `checks`, report overall including failed CLI stages, legacy report dicts, and the GUI report including the screen-off current result.
 - `tests/test_report_signing.py`: Key generation and refusal inside the program folder, encrypted keys, signed and unsigned reports in Arabic and English, single-byte tampering, forged hashes, other keys, bad signature files, CLI exit codes `0`/`4`/`5`.
 - `tests/test_pdf_export.py`: Browser lookup, stale or non-PDF output rejected, timeout, private browser profile, bad key fails before printing, CLI `--pdf` exit codes, and a real Arabic report printed and signed when Edge/Chrome is installed.
+- `tests/test_model_db.py`: Sourced entries only (missing URL, implausible or swapped capacities rejected), `/DS` suffix and case, user file overrides, rated capacity preferred, spec fills a missing design value but never a missing reading, kernel value wins with a note when it differs by more than 10%.
 - `tests/test_app_paths.py`: Database/report paths unchanged from source, outside the install folder in a packaged build.
 - `tests/test_ui_smoke.py`: Headless build of every GUI tab in Arabic and English, width fit, language switch, and status-pill rules.
 - `tests/test_misleading_checks.py`: Preconditions for wireless-only screen-off current, per-category thermal limits, measurable vs. unmeasurable maintenance actions, `fastboot erase cache` precondition, WhatsApp media-only pulls, unsigned report notices, and granted-permission security inventories.
@@ -232,7 +243,7 @@ On an unrooted production Android device, SELinux restricts several paths and to
 
 ## Known Limitations
 
-- **Physical device coverage:** All automated tests (160) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
+- **Physical device coverage:** All automated tests (172) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
 - **Non-Windows tool manifests:** Download URLs and archive SHA-256 hashes are pinned for all 5 platforms, but pre-listed per-file `scrcpy` SHA-256 entries cover `windows-x86_64` only, and non-Windows archive downloads have not been runtime-tested.
 - **Signing is opt-in:** Reports are signed only when a key is configured (`--sign-key` / `ADP_SIGNING_KEY`); keeping the private key safe is the technician's job.
 

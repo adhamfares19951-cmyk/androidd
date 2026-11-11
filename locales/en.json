@@ -1162,5 +1162,6 @@
   "pdf.err.timeout": "The browser did not finish the PDF within {seconds} seconds.",
   "pdf.err.failed": "The browser did not produce a PDF: {error}",
   "cli.pdf_written": "PDF written to:\n  {path}",
-  "cli.pdf_failed": "PDF export failed: {error}"
+  "cli.pdf_failed": "PDF export failed: {error}",
+  "report.design_from_spec": "Design capacity from the manufacturer's specification for {name} (source in the evidence)."
 }

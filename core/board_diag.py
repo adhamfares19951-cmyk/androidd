@@ -88,6 +88,8 @@ class PMICStatus(ProducesCheckResult):
     health: str = "UNKNOWN"          # health text reported by the device
     true_health_pct: Optional[float] = None
     health_verdict: str = "UNKNOWN"  # PASS / FAIL / UNKNOWN / NEEDS_ROOT for capacity vs design
+    design_capacity_source: str = "UNKNOWN"  # "kernel" (charge_full_design) or "model_db" (manufacturer spec)
+    model_spec_name: str = ""                # marketing name from the model database, if the model is listed
     is_charging: bool = False
     is_ac_plugged: bool = False
     fault_flags: List[Msg] = field(default_factory=list)
@@ -423,9 +425,11 @@ class EFSBackupResult:
 
 
 class MotherboardDiagnostics:
-    def __init__(self, bridge: Optional[ADBBridge] = None, db: Optional[DatabaseManager] = None):
+    def __init__(self, bridge: Optional[ADBBridge] = None, db: Optional[DatabaseManager] = None,
+                 model_db=None):
         self.bridge = bridge or ADBBridge()
         self.db = db or DatabaseManager()
+        self._model_db = model_db  # core.model_db.ModelDatabase; default loaded on first use
 
     # ------------------------------------------------------------------
     # Battery (fuel gauge) readings
@@ -464,6 +468,20 @@ class MotherboardDiagnostics:
             best = max(reads, key=lambda r: (r.status == Status.NEEDS_ROOT, r.path_exists))
             evidence.append(best.evidence())
         return None, "UNKNOWN", str(status), evidence
+
+    def _model_spec(self, serial: str):
+        """Manufacturer spec for this phone's model number, or None (unknown model or unreadable DB)."""
+        try:
+            model = self.bridge.get_prop("ro.product.model", serial=serial) or ""
+            if not model:
+                return None
+            if self._model_db is None:
+                from core.model_db import default_db
+                self._model_db = default_db()
+            return self._model_db.lookup(model)
+        except Exception as e:
+            logger.warning(f"Model database lookup failed: {e}")
+            return None
 
     def analyze_pmic(self, serial: str) -> PMICStatus:
         pmic = PMICStatus()
@@ -560,21 +578,48 @@ class MotherboardDiagnostics:
         else:
             ev.append(db.evidence())
 
-        # 7. Capacity vs design: only from two real readings
-        if pmic.charge_full_uah and pmic.charge_full_design_uah:
-            pct = round(pmic.charge_full_uah / pmic.charge_full_design_uah * 100.0, 1)
+        # 7. Capacity vs design. The measured value (charge_full) always comes from the phone; the
+        #    design value comes from the kernel, or, if the kernel does not give it, from the
+        #    manufacturer's spec in the model database (named, with its source, in the evidence).
+        spec = self._model_spec(serial)
+        if spec is not None:
+            pmic.model_spec_name = spec.name
+        spec_cap = spec.design_capacity() if spec is not None else None
+        design_uah, design_src = pmic.charge_full_design_uah, "charge_full_design"
+        if design_uah:
+            pmic.design_capacity_source = "kernel"
+            if spec_cap:
+                diff = (design_uah / 1000.0 - spec_cap[0]) / spec_cap[0] * 100.0
+                if abs(diff) > 10.0:
+                    ev.append(Evidence(source=f"model database: {spec.name}",
+                                       raw_excerpt=(f"kernel charge_full_design {design_uah // 1000} mAh differs {diff:+.0f}% from "
+                                                    f"the manufacturer's {spec_cap[1]} capacity {spec_cap[0]} mAh ({spec.source}). "
+                                                    "A non-original battery or a different board revision can cause this."),
+                                       exit_code=None))
+        elif pmic.charge_full_uah and spec_cap:
+            design_uah = spec_cap[0] * 1000
+            design_src = f"model database: {spec.name}, {spec_cap[1]} capacity {spec_cap[0]} mAh"
+            pmic.design_capacity_source = "model_db"
+            ev.append(Evidence(source=f"model database: {spec.name}",
+                               raw_excerpt=f"{spec.model}: {spec_cap[1]} capacity {spec_cap[0]} mAh, source {spec.source}"
+                                           + (f" (checked {spec.checked})" if spec.checked else ""),
+                               exit_code=None))
+
+        if pmic.charge_full_uah and design_uah:
+            pct = round(pmic.charge_full_uah / design_uah * 100.0, 1)
             if 1.0 <= pct <= 150.0:
                 pmic.true_health_pct = pct
                 pmic.health_verdict = str(Status.PASS if pct >= 80.0 else Status.FAIL)
-                ev.append(Evidence(source="charge_full / charge_full_design",
-                                   raw_excerpt=f"{pmic.charge_full_uah} / {pmic.charge_full_design_uah} = {pct}% (FAIL below 80%)",
+                ev.append(Evidence(source=f"charge_full / {design_src}",
+                                   raw_excerpt=f"{pmic.charge_full_uah} / {design_uah} = {pct}% (FAIL below 80%)",
                                    exit_code=None))
             else:
                 pmic.health_verdict = str(Status.UNKNOWN)
-                ev.append(Evidence(source="charge_full / charge_full_design",
+                ev.append(Evidence(source=f"charge_full / {design_src}",
                                    raw_excerpt=f"ratio {pct}% is implausible; not used", exit_code=None))
         else:
-            pmic.health_verdict = str(failure_status([cf_read, cfd_read]))
+            pmic.design_capacity_source = pmic.design_capacity_source if design_uah else "UNKNOWN"
+            pmic.health_verdict = str(failure_status([cf_read, cfd_read] if not design_uah else [cf_read]))
 
         # 8. Fault flags only from real readings
         if pmic.is_charging and pmic.voltage_mv is not None and pmic.voltage_mv < 3500.0:

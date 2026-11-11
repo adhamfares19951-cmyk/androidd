@@ -249,7 +249,9 @@ class DiagnosticReportExporter:
             row("report.battery_current", reading(pmic.get("current_ma"), "mA", pmic.get("current_source"))
                 + (f'<br><span class="src">{esc(pmic.get("current_note"))}</span>' if pmic.get("current_note") else "")),
             row("report.battery_temp", reading(pmic.get("temp_c"), "°C", pmic.get("temp_source"))),
-            row("report.capacity_vs_design", (val(health_pct, "%") + " " if health_pct is not None else "") + badge(pmic.get("health_verdict"))),
+            row("report.capacity_vs_design", (val(health_pct, "%") + " " if health_pct is not None else "") + badge(pmic.get("health_verdict"))
+                + (f'<br><span class="src">{tr("report.design_from_spec", name=pmic.get("model_spec_name") or "-")}</span>'
+                   if pmic.get("design_capacity_source") == "model_db" else "")),
             row("report.cycle_count", val(pmic.get("cycle_count"))),
             row("report.reported_health", val(pmic.get("health"))),
             evidence(pmic.get("evidence")),
