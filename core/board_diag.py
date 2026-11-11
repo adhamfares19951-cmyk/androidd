@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Any, Callable
 from core.adb_bridge import ADBBridge
-from core.result import Evidence, Status, CheckResult, status_from_read, aggregate_status, Msg, M
+from core.result import Evidence, Status, CheckResult, ProducesCheckResult, status_from_read, aggregate_status, Msg, M
 from core.readers import ReadResult, run_read, read_node, failure_status, parse_int
 from core import jedec
 from database.db_manager import DatabaseManager
@@ -61,7 +61,14 @@ class DiagnosticVerdict:
 
 
 @dataclass
-class PMICStatus:
+class PMICStatus(ProducesCheckResult):
+    # `status` here is the device's charging text; the check status is `check_status`
+    _check_status_attr = "check_status"
+    _check_detail_attr = "fault_flags"
+
+    def _check_value(self):
+        return self.voltage_mv, "mV"
+
     """Battery readings from the fuel gauge / power_supply class. Every value is None when not read."""
     check_id: str = "battery.fuel_gauge"
     voltage_mv: Optional[float] = None
@@ -119,7 +126,10 @@ class ThermalZone:
 
 
 @dataclass
-class LeakageTestResult:
+class LeakageTestResult(ProducesCheckResult):
+    def _check_value(self):
+        return self.avg_ma, "mA"
+
     """Screen-off battery current. Only measured over wireless ADB with no charger connected."""
     check_id: str = "battery.screen_off_current"
     status: str = "UNKNOWN"
@@ -145,7 +155,7 @@ class LeakageTestResult:
 
 
 @dataclass
-class ThermalReport:
+class ThermalReport(ProducesCheckResult):
     check_id: str = "thermal.zones"
     zones: List[ThermalZone] = field(default_factory=list)
     status: str = "UNKNOWN"
@@ -161,7 +171,7 @@ class ThermalReport:
 
 
 @dataclass
-class BlackboxReport:
+class BlackboxReport(ProducesCheckResult):
     check_id: str = "board.boot_reason"
     boot_reason: str = "UNKNOWN"
     boot_reason_history: str = "UNKNOWN"
@@ -182,7 +192,9 @@ class BlackboxReport:
 
 
 @dataclass
-class PanicAnalysis:
+class PanicAnalysis(ProducesCheckResult):
+    _check_detail_attr = "summary_verdict"
+
     check_id: str = "board.kernel_log"
     has_critical_error: bool = False
     emmc_ufs_errors: List[str] = field(default_factory=list)
@@ -227,7 +239,10 @@ class DeadPhoneBootROMDiagnosis:
 
 
 @dataclass
-class FastChargeDiagnostics:
+class FastChargeDiagnostics(ProducesCheckResult):
+    def _check_value(self):
+        return self.wattage_w, "W"
+
     """Charger readings. Measured values and reported maximums are kept apart; None = not read."""
     check_id: str = "charging.input"
     charger_type: str = "UNKNOWN"
@@ -255,7 +270,7 @@ class FastChargeDiagnostics:
 
 
 @dataclass
-class StorageLifeReport:
+class StorageLifeReport(ProducesCheckResult):
     check_id: str = "storage.jedec_life"
     storage_type: str = "UNKNOWN"
     device_model: str = ""
@@ -293,7 +308,10 @@ class StressTestSnapshot:
 
 
 @dataclass
-class StressTestReport:
+class StressTestReport(ProducesCheckResult):
+    def _check_value(self):
+        return self.voltage_sag_mv, "mV"
+
     check_id: str = "board.cpu_stress"
     duration_seconds: int = 30
     initial_voltage_mv: Optional[float] = None
@@ -349,6 +367,7 @@ class BoardDiagnosticResult:
     check_statuses: Dict[str, str] = field(default_factory=dict)
     overall_health: str = "UNKNOWN"
     critical_findings: List[Msg] = field(default_factory=list)
+    checks: List[CheckResult] = field(default_factory=list)  # key checks; check_statuses mirrors them
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -360,12 +379,13 @@ class BoardDiagnosticResult:
             "panic_analysis": self.panic_analysis.to_dict(),
             "check_statuses": dict(self.check_statuses),
             "overall_health": self.overall_health,
-            "critical_findings": [f.to_dict() if isinstance(f, Msg) else f for f in self.critical_findings]
+            "critical_findings": [f.to_dict() if isinstance(f, Msg) else f for f in self.critical_findings],
+            "checks": [c.to_dict() for c in self.checks],
         }
 
 
 @dataclass
-class RootForensicsReport:
+class RootForensicsReport(ProducesCheckResult):
     check_id: str = "board.root_forensics"
     serial: str = ""
     is_rooted: bool = False
@@ -955,13 +975,10 @@ class MotherboardDiagnostics:
         if panic.status == str(Status.FAIL):
             findings.append(panic.summary_verdict)
 
-        check_statuses = {
-            "battery.fuel_gauge": pmic.check_status,
-            "thermal.zones": thermal.status,
-            "board.boot_reason": panic.blackbox.status,
-            "board.kernel_log": panic.status,
-        }
-        overall = aggregate_status(list(check_statuses.values()))
+        checks = [pmic.to_check_result(), thermal.to_check_result(),
+                  panic.blackbox.to_check_result(), panic.to_check_result()]
+        check_statuses = {c.check_id: str(c.status) for c in checks}
+        overall = aggregate_status([c.status for c in checks])
 
         return BoardDiagnosticResult(
             serial=serial,
@@ -972,7 +989,8 @@ class MotherboardDiagnostics:
             thermal_evidence=thermal.evidence,
             check_statuses=check_statuses,
             overall_health=str(overall),
-            critical_findings=findings
+            critical_findings=findings,
+            checks=checks,
         )
 
     def diagnose_dead_phone_bootrom(self, check_cycling: bool = True) -> DeadPhoneBootROMDiagnosis:

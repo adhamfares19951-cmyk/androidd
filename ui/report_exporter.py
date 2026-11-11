@@ -87,6 +87,7 @@ class DiagnosticReportExporter:
         audio_codec: Optional[Dict[str, Any]] = None,
         panel_info: Optional[Dict[str, Any]] = None,
         root_forensics: Optional[Dict[str, Any]] = None,
+        extra_checks: Optional[List[Dict[str, Any]]] = None,
         technician_name: str = "",
         ticket_id: str = "",
         customer_name: str = "",
@@ -169,8 +170,9 @@ class DiagnosticReportExporter:
         blackbox = panics.get("blackbox", {})
 
         # ---------------- per-check status table ----------------
-        checks: List[tuple] = []  # (check_id, status, diagnosis)
-        detail_by_id = {
+        # Key checks come from the CheckResult lists ("checks"); dicts saved before that list
+        # existed fall back to check_statuses + the known detail fields.
+        legacy_detail_by_id = {
             "battery.fuel_gauge": None,
             "thermal.zones": None,
             "board.boot_reason": blackbox.get("diagnosis"),
@@ -183,9 +185,16 @@ class DiagnosticReportExporter:
             "wifi.adapter": haudit.get("wifi", {}).get("diagnosis"),
             "bluetooth.adapter": haudit.get("bluetooth", {}).get("diagnosis"),
         }
-        for source in (bdiag.get("check_statuses", {}), haudit.get("check_statuses", {})):
-            for cid, st in source.items():
-                checks.append((cid, st, detail_by_id.get(cid)))
+
+        def key_checks(source: Dict[str, Any]) -> List[tuple]:
+            if source.get("checks"):
+                return [(c.get("check_id"), c.get("status"), c.get("detail")) for c in source["checks"]]
+            return [(cid, st, legacy_detail_by_id.get(cid)) for cid, st in source.get("check_statuses", {}).items()]
+
+        # extra_checks: CheckResult dicts from the caller (e.g. CLI stages that failed -> UNKNOWN)
+        key_rows = key_checks(bdiag) + key_checks(haudit) + [
+            (c.get("check_id"), c.get("status"), c.get("detail")) for c in (extra_checks or [])]
+        checks: List[tuple] = list(key_rows)  # (check_id, status, detail)
         extra = [
             ("storage.health", srep.get("status"), srep.get("diagnosis")),
             ("storage.jedec_life", slife.get("status"), slife.get("diagnosis")),
@@ -197,8 +206,7 @@ class DiagnosticReportExporter:
             ("board.root_forensics", rforensics.get("status"), rforensics.get("diagnosis")),
         ]
         checks += [c for c in extra if c[1]]
-        key_statuses = list(bdiag.get("check_statuses", {}).values()) + list(haudit.get("check_statuses", {}).values())
-        overall = str(aggregate_status(key_statuses)) if key_statuses else "UNKNOWN"
+        overall = str(aggregate_status([st for _, st, _ in key_rows]))
 
         rows = "".join(
             f"<tr><td>{tr(cid)}</td><td>{badge(st)}</td><td>{esc(diag) if diag else ''}</td></tr>"

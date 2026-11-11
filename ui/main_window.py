@@ -4061,6 +4061,8 @@ class AndroidDoctorApp(ctk.CTk):
         audio_codec_dict = self.last_audio_codec.to_dict() if self.last_audio_codec else {}
         panel_info_dict = self.last_panel_info.to_dict() if self.last_panel_info else {}
         root_forensics_dict = self.last_root_forensics.to_dict() if self.last_root_forensics else {}
+        leakage = getattr(self, "last_leakage", None)
+        leakage_dict = leakage.to_dict() if leakage is not None else {}
 
         report_path = DiagnosticReportExporter.generate_html_report(
             device_profile=prof_dict,
@@ -4075,6 +4077,7 @@ class AndroidDoctorApp(ctk.CTk):
             audio_codec=audio_codec_dict,
             panel_info=panel_info_dict,
             root_forensics=root_forensics_dict,
+            leakage_result=leakage_dict,
             technician_name=tech,
             ticket_id=ticket_id,
             customer_name=c_name,

@@ -113,7 +113,7 @@ def print_status_table(rows: List[Tuple[str, str, Any]], lang: str) -> None:
 
 def run_cli_diagnostics(serial: str = "", lang: str = "ar", output_dir: Optional[str] = None) -> int:
     from core.adb_bridge import ADBBridge
-    from core.result import aggregate_status
+    from core.result import aggregate_status, CheckResult, Status, M
     from ui.i18n import t, render, set_current_language
 
     set_current_language(lang)
@@ -192,25 +192,15 @@ def run_cli_diagnostics(serial: str = "", lang: str = "ar", output_dir: Optional
         if sec is not None:
             print(render(sec.summary, lang))
 
-        # ---------------- per-check status table ----------------
-        rows: List[Tuple[str, str, Any]] = []
-        key_statuses: List[str] = []
-        if bdiag is not None:
-            details = {"board.boot_reason": bdiag.panic_analysis.blackbox.diagnosis,
-                       "board.kernel_log": bdiag.panic_analysis.summary_verdict}
-            for cid, st in bdiag.check_statuses.items():
-                rows.append((cid, st, details.get(cid)))
-                key_statuses.append(st)
-        if hw is not None:
-            for cid, st in hw.check_statuses.items():
-                rows.append((cid, st, None))
-                key_statuses.append(st)
-        if sec is not None:
-            rows.append(("security.user_ca_certificates", sec.user_ca_status, sec.user_ca_diagnosis))
-        for name in failed_stages:
-            rows.append((f"cli.stage.{name}", "UNKNOWN", t("cli.stage_failed_short", lang)))
-            key_statuses.append("UNKNOWN")
-        overall = str(aggregate_status(key_statuses))
+        # ---------------- per-check status table (from CheckResult lists) ----------------
+        stage_checks = [CheckResult(check_id=f"cli.stage.{name}", status=Status.UNKNOWN,
+                                    detail=M("cli.stage_failed_short")) for name in failed_stages]
+        device_checks: List[CheckResult] = ((bdiag.checks if bdiag is not None else [])
+                                            + (hw.checks if hw is not None else []))
+        info_checks: List[CheckResult] = sec.check_results() if sec is not None else []  # shown, not counted
+        rows: List[Tuple[str, str, Any]] = [(c.check_id, str(c.status), c.detail)
+                                            for c in device_checks + info_checks + stage_checks]
+        overall = str(aggregate_status([c.status for c in device_checks + stage_checks]))
         print_status_table(rows, lang)
         print(f"\n{t('cli.overall', lang, status=overall)}")
 
@@ -222,6 +212,7 @@ def run_cli_diagnostics(serial: str = "", lang: str = "ar", output_dir: Optional
                 board_diag=bdiag.to_dict() if bdiag is not None else {},
                 hw_audit=hw.to_dict() if hw is not None else {},
                 sec_scan=sec.to_dict() if sec is not None else {},
+                extra_checks=[c.to_dict() for c in stage_checks],
                 lang=lang,
                 output_dir=output_dir,
             )

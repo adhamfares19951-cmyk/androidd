@@ -5,7 +5,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, Optional, List
 
 from core.adb_bridge import ADBBridge
-from core.result import Evidence, Status, Msg, M
+from core.result import Evidence, Status, ProducesCheckResult, Msg, M
 from core.readers import ReadResult, run_read, read_node, failure_status, parse_int
 from core import jedec
 
@@ -32,7 +32,7 @@ def parse_dd_speed_mb_s(dd_output: str) -> Optional[float]:
 
 
 @dataclass
-class StorageHealthReport:
+class StorageHealthReport(ProducesCheckResult):
     check_id: str = "storage.health"
     storage_type: str = "UNKNOWN"
     storage_name: str = "UNKNOWN"

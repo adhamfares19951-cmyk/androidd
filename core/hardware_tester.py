@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Any
 from core.adb_bridge import ADBBridge
-from core.result import Evidence, Status, CheckResult, status_from_read, aggregate_status, Msg, M
+from core.result import Evidence, Status, CheckResult, ProducesCheckResult, status_from_read, aggregate_status, Msg, M
 from core.readers import ReadResult, run_read, read_node, failure_status, parse_int, parse_bool_feature
 
 logger = logging.getLogger("HardwareTester")
@@ -64,7 +64,7 @@ class AudioSubsystemInfo:
 
 
 @dataclass
-class FingerprintDiagnostics:
+class FingerprintDiagnostics(ProducesCheckResult):
     check_id: str = "fingerprint.sensor"
     vendor: str = "UNKNOWN"
     is_detected: bool = False
@@ -84,7 +84,7 @@ class FingerprintDiagnostics:
 
 
 @dataclass
-class PhysicalButtonsDiagnostics:
+class PhysicalButtonsDiagnostics(ProducesCheckResult):
     """Key test: PASS per key only when both DOWN and UP events were captured from getevent."""
     check_id: str = "buttons.keys"
     vol_up_status: str = "UNKNOWN"
@@ -104,7 +104,7 @@ class PhysicalButtonsDiagnostics:
 
 
 @dataclass
-class SIMBasebandDiagnostics:
+class SIMBasebandDiagnostics(ProducesCheckResult):
     check_id: str = "telephony.sim_baseband"
     sim1_state: str = "UNKNOWN"
     sim2_state: str = "UNKNOWN"
@@ -127,7 +127,7 @@ class SIMBasebandDiagnostics:
 
 
 @dataclass
-class WiFiDiagnostics:
+class WiFiDiagnostics(ProducesCheckResult):
     check_id: str = "wifi.adapter"
     state: str = "UNKNOWN"
     mac_address: str = "UNKNOWN"
@@ -149,7 +149,7 @@ class WiFiDiagnostics:
 
 
 @dataclass
-class BluetoothDiagnostics:
+class BluetoothDiagnostics(ProducesCheckResult):
     check_id: str = "bluetooth.adapter"
     state: str = "UNKNOWN"
     mac_address: str = "UNKNOWN"
@@ -168,7 +168,7 @@ class BluetoothDiagnostics:
 
 
 @dataclass
-class PeripheralChipsDiagnostics:
+class PeripheralChipsDiagnostics(ProducesCheckResult):
     """Features DECLARED by the system image (pm has-system-feature). This is not a hardware test."""
     check_id: str = "system.declared_features"
     gps_present: Optional[bool] = None
@@ -187,7 +187,7 @@ class PeripheralChipsDiagnostics:
 
 
 @dataclass
-class DisplayBacklightDiagnostics:
+class DisplayBacklightDiagnostics(ProducesCheckResult):
     check_id: str = "display.backlight"
     brightness_now: Optional[int] = None
     max_brightness: Optional[int] = None
@@ -208,7 +208,7 @@ class DisplayBacklightDiagnostics:
 
 
 @dataclass
-class AudioCodecReport:
+class AudioCodecReport(ProducesCheckResult):
     check_id: str = "audio.subsystem"
     cards_detected: List[str] = field(default_factory=list)
     pcm_devices: List[str] = field(default_factory=list)
@@ -228,7 +228,7 @@ class AudioCodecReport:
 
 
 @dataclass
-class DisplayPanelInfo:
+class DisplayPanelInfo(ProducesCheckResult):
     """Kernel-reported display panel controller name and verified-boot properties. Not a proof of originality."""
     check_id: str = "display.panel_info"
     panel_controller_name: str = "UNKNOWN"
@@ -269,6 +269,7 @@ class HardwareAuditReport:
     summary: Any = None
     status: str = "UNKNOWN"
     evidence: List[Evidence] = field(default_factory=list)
+    checks: List[CheckResult] = field(default_factory=list)  # key checks; check_statuses mirrors them
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -293,7 +294,8 @@ class HardwareAuditReport:
             "check_statuses": dict(self.check_statuses),
             "summary": self.summary.to_dict() if isinstance(self.summary, Msg) else self.summary,
             "status": self.status,
-            "evidence": _ev_dict(self.evidence)
+            "evidence": _ev_dict(self.evidence),
+            "checks": [c.to_dict() for c in self.checks],
         }
 
 
@@ -1086,26 +1088,28 @@ function nextColor() {
         ptr_loc = self.get_pointer_location_state(serial)
 
         all_ev: List[Evidence] = []
+        sensor_ev: List[Evidence] = []
+        camera_ev: List[Evidence] = []
         sensors_status = str(Status.PASS) if sensors else str(self.last_sensor_read.status if self.last_sensor_read else Status.UNKNOWN)
         if self.last_sensor_read is not None:
-            all_ev.append(self.last_sensor_read.evidence(f"{len(sensors)} sensors parsed; common sensors not reported: {missing or 'none'}"))
+            sensor_ev.append(self.last_sensor_read.evidence(f"{len(sensors)} sensors parsed; common sensors not reported: {missing or 'none'}"))
         cameras_status = str(Status.PASS) if cameras else str(self.last_camera_read.status if self.last_camera_read else Status.UNKNOWN)
         if self.last_camera_read is not None:
-            all_ev.append(self.last_camera_read.evidence(f"{len(cameras)} cameras parsed"))
+            camera_ev.append(self.last_camera_read.evidence(f"{len(cameras)} cameras parsed"))
+        all_ev.extend(sensor_ev + camera_ev)
 
-        check_statuses = {
-            "sensors.reported": sensors_status,
-            "camera.reported": cameras_status,
-            audio_codec.check_id: audio_codec.status,
-            fp.check_id: fp.status,
-            btn.check_id: btn.status,
-            sim.check_id: sim.status,
-            disp.check_id: disp.status,
-            wifi.check_id: wifi.status,
-            bt.check_id: bt.status,
-        }
-        if not capture_buttons:
-            del check_statuses[btn.check_id]  # not run: reported separately, not counted
+        checks = [
+            CheckResult(check_id="sensors.reported", status=Status(sensors_status),
+                        value=len(sensors) if sensors else None, evidence=sensor_ev),
+            CheckResult(check_id="camera.reported", status=Status(cameras_status),
+                        value=len(cameras) if cameras else None, evidence=camera_ev),
+            audio_codec.to_check_result(),
+            fp.to_check_result(),
+        ]
+        if capture_buttons:
+            checks.append(btn.to_check_result())  # not run: reported separately, not counted
+        checks += [sim.to_check_result(), disp.to_check_result(), wifi.to_check_result(), bt.to_check_result()]
+        check_statuses = {c.check_id: str(c.status) for c in checks}
         overall = aggregate_status(list(check_statuses.values()))
         fails = [k for k, v in check_statuses.items() if v == str(Status.FAIL)]
         if overall == Status.FAIL:
@@ -1143,5 +1147,6 @@ function nextColor() {
             check_statuses=check_statuses,
             summary=summary,
             status=str(overall),
-            evidence=all_ev
+            evidence=all_ev,
+            checks=checks,
         )

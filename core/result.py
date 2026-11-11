@@ -53,8 +53,9 @@ class CheckResult:
     value: Any = None
     unit: str = ""
     message_key: str = ""
-    possible_causes: List[str] = field(default_factory=list)
+    possible_causes: List[Any] = field(default_factory=list)
     evidence: List[Evidence] = field(default_factory=list)
+    detail: Any = None  # Msg or text explaining the status (diagnosis); never decides the status
 
     @property
     def has_real_data(self) -> bool:
@@ -71,10 +72,54 @@ class CheckResult:
             "value": self.value,
             "unit": self.unit,
             "message_key": self.message_key,
-            "possible_causes": list(self.possible_causes),
+            "possible_causes": [_msg_dict(c) for c in self.possible_causes],
             "evidence": [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence],
+            "detail": _msg_dict(self.detail),
             "has_real_data": self.has_real_data
         }
+
+
+def coerce_status(value: Any) -> Status:
+    """A Status from a Status or its string; anything unrecognised is UNKNOWN (never PASS)."""
+    try:
+        return Status(str(value))
+    except ValueError:
+        return Status.UNKNOWN
+
+
+def _msg_dict(value: Any) -> Any:
+    """JSON-ready form of a Msg, a list of them, or a plain value."""
+    if isinstance(value, (list, tuple)):
+        return [_msg_dict(v) for v in value]
+    if isinstance(value, Msg):
+        return value.to_dict()
+    return value
+
+
+class ProducesCheckResult:
+    """Mixin for per-check result classes: `to_check_result()` gives the uniform CheckResult.
+
+    Subclasses provide `check_id`, a status attribute (`status` unless `_check_status_attr` says
+    otherwise), optional `evidence`, `possible_causes` and a detail attribute (`diagnosis` unless
+    `_check_detail_attr` says otherwise). `_check_value()` returns the headline (value, unit).
+    """
+    _check_status_attr = "status"
+    _check_detail_attr = "diagnosis"
+
+    def _check_value(self):
+        return None, ""
+
+    def to_check_result(self) -> "CheckResult":
+        value, unit = self._check_value()
+        return CheckResult(
+            check_id=getattr(self, "check_id"),
+            status=coerce_status(getattr(self, self._check_status_attr, Status.UNKNOWN)),
+            value=value,
+            unit=unit,
+            possible_causes=list(getattr(self, "possible_causes", None) or []),
+            evidence=list(getattr(self, "evidence", None) or []),
+            detail=getattr(self, self._check_detail_attr, None),
+        )
 
 
 PERMISSION_PATTERNS = ("permission denied", "avc: denied", "operation not permitted")
@@ -116,7 +161,7 @@ def aggregate_status(statuses: List[Any]) -> Status:
     Overall status of several key checks:
     FAIL if any FAIL, else UNKNOWN if any check is UNKNOWN/NEEDS_ROOT (or there are none), else PASS.
     """
-    values = [Status(str(s)) for s in statuses]
+    values = [coerce_status(s) for s in statuses]
     if not values:
         return Status.UNKNOWN
     if Status.FAIL in values:
