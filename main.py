@@ -100,24 +100,19 @@ def choose_device(devices: List[Dict[str, Any]], serial: str, lang: str) -> Tupl
     return chosen, EXIT_OK
 
 
-def print_status_table(rows: List[Tuple[str, str, Any]], lang: str) -> None:
-    from ui.i18n import t, render
-    name_w = max([len(t(cid, lang)) for cid, _, _ in rows] + [10])
-    print(f"\n{t('cli.table_title', lang)}")
-    print("-" * (name_w + 14))
-    for cid, status, detail in rows:
-        line = f"{t(cid, lang):<{name_w}}  {status:<10}"
-        if detail is not None:
-            line += f"  {render(detail, lang)}"
-        print(line)
+from diagnostics_runner import print_status_table  # noqa: E402,F401  (kept importable from main)
+
+
+def _db_factory():
+    from database.db_manager import DatabaseManager
+    return DatabaseManager()
 
 
 def run_cli_diagnostics(serial: str = "", lang: str = "ar", output_dir: Optional[str] = None,
                         signing_key: Optional[str] = None, pdf: bool = False) -> int:
     from core.adb_bridge import ADBBridge
-    from core.result import aggregate_status, CheckResult, Status, M
-    from core.report_signing import SigningError
-    from ui.i18n import t, render, set_current_language
+    from diagnostics_runner import diagnose_device
+    from ui.i18n import t, set_current_language
 
     set_current_language(lang)
     print(f"\n=== {t('cli.title', lang)} ===\n")
@@ -133,119 +128,56 @@ def run_cli_diagnostics(serial: str = "", lang: str = "ar", output_dir: Optional
     target, code = choose_device(devices, serial, lang)
     if target is None:
         return code
-    target_serial = target["serial"]
-    state = target.get("state", "unknown")
-    print(t("cli.target", lang, serial=target_serial, state=state))
 
-    if state in ("unauthorized", "offline"):
-        print(t(f"cli.state.{state}", lang))
-        return EXIT_UNAUTHORIZED
-    if state == "fastboot":
-        from core.rescue_center import RescueCenter
-        fb = RescueCenter(bridge).get_fastboot_variables(target_serial)
-        print(t("cli.fastboot_vars", lang, product=fb.product, bootloader=fb.bootloader_version, unlocked=fb.is_unlocked))
-        return EXIT_OK
-    if state != "device":
-        print(t("cli.unsupported_state", lang, state=state))
-        return EXIT_UNAUTHORIZED
+    opened: List[Any] = []
 
-    from database.db_manager import DatabaseManager
-    db = DatabaseManager()
-    results: Dict[str, Any] = {}
-    failed_stages: List[str] = []
-
-    def stage(name: str, fn):
-        print(f"\n--- {t('cli.stage.' + name, lang)} ---")
-        try:
-            results[name] = fn()
-            return results[name]
-        except Exception as e:
-            logger.error(f"Stage {name} failed: {e}\n{traceback.format_exc()}")
-            failed_stages.append(name)
-            print(t("cli.stage_failed", lang, error=f"{type(e).__name__}: {e}"))
-            return None
+    def get_db():
+        if not opened:
+            opened.append(_db_factory())
+        return opened[0]
 
     try:
-        from core.profiler import DeviceProfiler
-        from core.board_diag import MotherboardDiagnostics
-        from core.hardware_tester import HardwareTester
-        from core.malware_hunter import MalwareHunter
-
-        profile = stage("profile", lambda: DeviceProfiler(bridge).profile_device(target_serial))
-        if profile is not None:
-            print(t("cli.device_line", lang, brand=profile.brand, model=profile.model,
-                    android=profile.android_version, sdk=profile.sdk_version, patch=profile.security_patch))
-
-        bdiag = stage("board", lambda: MotherboardDiagnostics(bridge, db).run_full_diagnostics(target_serial))
-        if bdiag is not None:
-            p = bdiag.pmic
-            print(t("cli.battery_voltage", lang, value=p.voltage_mv, source=p.voltage_source))
-            print(t("cli.battery_current", lang, value=p.current_ma, source=p.current_source, note=p.current_note))
-            print(t("cli.battery_capacity", lang, value=p.true_health_pct, status=p.health_verdict))
-            print(t("cli.battery_temp", lang, value=p.temp_c, source=p.temp_source))
-            for f in bdiag.critical_findings:
-                print(f"  [!] {render(f, lang)}")
-
-        hw = stage("hardware", lambda: HardwareTester(bridge).run_full_audit(target_serial))
-        if hw is not None:
-            print(t("cli.reported_sensors", lang, count=len(hw.sensors), status=hw.sensors_status))
-            print(t("cli.reported_cameras", lang, count=len(hw.cameras), status=hw.cameras_status))
-
-        sec = stage("security", lambda: MalwareHunter(bridge, db).audit_security(target_serial))
-        if sec is not None:
-            print(render(sec.summary, lang))
-
-        # ---------------- per-check status table (from CheckResult lists) ----------------
-        stage_checks = [CheckResult(check_id=f"cli.stage.{name}", status=Status.UNKNOWN,
-                                    detail=M("cli.stage_failed_short")) for name in failed_stages]
-        device_checks: List[CheckResult] = ((bdiag.checks if bdiag is not None else [])
-                                            + (hw.checks if hw is not None else []))
-        info_checks: List[CheckResult] = sec.check_results() if sec is not None else []  # shown, not counted
-        rows: List[Tuple[str, str, Any]] = [(c.check_id, str(c.status), c.detail)
-                                            for c in device_checks + info_checks + stage_checks]
-        overall = str(aggregate_status([c.status for c in device_checks + stage_checks]))
-        print_status_table(rows, lang)
-        print(f"\n{t('cli.overall', lang, status=overall)}")
-
-        # ---------------- report (always written, also for partial results) ----------------
-        try:
-            from ui.report_exporter import DiagnosticReportExporter
-            report_file = DiagnosticReportExporter.generate_html_report(
-                device_profile=profile.to_dict() if profile is not None else {"serial": target_serial},
-                board_diag=bdiag.to_dict() if bdiag is not None else {},
-                hw_audit=hw.to_dict() if hw is not None else {},
-                sec_scan=sec.to_dict() if sec is not None else {},
-                extra_checks=[c.to_dict() for c in stage_checks],
-                signing_key_path=signing_key,
-                lang=lang,
-                output_dir=output_dir,
-            )
-            print(f"\n{t('cli.report_written', lang, path=report_file)}")
-            if signing_key:
-                from core.report_signing import signature_path_for
-                print(t("cli.signature_written", lang, path=signature_path_for(report_file)))
-            if pdf:
-                from ui.pdf_export import PdfExportError, export_pdf
-                try:
-                    pdf_file, pdf_sig = export_pdf(report_file, signing_key)
-                except PdfExportError as e:
-                    print(t("cli.pdf_failed", lang, error=render(e.msg, lang)))
-                    return EXIT_INTERNAL
-                print(t("cli.pdf_written", lang, path=pdf_file))
-                if pdf_sig:
-                    print(t("cli.signature_written", lang, path=pdf_sig))
-        except SigningError as e:
-            print(t("cli.signing_failed", lang, error=render(e.msg, lang)))
-            return EXIT_INTERNAL
-        except Exception as e:
-            logger.error(f"Report generation failed: {e}\n{traceback.format_exc()}")
-            print(t("cli.internal_error", lang, error=f"report: {e}"))
-            return EXIT_INTERNAL
+        return diagnose_device(bridge, target, lang, get_db, output_dir, signing_key, pdf).exit_code
     finally:
-        if hasattr(db, "close"):
-            db.close()
+        if opened and hasattr(opened[0], "close"):
+            opened[0].close()
 
-    return EXIT_PARTIAL if failed_stages else EXIT_OK
+
+def run_cli_all_devices(lang: str = "ar", output_dir: Optional[str] = None, signing_key: Optional[str] = None,
+                        pdf: bool = False, max_workers: int = 4) -> int:
+    """Every connected device in parallel, one report each. Exit code: the worst device result."""
+    from core.adb_bridge import ADBBridge
+    from diagnostics_runner import combined_exit_code, diagnose_all
+    from ui.i18n import t, set_current_language
+
+    set_current_language(lang)
+    print(f"\n=== {t('cli.title', lang)} ===\n")
+    bridge = ADBBridge()
+    try:
+        devices = bridge.list_devices()
+    except Exception:
+        logger.exception("Listing devices failed")
+        print(t("cli.internal_error", lang, error="list_devices"))
+        return EXIT_INTERNAL
+    if not devices:
+        print(t("cli.no_device", lang))
+        return EXIT_NO_DEVICE
+    print(t("cli.batch_start", lang, count=len(devices), workers=min(max_workers, len(devices))))
+
+    def done(run):
+        print(t("cli.batch_device_done", lang, serial=run.serial, status=run.overall, code=run.exit_code), flush=True)
+
+    runs = diagnose_all(bridge, devices, lang, _db_factory, output_dir, signing_key, pdf,
+                        max_workers=max_workers, on_done=done)
+    for run in runs:
+        print(f"\n{'=' * 60}\n{run.serial}  {run.model}\n{'=' * 60}")
+        for line in run.output:
+            print(line)
+
+    print(f"\n{t('cli.batch_summary', lang)}")
+    for run in runs:
+        print(f"  {run.serial:<24} {run.state:<13} {run.overall:<10} exit {run.exit_code}  {run.report_path or '-'}")
+    return combined_exit_code(runs)
 
 
 # ------------------------------------------------------------------------------------------------
@@ -258,6 +190,9 @@ def build_parser():
     parser.add_argument("--check-bins", action="store_true", help="verify bin/ against bin/manifest.json (no download)")
     parser.add_argument("--repair-tools", action="store_true", help="download and re-install broken tools (hash-checked)")
     parser.add_argument("--output-dir", type=str, default=None, help="folder for the HTML report (CLI)")
+    parser.add_argument("--all-devices", action="store_true",
+                        help="with --cli: diagnose every connected device in parallel (one report each)")
+    parser.add_argument("--workers", type=int, default=4, help="parallel devices for --all-devices (default 4)")
     parser.add_argument("--pdf", action="store_true",
                         help="also write a PDF copy of the CLI report (printed by the installed Edge/Chrome)")
     parser.add_argument("--sign-key", type=str, default=None,
@@ -311,9 +246,11 @@ def main() -> int:
 
     if args.cli:
         try:
-            return run_cli_diagnostics(args.serial, args.lang, args.output_dir,
-                                       args.sign_key or os.environ.get("ADP_SIGNING_KEY") or None,
-                                       pdf=args.pdf)
+            key = args.sign_key or os.environ.get("ADP_SIGNING_KEY") or None
+            if args.all_devices:
+                return run_cli_all_devices(args.lang, args.output_dir, key, pdf=args.pdf,
+                                           max_workers=max(1, args.workers))
+            return run_cli_diagnostics(args.serial, args.lang, args.output_dir, key, pdf=args.pdf)
         except Exception:
             logger.critical(f"Internal error\n{traceback.format_exc()}")
             return EXIT_INTERNAL

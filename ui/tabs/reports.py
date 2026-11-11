@@ -114,6 +114,18 @@ class ReportsTabMixin:
         for b in (self.btn_export_cert, self.btn_export_pdf, btn_open_fld):
             b.pack(side=L["lead"], padx=(0, 8) if L["lead"] == "left" else (8, 0))
 
+        # All connected devices at once (one report each)
+        batch_card, _ = make_card(wrap, self._L(self._tr("card_batch_scan")), ACCENT_BLUE, L, pady=(0, 12))
+        ctk.CTkLabel(
+            batch_card, text=self._L(self._tr("ui.batch_hint")), font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            text_color=TEXT_SECONDARY, anchor=L["anchor"], justify=L["justify"], wraplength=1000,
+        ).pack(fill="x", padx=16, pady=(0, 8))
+        self.btn_batch_scan = make_button(
+            batch_card, self._L(self._tr("btn_batch_scan")), self._run_batch_scan_async, variant="secondary", height=36
+        )
+        self.btn_batch_scan.pack(side="top", anchor=L["anchor"], padx=16, pady=(0, 10))
+        self.batch_text = make_console_box(batch_card, 120, L)
+
         # Past Reports List
         reports_list_card, _ = make_card(
             wrap, self._L(self._tr("card_past_reports")), ACCENT_CYAN, L, pady=(0, 0)
@@ -198,6 +210,46 @@ class ReportsTabMixin:
         self.last_report_path = report_path
         webbrowser.open(f"file:///{os.path.abspath(report_path)}")
         self._refresh_past_reports()
+
+    def _run_batch_scan_async(self):
+        """Full diagnostics of every connected device in parallel; one line per device as it finishes."""
+        from core.report_signing import KEY_PATH_ENV
+        from diagnostics_runner import diagnose_all
+
+        self.btn_batch_scan.configure(state="disabled")
+        self._set_box(self.batch_text, self._tr("ui.batch_listing"))
+        lang = self.current_lang
+        key_path = os.environ.get(KEY_PATH_ENV) or None
+
+        def line(run):
+            return self._tr("ui.batch_line", serial=run.serial, model=run.model or "-", state=run.state,
+                            status=run.overall, report=os.path.basename(run.report_path) if run.report_path else "-")
+
+        def task():
+            try:
+                devices = self.bridge.list_devices()
+            except Exception as e:
+                logger.error(f"Batch scan: listing devices failed: {e}")
+                devices = []
+            if not devices:
+                self.after(0, lambda: (self._set_box(self.batch_text, self._tr("ui.batch_none")),
+                                       self.btn_batch_scan.configure(state="normal")))
+                return
+            self.after(0, lambda: self._set_box(self.batch_text, self._tr("ui.batch_running", count=len(devices)) + "\n"))
+
+            def on_done(run):
+                self.after(0, lambda r=run: self._append_box(self.batch_text, line(r) + "\n"))
+
+            # The window's database: it opens a connection per operation, so close() at the end is harmless.
+            runs = diagnose_all(self.bridge, devices, lang, lambda: self.db, REPORTS_DIR, key_path, on_done=on_done)
+            ok = sum(1 for r in runs if r.report_path)
+
+            def finish():
+                self._append_box(self.batch_text, "\n" + self._tr("ui.batch_done", reports=ok, count=len(runs)) + "\n")
+                self.btn_batch_scan.configure(state="normal")
+                self._refresh_past_reports()
+            self.after(0, finish)
+        threading.Thread(target=task, daemon=True).start()
 
     def _export_pdf_async(self):
         """PDF copy of the last report made here, or of one the technician picks."""

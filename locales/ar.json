@@ -1163,5 +1163,16 @@
   "pdf.err.failed": "لم يُنتج المتصفح ملف PDF: {error}",
   "cli.pdf_written": "كُتب ملف PDF في:\n  {path}",
   "cli.pdf_failed": "فشل تصدير PDF: {error}",
-  "report.design_from_spec": "السعة التصميمية من مواصفات الشركة المصنّعة لـ {name} (المصدر في الأدلة)."
+  "report.design_from_spec": "السعة التصميمية من مواصفات الشركة المصنّعة لـ {name} (المصدر في الأدلة).",
+  "cli.batch_start": "فحص {count} جهاز، {workers} في نفس الوقت...",
+  "cli.batch_device_done": "  انتهى: {serial}  {status}  (رمز الخروج {code})",
+  "cli.batch_summary": "الملخص (تقرير لكل جهاز):",
+  "card_batch_scan": "كل الأجهزة الموصولة",
+  "ui.batch_hint": "يشغّل الفحص الكامل على كل الهواتف الموصولة في نفس الوقت، بتقرير لكل هاتف.\nالهواتف غير المصرّح لها أو غير المتصلة تظهر في القائمة دون فحص.",
+  "btn_batch_scan": "افحص كل الأجهزة الموصولة",
+  "ui.batch_listing": "جارٍ البحث عن الأجهزة الموصولة...",
+  "ui.batch_none": "لم يُعثر على أي جهاز عبر ADB أو fastboot.",
+  "ui.batch_running": "جارٍ فحص {count} جهاز... يظهر سطر كل هاتف عند انتهائه.",
+  "ui.batch_line": "{serial}  {model}  [{state}]  {status}  التقرير: {report}",
+  "ui.batch_done": "انتهى: {reports} تقرير لـ {count} جهاز."
 }

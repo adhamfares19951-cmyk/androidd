@@ -1163,5 +1163,16 @@
   "pdf.err.failed": "The browser did not produce a PDF: {error}",
   "cli.pdf_written": "PDF written to:\n  {path}",
   "cli.pdf_failed": "PDF export failed: {error}",
-  "report.design_from_spec": "Design capacity from the manufacturer's specification for {name} (source in the evidence)."
+  "report.design_from_spec": "Design capacity from the manufacturer's specification for {name} (source in the evidence).",
+  "cli.batch_start": "Diagnosing {count} device(s), {workers} at a time...",
+  "cli.batch_device_done": "  done: {serial}  {status}  (exit {code})",
+  "cli.batch_summary": "Summary (one report per device):",
+  "card_batch_scan": "All connected devices",
+  "ui.batch_hint": "Runs the full diagnostics on every connected phone at the same time, one report per phone.\nUnauthorized or offline phones are listed but not scanned.",
+  "btn_batch_scan": "Scan all connected devices",
+  "ui.batch_listing": "Looking for connected devices...",
+  "ui.batch_none": "No device found over ADB or fastboot.",
+  "ui.batch_running": "Scanning {count} device(s)... each line appears when that phone is done.",
+  "ui.batch_line": "{serial}  {model}  [{state}]  {status}  report: {report}",
+  "ui.batch_done": "Finished: {reports} report(s) for {count} device(s)."
 }

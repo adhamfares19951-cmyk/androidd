@@ -79,6 +79,10 @@ Manufacturer specifications per model number (`ro.product.model`, dual-SIM suffi
 - Media rescue (`emergency_data_pull`, `one_click_customer_backup`): pulls `/sdcard/DCIM`, `/sdcard/Pictures`, `/sdcard/Download`, `/sdcard/Documents`, and **WhatsApp Media folders only** (`/sdcard/Android/media/com.whatsapp/WhatsApp/Media`, `/sdcard/WhatsApp/Media`); encrypted chat history files (`msgstore.db.crypt*`) are not copied. Contacts and SMS are queried via `content query` where permitted.
 - Partition table discovery (`by-name`, `/proc/partitions`) and `dd` backup (`core/partition_backup.py`), bulk APK installation (`adb install -r -d -g`) and extraction (`core/batch_apk_manager.py`), and neutral setup-wizard flag reading/writing (`device_provisioned`, `user_setup_complete`) and Settings/URL intent helpers (`core/provisioning_manager.py`).
 
+### Several Devices at Once (`diagnostics_runner.py`)
+- The Reports tab card "All connected devices" and `--cli --all-devices` run the full diagnostics on every connected phone at the same time, each with its own report; each phone's line appears as soon as it finishes. Unauthorized/offline phones are listed, not scanned; a crash in one phone's run becomes that phone's internal error and the others continue.
+- `ADBBridge` keeps one lock per device: commands to different phones run in parallel, commands to the same phone stay in order, and server-wide calls (device list, start/kill server) share one lock.
+
 ### Diagnostic Report & Persistence (`ui/report_exporter.py`, `database/db_manager.py`)
 - Generates printable dark-theme HTML **Diagnostic Report** files (saved to `reports/` by default or `--output-dir`), featuring HTML-escaped device values, a per-check status table, overall aggregated status, expandable evidence drawers, and optional vector SVG QR codes (`qrcode`). A PDF copy can be exported from the Reports tab ("Export PDF") or with `--pdf` (`ui/pdf_export.py`): it is printed by the Microsoft Edge or Google Chrome already installed on the PC, in headless mode with a temporary profile (the user's browser profile is not touched), and is accepted only if the output really is a PDF. Without a signing key the footer states that the report is **not digitally signed**; see [Report Signing](#report-signing-ed25519) for Ed25519 signatures.
 - Persists device history, diagnostic summaries, repair tickets, leakage logs, maintenance logs, and package rollbacks in SQLite (`data/android_doctor.db`).
@@ -147,6 +151,7 @@ Arguments parsed in `main.py`:
 - `--check-bins`: verify `bin/` against `bin/manifest.json` and print JSON status (no download)
 - `--repair-tools`: download/reinstall missing or mismatched packages after SHA-256 verification
 - `--output-dir OUTPUT_DIR`: custom folder for the CLI HTML report
+- `--all-devices`: with `--cli`, diagnose every connected device in parallel (`--workers N`, default 4); one report per device, a summary table at the end, and the exit code of the worst device (`4` > `3` > `2` > `0`)
 - `--pdf`: also write a PDF copy of the CLI report (signed too when a signing key is used)
 - `--sign-key PATH`: sign the CLI report with this Ed25519 private key (default: `ADP_SIGNING_KEY` environment variable)
 - `--gen-signing-key DIR`: create a new key pair in `DIR` (outside the program folder)
@@ -213,6 +218,7 @@ Test modules:
 - `tests/test_report_signing.py`: Key generation and refusal inside the program folder, encrypted keys, signed and unsigned reports in Arabic and English, single-byte tampering, forged hashes, other keys, bad signature files, CLI exit codes `0`/`4`/`5`.
 - `tests/test_pdf_export.py`: Browser lookup, stale or non-PDF output rejected, timeout, private browser profile, bad key fails before printing, CLI `--pdf` exit codes, and a real Arabic report printed and signed when Edge/Chrome is installed.
 - `tests/test_model_db.py`: Sourced entries only (missing URL, implausible or swapped capacities rejected), `/DS` suffix and case, user file overrides, rated capacity preferred, spec fills a missing design value but never a missing reading, kernel value wins with a note when it differs by more than 10%.
+- `tests/test_multi_device.py`: Parallel runs (timed), worker limit, order kept, one crash isolated, database closed once, combined exit code, `--all-devices` CLI with one report per authorized device, the GUI button end to end, per-device ADB locks (different phones do not wait, the same phone stays in order).
 - `tests/test_app_paths.py`: Database/report paths unchanged from source, outside the install folder in a packaged build.
 - `tests/test_ui_smoke.py`: Headless build of every GUI tab in Arabic and English, width fit, language switch, and status-pill rules.
 - `tests/test_misleading_checks.py`: Preconditions for wireless-only screen-off current, per-category thermal limits, measurable vs. unmeasurable maintenance actions, `fastboot erase cache` precondition, WhatsApp media-only pulls, unsigned report notices, and granted-permission security inventories.
@@ -243,7 +249,7 @@ On an unrooted production Android device, SELinux restricts several paths and to
 
 ## Known Limitations
 
-- **Physical device coverage:** All automated tests (172) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
+- **Physical device coverage:** All automated tests (184) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
 - **Non-Windows tool manifests:** Download URLs and archive SHA-256 hashes are pinned for all 5 platforms, but pre-listed per-file `scrcpy` SHA-256 entries cover `windows-x86_64` only, and non-Windows archive downloads have not been runtime-tested.
 - **Signing is opt-in:** Reports are signed only when a key is configured (`--sign-key` / `ADP_SIGNING_KEY`); keeping the private key safe is the technician's job.
 

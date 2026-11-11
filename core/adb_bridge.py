@@ -122,7 +122,9 @@ class ADBBridge:
         self.adb_path = get_adb_path()
         self.fastboot_path = get_fastboot_path()
         self.scrcpy_path = get_scrcpy_path()
-        self._cmd_lock = threading.Lock()
+        self._cmd_lock = threading.Lock()  # server-wide calls (no serial): devices, start/kill-server
+        self._serial_locks: Dict[str, threading.Lock] = {}
+        self._serial_locks_guard = threading.Lock()
         self._capability_cache: Dict[str, Dict[str, Any]] = {}
         self._initialized = True
         logger.info(f"ADBBridge initialized with ADB: {self.adb_path}, Fastboot: {self.fastboot_path}")
@@ -243,13 +245,24 @@ class ADBBridge:
         self.fastboot_path = get_fastboot_path()
         self.scrcpy_path = get_scrcpy_path()
 
+    def _lock_for(self, serial: Optional[str]) -> threading.Lock:
+        """One lock per device, so commands to different phones run in parallel while commands to
+        the same phone stay in order. Calls without a serial share the server-wide lock."""
+        if not serial:
+            return self._cmd_lock
+        with self._serial_locks_guard:
+            lock = self._serial_locks.get(serial)
+            if lock is None:
+                lock = self._serial_locks[serial] = threading.Lock()
+            return lock
+
     def run_adb(self, args: List[str], serial: Optional[str] = None, timeout: int = 30) -> Tuple[int, str, str]:
         cmd = [self.adb_path]
         if serial:
             cmd.extend(["-s", serial])
         cmd.extend(args)
 
-        with self._cmd_lock:
+        with self._lock_for(serial):
             try:
                 proc = subprocess.run(
                     cmd,
@@ -346,7 +359,7 @@ class ADBBridge:
             cmd.extend(["-s", serial])
         cmd.extend(args)
 
-        with self._cmd_lock:
+        with self._lock_for(serial):
             try:
                 proc = subprocess.run(
                     cmd,
