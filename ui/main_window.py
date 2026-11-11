@@ -82,7 +82,7 @@ from core.malware_hunter import MalwareHunter, SecurityAuditScan, AppSecurityInf
 from core.optimizer import RealSystemOptimizer, OptimizationResult
 from core.rescue_center import RescueCenter, FastbootVariables
 from core.provisioning_manager import ProvisioningManager, ProvisioningStatus
-from core.result import Evidence, Status, CheckResult
+from core.result import Evidence, Status, CheckResult, aggregate_status
 from ui.report_exporter import DiagnosticReportExporter, REPORTS_DIR
 from ui.i18n import t, render, set_current_language
 
@@ -103,6 +103,17 @@ def _feature_key(value: Any) -> str:
 
 def _flinger_key(value: Any) -> str:
     return "audio.flinger.UNKNOWN" if value is None else ("audio.flinger.RUNNING" if value else "audio.flinger.NOT_RUNNING")
+
+
+def maintenance_pill_status(actions: List[Any]) -> str:
+    """Overall maintenance status: the same rule as every other aggregate (no actions -> UNKNOWN)."""
+    return str(aggregate_status([getattr(a, "status", Status.UNKNOWN) for a in actions]))
+
+
+def bootrom_pill_status(diag: Any) -> str:
+    """The port scan reports which USB modes were seen, not a pass/fail reading. Fastboot or MTP
+    are normal modes and even EDL/BROM can be intentional, so the pill never claims FAIL or PASS."""
+    return str(Status.UNKNOWN)
 
 
 def _fmt(value: Any, unit: str = "") -> str:
@@ -2337,7 +2348,7 @@ class AndroidDoctorApp(ctk.CTk):
             def upd():
                 self._ensure_tab("board_diag")
                 self._set_box(self.bootrom_text, "\n".join(lines))
-                self._set_pill("bootrom", "FAIL" if diag.detected_ports else "UNKNOWN")
+                self._set_pill("bootrom", bootrom_pill_status(diag))
             self.after(0, upd)
 
         threading.Thread(target=task, daemon=True).start()
@@ -3078,9 +3089,7 @@ class AndroidDoctorApp(ctk.CTk):
                 self.lbl_storage_gain.configure(text=_fmt(res.storage_freed_mb, "MB"))
                 self.lbl_drain_gain.configure(text="—")
                 self._append_box(self.opt_log_text, "\n" + "\n".join(lines) + "\n")
-                any_fail = any(getattr(a, "status", "") == "FAIL" for a in res.actions)
-                all_unknown = all(getattr(a, "status", "") == "UNKNOWN" for a in res.actions) if res.actions else True
-                self._set_pill("maint", "FAIL" if any_fail else ("UNKNOWN" if all_unknown else "PASS"))
+                self._set_pill("maint", maintenance_pill_status(res.actions))
                 messagebox.showinfo(self._tr("ui.maintenance_finished"),
                                     (self._tr("ui.measured_change_in_free_storage_after", mb=_fmt(res.storage_freed_mb, 'MB'))))
             self.after(0, done)

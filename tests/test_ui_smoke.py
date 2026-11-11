@@ -120,5 +120,32 @@ class TestMainWindowSmoke(unittest.TestCase):
                 app.destroy()
 
 
+class TestPillStatusRules(unittest.TestCase):
+    """Pills must follow the core status rules, never invent a verdict."""
+
+    def _actions(self, *statuses):
+        from types import SimpleNamespace
+        return [SimpleNamespace(status=s) for s in statuses]
+
+    def test_maintenance_unknown_measured_step_is_not_pass(self):
+        from ui.main_window import maintenance_pill_status
+        self.assertEqual(maintenance_pill_status(self._actions("UNKNOWN", "PASS", "PASS")), "UNKNOWN")
+
+    def test_maintenance_rules(self):
+        from ui.main_window import maintenance_pill_status
+        self.assertEqual(maintenance_pill_status(self._actions("PASS", "PASS", "PASS")), "PASS")
+        self.assertEqual(maintenance_pill_status(self._actions("PASS", "FAIL", "UNKNOWN")), "FAIL")
+        self.assertEqual(maintenance_pill_status(self._actions("PASS", "NEEDS_ROOT", "PASS")), "UNKNOWN")
+        self.assertEqual(maintenance_pill_status([]), "UNKNOWN")
+
+    def test_bootrom_scan_never_claims_fail_for_detected_ports(self):
+        from types import SimpleNamespace
+        from ui.main_window import bootrom_pill_status
+        fastboot = SimpleNamespace(detected_ports=[{"mode": "Android Fastboot"}])
+        none = SimpleNamespace(detected_ports=[])
+        self.assertEqual(bootrom_pill_status(fastboot), "UNKNOWN")
+        self.assertEqual(bootrom_pill_status(none), "UNKNOWN")
+
+
 if __name__ == "__main__":
     unittest.main()
