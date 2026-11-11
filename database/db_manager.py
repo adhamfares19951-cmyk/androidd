@@ -8,7 +8,9 @@ from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger("DBManager")
 
-DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "android_doctor.db")
+from app_paths import default_db_path
+
+DEFAULT_DB_PATH = default_db_path()  # data/android_doctor.db from source; %LOCALAPPDATA% in a packaged build
 
 
 class DatabaseManager:

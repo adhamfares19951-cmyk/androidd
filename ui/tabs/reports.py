@@ -97,7 +97,7 @@ class ReportsTabMixin:
             btn_row, self._L(self._tr("btn_gen_signed_cert")), self._generate_and_open_certificate, variant="success", height=36
         )
         btn_open_fld = make_button(
-            btn_row, self._L(self._tr("btn_open_folder")), lambda: webbrowser.open(REPORTS_DIR), variant="secondary", height=36
+            btn_row, self._L(self._tr("btn_open_folder")), lambda: (os.makedirs(REPORTS_DIR, exist_ok=True), webbrowser.open(REPORTS_DIR)), variant="secondary", height=36
         )
 
         if L["is_rtl"]:

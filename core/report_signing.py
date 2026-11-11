@@ -20,7 +20,9 @@ from typing import Optional, Tuple
 
 from core.result import Msg, M
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from app_paths import install_dir
+
+PROJECT_ROOT = install_dir()  # source folder, or the exe's folder in a packaged build
 SIGNATURE_FORMAT = "adp-report-signature/1"
 PASSPHRASE_ENV = "ADP_SIGNING_KEY_PASSPHRASE"
 KEY_PATH_ENV = "ADP_SIGNING_KEY"

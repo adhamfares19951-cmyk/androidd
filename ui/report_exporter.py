@@ -21,8 +21,9 @@ from ui.i18n import t, render
 
 logger = logging.getLogger("ReportExporter")
 
-REPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "reports")
-os.makedirs(REPORTS_DIR, exist_ok=True)
+from app_paths import default_reports_dir
+
+REPORTS_DIR = default_reports_dir()  # reports/ from source; Documents in a packaged build (created on first write)
 
 STATUS_COLORS = {"PASS": "#238636", "FAIL": "#da3633", "UNKNOWN": "#6e7681", "NEEDS_ROOT": "#9e6a03"}
 
