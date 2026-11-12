@@ -6,6 +6,7 @@ import hashlib
 import logging
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Any, Callable
+from app_paths import desktop_dir, safe_name
 from core.adb_bridge import ADBBridge
 from core.result import Evidence, Status, CheckResult, ProducesCheckResult, status_from_read, aggregate_status, Msg, M
 from core.readers import ReadResult, run_read, read_node, failure_status, parse_int
@@ -1575,8 +1576,7 @@ class MotherboardDiagnostics:
             return result
 
         if not dest_dir:
-            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-            dest_dir = os.path.join(desktop, f"Android_EFS_Backup_{serial}_{int(time.time())}")
+            dest_dir = os.path.join(desktop_dir(), f"Android_EFS_Backup_{safe_name(serial)}_{int(time.time())}")
 
         os.makedirs(dest_dir, exist_ok=True)
         result.backup_folder = dest_dir

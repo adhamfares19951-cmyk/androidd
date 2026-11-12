@@ -212,3 +212,30 @@ class VerdictTests(unittest.TestCase):
         rep = StorageBenchmark(RootPhone(root=True)).diagnose_storage_health("S1")
         self.assertEqual(rep.status, "PASS")
         self.assertTrue(any("(su)" in e.source for e in rep.evidence))
+
+
+class QuotingAndPathTests(unittest.TestCase):
+    def test_send_text_is_quoted_for_the_device_shell(self):
+        import shlex
+        from core.rescue_center import RescueCenter
+        b = FakeBridge()
+        RescueCenter(b).send_text('12"; reboot; echo $HOME')
+        cmd = b.commands[-1]
+        self.assertTrue(cmd.startswith("input text "))
+        # single quotes: $HOME, backticks and ; stay literal on the phone (inside double quotes $ still expands)
+        self.assertEqual(cmd, "input text " + shlex.quote('12";%sreboot;%secho%s$HOME'))
+
+    def test_browser_url_is_quoted(self):
+        import shlex
+        from core.provisioning_manager import ProvisioningManager
+        b = FakeBridge()
+        ProvisioningManager(b).launch_browser_url("example.com/a'b;reboot", "S1")
+        self.assertEqual(shlex.split(b.commands[-1])[-1], "https://example.com/a'b;reboot")
+
+    def test_efs_backup_folder_safe_for_wireless_serial(self):
+        from core.board_diag import MotherboardDiagnostics
+        with tempfile.TemporaryDirectory() as d, patch.dict(os.environ, {"USERPROFILE": d}):
+            diag = MotherboardDiagnostics(FakeBridge(root=True), DatabaseManager(os.path.join(d, "t.db")))
+            res = diag.backup_efs_nvram_partitions("192.168.1.5:5555")
+            DatabaseManager.reset_instance()
+        self.assertNotIn(":", os.path.basename(res.backup_folder))

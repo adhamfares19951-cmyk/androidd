@@ -148,69 +148,91 @@ class ReportsTabMixin:
         except ValueError:
             c_cost = 0.0
 
-        ticket_id = f"TCK-{int(time.time()) % 1000000:06d}"
-        try:
-            self.db.create_repair_ticket(
-                ticket_id=ticket_id,
-                device_serial=serial,
-                customer_name=c_name,
-                customer_phone=c_phone,
-                reported_fault=c_fault,
-                repair_cost=c_cost,
-                technician_name=tech,
-                status="CERTIFIED"
-            )
-        except Exception as e:
-            logger.error(f"Error creating repair ticket in DB: {e}")
-
-        prof_dict = self.current_profile.to_dict() if self.current_profile else self.profiler.profile_device(serial).to_dict()
-        board_dict = self.last_board_diag.to_dict() if self.last_board_diag else self.board_diag.run_full_diagnostics(serial).to_dict()
-        hw_dict = self.last_hw_audit.to_dict() if self.last_hw_audit else self.hardware_tester.run_full_audit(serial).to_dict()
-        sec_dict = self.last_sec_scan.to_dict() if self.last_sec_scan else self.malware_hunter.audit_security(serial).to_dict()
-        opt_dict = self.last_opt_result.to_dict() if self.last_opt_result else {}
-        storage_dict = self.last_storage_report.to_dict() if self.last_storage_report else {}
-        charge_dict = self.last_fast_charge.to_dict() if self.last_fast_charge else {}
-        slife_dict = self.last_storage_life.to_dict() if self.last_storage_life else {}
-        stress_dict = self.last_stress_report.to_dict() if self.last_stress_report else {}
-        audio_codec_dict = self.last_audio_codec.to_dict() if self.last_audio_codec else {}
-        panel_info_dict = self.last_panel_info.to_dict() if self.last_panel_info else {}
-        root_forensics_dict = self.last_root_forensics.to_dict() if self.last_root_forensics else {}
-        leakage = getattr(self, "last_leakage", None)
-        leakage_dict = leakage.to_dict() if leakage is not None else {}
-
-        from core.report_signing import SigningError, KEY_PATH_ENV
-        try:
-            report_path = DiagnosticReportExporter.generate_html_report(
-                device_profile=prof_dict,
-                board_diag=board_dict,
-                hw_audit=hw_dict,
-                sec_scan=sec_dict,
-                opt_result=opt_dict,
-                storage_report=storage_dict,
-                fast_charge=charge_dict,
-                storage_life_report=slife_dict,
-                stress_report=stress_dict,
-                audio_codec=audio_codec_dict,
-                panel_info=panel_info_dict,
-                root_forensics=root_forensics_dict,
-                leakage_result=leakage_dict,
-                extra_checks=[c.to_dict() for c in getattr(self, "last_companion_checks", [])],
-                signing_key_path=os.environ.get(KEY_PATH_ENV) or None,
-                technician_name=tech,
-                ticket_id=ticket_id,
-                customer_name=c_name,
-                customer_phone=c_phone,
-                reported_fault=c_fault,
-                repair_cost=c_cost,
-                lang=self.current_lang
-            )
-        except SigningError as e:
-            messagebox.showerror(self._tr("ui.notice"), self._tr("cli.signing_failed", error=self._m(e.msg)))
+        if getattr(self, "_certificate_running", False):
             return
+        self._certificate_running = True
+        from core.report_signing import SigningError, KEY_PATH_ENV
+        key_path = os.environ.get(KEY_PATH_ENV) or None
+        lang = self.current_lang
 
-        self.last_report_path = report_path
-        webbrowser.open(f"file:///{os.path.abspath(report_path)}")
-        self._refresh_past_reports()
+        # Scans that were not run yet take seconds to minutes: run them (and the report) off the UI thread.
+        def task():
+            try:
+                build()
+            except Exception as e:
+                logger.error(f"Certificate generation failed: {e}")
+                self.after(0, lambda err=e: messagebox.showerror(self._tr("ui.notice"), str(err)))
+            finally:
+                self._certificate_running = False
+
+        def build():
+            ticket_id = f"TCK-{int(time.time()) % 1000000:06d}"
+            try:
+                self.db.create_repair_ticket(
+                    ticket_id=ticket_id,
+                    device_serial=serial,
+                    customer_name=c_name,
+                    customer_phone=c_phone,
+                    reported_fault=c_fault,
+                    repair_cost=c_cost,
+                    technician_name=tech,
+                    status="CERTIFIED"
+                )
+            except Exception as e:
+                logger.error(f"Error creating repair ticket in DB: {e}")
+
+            prof_dict = self.current_profile.to_dict() if self.current_profile else self.profiler.profile_device(serial).to_dict()
+            board_dict = self.last_board_diag.to_dict() if self.last_board_diag else self.board_diag.run_full_diagnostics(serial).to_dict()
+            hw_dict = self.last_hw_audit.to_dict() if self.last_hw_audit else self.hardware_tester.run_full_audit(serial).to_dict()
+            sec_dict = self.last_sec_scan.to_dict() if self.last_sec_scan else self.malware_hunter.audit_security(serial).to_dict()
+            opt_dict = self.last_opt_result.to_dict() if self.last_opt_result else {}
+            storage_dict = self.last_storage_report.to_dict() if self.last_storage_report else {}
+            charge_dict = self.last_fast_charge.to_dict() if self.last_fast_charge else {}
+            slife_dict = self.last_storage_life.to_dict() if self.last_storage_life else {}
+            stress_dict = self.last_stress_report.to_dict() if self.last_stress_report else {}
+            audio_codec_dict = self.last_audio_codec.to_dict() if self.last_audio_codec else {}
+            panel_info_dict = self.last_panel_info.to_dict() if self.last_panel_info else {}
+            root_forensics_dict = self.last_root_forensics.to_dict() if self.last_root_forensics else {}
+            leakage = getattr(self, "last_leakage", None)
+            leakage_dict = leakage.to_dict() if leakage is not None else {}
+
+            try:
+                report_path = DiagnosticReportExporter.generate_html_report(
+                    device_profile=prof_dict,
+                    board_diag=board_dict,
+                    hw_audit=hw_dict,
+                    sec_scan=sec_dict,
+                    opt_result=opt_dict,
+                    storage_report=storage_dict,
+                    fast_charge=charge_dict,
+                    storage_life_report=slife_dict,
+                    stress_report=stress_dict,
+                    audio_codec=audio_codec_dict,
+                    panel_info=panel_info_dict,
+                    root_forensics=root_forensics_dict,
+                    leakage_result=leakage_dict,
+                    extra_checks=[c.to_dict() for c in getattr(self, "last_companion_checks", [])],
+                    signing_key_path=key_path,
+                    technician_name=tech,
+                    ticket_id=ticket_id,
+                    customer_name=c_name,
+                    customer_phone=c_phone,
+                    reported_fault=c_fault,
+                    repair_cost=c_cost,
+                    lang=lang
+                )
+            except SigningError as e:
+                self.after(0, lambda err=e: messagebox.showerror(
+                    self._tr("ui.notice"), self._tr("cli.signing_failed", error=self._m(err.msg))))
+                return
+
+            def opened(path=report_path):
+                self.last_report_path = path
+                webbrowser.open(f"file:///{os.path.abspath(path)}")
+                self._refresh_past_reports()
+            self.after(0, opened)
+
+        threading.Thread(target=task, daemon=True).start()
 
     def _run_batch_scan_async(self):
         """Full diagnostics of every connected device in parallel; one line per device as it finishes."""

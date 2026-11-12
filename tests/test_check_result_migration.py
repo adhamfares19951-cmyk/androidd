@@ -140,6 +140,16 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(_overall(html_text), "FAIL")
 
 
+class _InlineThread:
+    """threading.Thread stand-in that runs its target on start() (keeps the GUI test deterministic)."""
+
+    def __init__(self, target=None, daemon=None, **kw):
+        self._target = target
+
+    def start(self):
+        self._target()
+
+
 class GuiReportIncludesLeakageTests(unittest.TestCase):
     def test_gui_certificate_passes_screen_off_current(self):
         from ui import main_window
@@ -162,8 +172,10 @@ class GuiReportIncludesLeakageTests(unittest.TestCase):
                     with patch.object(main_window.DiagnosticReportExporter, "generate_html_report",
                                       return_value=os.path.join(d, "r.html")) as gen, \
                          patch.object(main_window.webbrowser, "open"), \
-                         patch.object(app, "_refresh_past_reports"):
-                        app._generate_and_open_certificate()
+                         patch.object(app, "_refresh_past_reports"), \
+                         patch("ui.tabs.reports.threading.Thread", _InlineThread):
+                        app._generate_and_open_certificate()   # the worker runs inline
+                        app.update()                           # run the after(0) UI callback
                     leak = gen.call_args.kwargs["leakage_result"]
                     self.assertEqual(leak["status"], "FAIL")
                     self.assertEqual(leak["avg_ma"], 300.0)

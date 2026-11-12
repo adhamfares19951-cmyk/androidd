@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import subprocess
+import shlex
 import threading
 import time
 import logging
@@ -129,8 +130,9 @@ class RescueCenter:
 
     def send_text(self, text: str, serial: Optional[str] = None) -> bool:
         """Send keystrokes / PIN to device screen."""
-        clean = text.replace(" ", "%s").replace('"', '\\"')
-        code, _, _ = self.bridge.shell(f"input text \"{clean}\"", serial=serial, timeout=5)
+        # `input text` reads a space as %s; shlex.quote keeps quotes, ; $ ` and the like literal.
+        clean = shlex.quote(text.replace(" ", "%s"))
+        code, _, _ = self.bridge.shell(f"input text {clean}", serial=serial, timeout=5)
         return code == 0
 
     def send_swipe(self, x1: int, y1: int, x2: int, y2: int, duration_ms: int = 300, serial: Optional[str] = None) -> bool:

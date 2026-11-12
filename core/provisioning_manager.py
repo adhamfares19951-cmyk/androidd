@@ -1,3 +1,4 @@
+import shlex
 import re
 import logging
 from dataclasses import dataclass, asdict
@@ -85,7 +86,8 @@ class ProvisioningManager:
         if not clean_url.startswith("http://") and not clean_url.startswith("https://"):
             clean_url = "https://" + clean_url
         logger.info(f"Opening URL {clean_url} on device: {serial}")
-        code, out, err = self.bridge.shell(f"am start -a android.intent.action.VIEW -d '{clean_url}'", serial=serial, timeout=8)
+        code, out, err = self.bridge.shell(f"am start -a android.intent.action.VIEW -d {shlex.quote(clean_url)}",
+                                       serial=serial, timeout=8)
         if code == 0:
             return True, M("prov.url_opened", url=clean_url)
         return False, M("prov.url_failed", output=err or out)

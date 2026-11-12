@@ -570,6 +570,15 @@ class BoardDiagTabMixin:
                 c_temp = f"{max(cpu_temps):.1f} °C" if cpu_temps else (f"{max([z.temp_c for z in t_map]):.1f} °C" if t_map else "UNKNOWN")
 
                 def update_telem(v=v_val, c=c_val, bt=b_temp, ct=c_temp):
+                    try:
+                        if not self.winfo_exists():
+                            return
+                    except Exception:
+                        return
+                    for name in ("lbl_telem_volt", "lbl_telem_curr", "lbl_telem_batt_temp", "lbl_telem_cpu_temp"):
+                        w = getattr(self, name, None)
+                        if w is not None and not w.winfo_exists():
+                            return
                     if hasattr(self, "lbl_telem_volt"):
                         self.lbl_telem_volt.configure(text=v)
                     if hasattr(self, "lbl_telem_curr"):

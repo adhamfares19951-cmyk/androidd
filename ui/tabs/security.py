@@ -304,9 +304,9 @@ class SecurityTabMixin:
 
             if bloat_list:
                 for b in bloat_list:
-                    lines.append(f"• [{b.get('oem')}] {b.get('package_name')} ({b.get('category')})")
+                    lines.append(f"• [{b.get('vendor')}] {b.get('package_name')} ({b.get('label')})")
                     lines.append(self._tr("ui.description", current_lang=render(b.get('description'), self.current_lang)))
-                    lines.append(self._tr("ui.removal_safety", removal_safety=b.get('removal_safety')))
+                    lines.append(self._tr("ui.removal_safety", removal_safety=self._m(b.get('safety'))))
                     lines.append("")
                 lines.append(self._tr("ui.to_uninstall_these_apps_for_user"))
             else:
@@ -326,9 +326,9 @@ class SecurityTabMixin:
             return
 
         is_ar = self.current_lang == "ar"
-        if not self.last_bloat_scan:
-            bloat_list = self.malware_hunter.scan_oem_bloatware(serial)
-            self.last_bloat_scan = bloat_list
+        if self.last_bloat_scan is None:   # never scanned: scan in the background, then ask again
+            self.run_oem_bloat_scan_async()
+            return
 
         if not self.last_bloat_scan:
             messagebox.showinfo(self._tr("ui.nothing_found"), self._tr("ui.no_bloatware_packages_found_to_remove"))
@@ -341,8 +341,7 @@ class SecurityTabMixin:
         if not confirm:
             return
 
-        self.bloat_text.delete("1.0", "end")
-        self.bloat_text.insert("end", self._tr("ui.safely_debloating_oem_packages"))
+        self._set_box(self.bloat_text, self._tr("ui.safely_debloating_oem_packages"))
 
         def task():
             success_count = 0
@@ -352,14 +351,13 @@ class SecurityTabMixin:
                 if ok:
                     success_count += 1
                 def log_one(p=pkg, s=ok):
-                    self.bloat_text.insert("end", f"{'✓' if s else '✗'} {p}\n")
-                    self.bloat_text.see("end")
+                    self._append_box(self.bloat_text, f"{'✓' if s else '✗'} {p}\n")
                 self.after(0, log_one)
                 time.sleep(0.05)
 
             def done():
                 res_txt = self._tr("ui.successfully_debloated_packages", success_count=success_count, last_bloat_scan=len(self.last_bloat_scan))
-                self.bloat_text.insert("end", res_txt)
+                self._append_box(self.bloat_text, res_txt)
                 messagebox.showinfo(self._tr("ui.debloat_complete"), res_txt)
             self.after(0, done)
 
@@ -372,14 +370,13 @@ class SecurityTabMixin:
             return
 
         is_ar = self.current_lang == "ar"
-        self.bloat_text.delete("1.0", "end")
-        self.bloat_text.insert("end", self._tr("ui.restoring_debloated_packages"))
+        self._set_box(self.bloat_text, self._tr("ui.restoring_debloated_packages"))
 
         def task():
             history = self.db.get_rollback_history(serial)
             if not history:
                 def none_found():
-                    self.bloat_text.insert("end", self._tr("ui.no_neutralized_packages_found_in_rollback"))
+                    self._append_box(self.bloat_text, self._tr("ui.no_neutralized_packages_found_in_rollback"))
                     messagebox.showinfo(self._tr("ui.notice"), self._tr("ui.no_debloated_packages_to_restore"))
                 self.after(0, none_found)
                 return
@@ -391,14 +388,13 @@ class SecurityTabMixin:
                 if ok:
                     restored += 1
                 def log_one(p=pkg, s=ok):
-                    self.bloat_text.insert("end", self._tr("ui.text_3", failed=self._tr("ui.restored") if s else self._tr("ui.failed"), p=p))
-                    self.bloat_text.see("end")
+                    self._append_box(self.bloat_text, self._tr("ui.text_3", failed=self._tr("ui.restored") if s else self._tr("ui.failed"), p=p))
                 self.after(0, log_one)
                 time.sleep(0.05)
 
             def done():
                 res_txt = self._tr("ui.successfully_restored_packages", restored=restored)
-                self.bloat_text.insert("end", res_txt)
+                self._append_box(self.bloat_text, res_txt)
                 messagebox.showinfo(self._tr("ui.restore_complete"), res_txt)
             self.after(0, done)
 

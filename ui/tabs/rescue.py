@@ -421,8 +421,7 @@ class RescueTabMixin:
         is_ar = self.current_lang == "ar"
         threading.Thread(target=lambda: self.rescue_center.launch_otg_mode(serial), daemon=True).start()
         if hasattr(self, "wireless_log_text"):
-            self.wireless_log_text.insert("end", self._tr("ui.otg_usb_hid_mouse_keyboard_mode"))
-            self.wireless_log_text.see("end")
+            self._append_box(self.wireless_log_text, self._tr("ui.otg_usb_hid_mouse_keyboard_mode"))
 
     def _send_virtual_pin(self):
         serial = self.current_serial.get()
@@ -449,8 +448,7 @@ class RescueTabMixin:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_phone_connected_over_usb"))
             return
         is_ar = self.current_lang == "ar"
-        self.wireless_log_text.delete("1.0", "end")
-        self.wireless_log_text.insert("end", self._tr("ui.switching_adb_to_tcp_ip_mode"))
+        self._set_box(self.wireless_log_text, self._tr("ui.switching_adb_to_tcp_ip_mode"))
 
         def task():
             ok, _target, msg = self.bridge.enable_wireless_adb(serial, 5555)
@@ -481,8 +479,7 @@ class RescueTabMixin:
         def task():
             ok, msg = self.bridge.connect_wireless_adb(addr)
             def done():
-                self.wireless_log_text.insert("end", self._tr("ui.wireless_connection", addr=addr, msg=msg))
-                self.wireless_log_text.see("end")
+                self._append_box(self.wireless_log_text, self._tr("ui.wireless_connection", addr=addr, msg=msg))
                 if ok:
                     messagebox.showinfo(self._tr("ui.connected"), self._tr("ui.connected_to_the_wireless_device", addr=addr))
                 else:
@@ -496,8 +493,7 @@ class RescueTabMixin:
         def task():
             ok, msg = self.bridge.disconnect_wireless_adb(addr)
             def done():
-                self.wireless_log_text.insert("end", self._tr("ui.wireless_disconnect", msg=msg))
-                self.wireless_log_text.see("end")
+                self._append_box(self.wireless_log_text, self._tr("ui.wireless_disconnect", msg=msg))
                 self.refresh_devices_sync()
             self.after(0, done)
         threading.Thread(target=task, daemon=True).start()
@@ -511,8 +507,7 @@ class RescueTabMixin:
         def task():
             ok, msg = self.bridge.pair_wireless_adb(addr, code)
             def done():
-                self.wireless_log_text.insert("end", self._tr("ui.android_11_pairing", addr=addr, msg=msg))
-                self.wireless_log_text.see("end")
+                self._append_box(self.wireless_log_text, self._tr("ui.android_11_pairing", addr=addr, msg=msg))
                 if ok:
                     messagebox.showinfo(self._tr("ui.pairing_succeeded"), self._tr("ui.the_device_was_paired_wirelessly_you"))
                 else:
@@ -536,8 +531,7 @@ class RescueTabMixin:
                 self._tr("ui.result", status_summary=p_status.status_summary)
             ]
             def upd():
-                self.prov_log_text.delete("1.0", "end")
-                self.prov_log_text.insert("end", "\n".join(lines))
+                self._set_box(self.prov_log_text, "\n".join(lines))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
@@ -549,8 +543,7 @@ class RescueTabMixin:
         def task():
             ok, msg = self.provisioning.complete_setup_wizard_flags(serial)
             def upd():
-                self.prov_log_text.delete("1.0", "end")
-                self.prov_log_text.insert("end", self._tr("ui.setup_wizard_flags", msg=msg))
+                self._set_box(self.prov_log_text, self._tr("ui.setup_wizard_flags", msg=msg))
                 if ok:
                     messagebox.showinfo(self._tr("ui.skipped"), self._tr("ui.setup_complete_flags_were_set_and"))
                 else:
@@ -565,8 +558,7 @@ class RescueTabMixin:
         def task():
             ok, msg = self.provisioning.launch_settings_activity(serial)
             def upd():
-                self.prov_log_text.delete("1.0", "end")
-                self.prov_log_text.insert("end", f"{msg}\n")
+                self._set_box(self.prov_log_text, f"{self._m(msg)}\n")
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
@@ -591,8 +583,7 @@ class RescueTabMixin:
                 lines.append(f"  {k}: {v}")
 
             def upd():
-                self.rescue_log_text.delete("1.0", "end")
-                self.rescue_log_text.insert("end", "\n".join(lines))
+                self._set_box(self.rescue_log_text, "\n".join(lines))
             self.after(0, upd)
 
         threading.Thread(target=task, daemon=True).start()
@@ -605,8 +596,7 @@ class RescueTabMixin:
             has_cache, check_msg = self.rescue_center.has_cache_partition(serial)
             if has_cache is not True:
                 def no_cache():
-                    self.rescue_log_text.delete("1.0", "end")
-                    self.rescue_log_text.insert("end", f"{check_msg}\n")
+                    self._set_box(self.rescue_log_text, f"{self._m(check_msg)}\n")
                     messagebox.showinfo(self._tr("ui.erase_cache"),
                                         (self._tr("ui.this_device_has_no_cache_partition")))
                 self.after(0, no_cache)
@@ -621,8 +611,7 @@ class RescueTabMixin:
             def run_erase():
                 ok, msg = self.rescue_center.fix_cache_bootloop(serial)
                 def upd():
-                    self.rescue_log_text.delete("1.0", "end")
-                    self.rescue_log_text.insert("end", f"{check_msg}\n{msg}\n")
+                    self._set_box(self.rescue_log_text, f"{self._m(check_msg)}\n{self._m(msg)}\n")
                     if ok:
                         messagebox.showinfo(self._tr("ui.erase_cache"),
                                             self._tr("ui.cache_partition_erased_reboot_to_check"))
@@ -649,8 +638,7 @@ class RescueTabMixin:
         def task():
             ok, msg = self.rescue_center.flash_partition(part, path, serial)
             def upd():
-                self.rescue_log_text.delete("1.0", "end")
-                self.rescue_log_text.insert("end", self._tr("ui.flash", part=part, msg=msg))
+                self._set_box(self.rescue_log_text, self._tr("ui.flash", part=part, msg=msg))
                 if ok:
                     messagebox.showinfo(self._tr("ui.flash_succeeded"), self._tr("ui.partition_was_flashed", part=part))
                 else:
@@ -672,12 +660,11 @@ class RescueTabMixin:
         desktop = os.path.join(os.path.expanduser("~"), "Desktop", f"Android_Rescue_{cat}_{int(time.time())}")
         is_ar = self.current_lang == "ar"
 
-        self.data_log_text.delete("1.0", "end")
-        self.data_log_text.insert("end", self._tr("ui.starting_data_extraction_to_desktop_folder", cat=cat))
+        self._set_box(self.data_log_text, self._tr("ui.starting_data_extraction_to_desktop_folder", cat=cat))
 
         def task():
             def prog(txt):
-                self.after(0, lambda: self.data_log_text.insert("end", f"{txt}\n"))
+                self.after(0, lambda: self._append_box(self.data_log_text, f"{self._m(txt)}\n"))
             ok, msg = self.rescue_center.emergency_data_pull(serial, cat, desktop, progress_callback=prog)
             def upd():
                 if ok:
@@ -700,12 +687,11 @@ class RescueTabMixin:
         desktop = os.path.join(os.path.expanduser("~"), "Desktop", f"Android_All_Photos_{int(time.time())}")
         is_ar = self.current_lang == "ar"
 
-        self.data_log_text.delete("1.0", "end")
-        self.data_log_text.insert("end", self._tr("ui.scanning_and_pulling_all_photos_videos"))
+        self._set_box(self.data_log_text, self._tr("ui.scanning_and_pulling_all_photos_videos"))
 
         def task():
             def prog(txt):
-                self.after(0, lambda: self.data_log_text.insert("end", f"{txt}\n"))
+                self.after(0, lambda: self._append_box(self.data_log_text, f"{self._m(txt)}\n"))
             ok, msg = self.rescue_center.emergency_data_pull(serial, "all_photos", desktop, progress_callback=prog)
             def upd():
                 if ok:
@@ -734,16 +720,14 @@ class RescueTabMixin:
             return
 
         self.sideload_progress.set(0)
-        self.sideload_text.delete("1.0", "end")
-        self.sideload_text.insert("end", self._tr("ui.starting_adb_sideload", path=os.path.basename(path)))
+        self._set_box(self.sideload_text, self._tr("ui.starting_adb_sideload", path=os.path.basename(path)))
 
         def task():
             def prog(pct, msg):
                 def update():
                     self.sideload_progress.set(pct / 100.0)
                     self.sideload_lbl.configure(text=f"[{pct}%] {msg}")
-                    self.sideload_text.insert("end", f"{msg}\n")
-                    self.sideload_text.see("end")
+                    self._append_box(self.sideload_text, f"{self._m(msg)}\n")
                 self.after(0, update)
 
             ok, out_msg = self.rescue_center.sideload_firmware(path, serial, progress_callback=prog)
@@ -762,12 +746,11 @@ class RescueTabMixin:
             return
 
         is_ar = self.current_lang == "ar"
-        self.data_log_text.delete("1.0", "end")
-        self.data_log_text.insert("end", self._tr("ui.starting_1_click_customer_backup_media"))
+        self._set_box(self.data_log_text, self._tr("ui.starting_1_click_customer_backup_media"))
 
         def task():
             def prog(txt):
-                self.after(0, lambda: (self.data_log_text.insert("end", f"{txt}\n"), self.data_log_text.see("end")))
+                self.after(0, lambda: self._append_box(self.data_log_text, f"{self._m(txt)}\n"))
             ok, summary, b_dir = self.rescue_center.one_click_customer_backup(serial, progress_callback=prog)
             def done():
                 if ok:
@@ -787,14 +770,12 @@ class RescueTabMixin:
     def _switch_slot(self, slot: str):
         serial = self.current_serial.get()
         is_ar = self.current_lang == "ar"
-        self.slot_log_text.delete("1.0", "end")
-        self.slot_log_text.insert("end", self._tr("ui.switching_active_boot_slot_to_slot", upper=slot.upper()))
+        self._set_box(self.slot_log_text, self._tr("ui.switching_active_boot_slot_to_slot", upper=slot.upper()))
 
         def task():
             ok, msg = self.rescue_center.switch_active_slot(slot, serial)
             def upd():
-                self.slot_log_text.delete("1.0", "end")
-                self.slot_log_text.insert("end", self._m(msg))
+                self._set_box(self.slot_log_text, self._m(msg))
                 if ok:
                     messagebox.showinfo(self._tr("ui.slot_switch"), self._tr("ui.successfully_switched_to_slot", upper=slot.upper()))
                 else:
@@ -805,14 +786,12 @@ class RescueTabMixin:
     def _check_arb(self):
         serial = self.current_serial.get()
         is_ar = self.current_lang == "ar"
-        self.slot_log_text.delete("1.0", "end")
-        self.slot_log_text.insert("end", self._tr("ui.querying_anti_rollback_arb_hardware_fuse"))
+        self._set_box(self.slot_log_text, self._tr("ui.querying_anti_rollback_arb_hardware_fuse"))
 
         def task():
             ok, msg, arb_index = self.rescue_center.check_anti_rollback(serial)
             def upd():
-                self.slot_log_text.delete("1.0", "end")
-                self.slot_log_text.insert("end", self._m(msg))
+                self._set_box(self.slot_log_text, self._m(msg))
                 if ok:
                     messagebox.showinfo(self._tr("ui.arb_index"), self._tr("ui.anti_rollback_protection_index_arb_do", arb_index=arb_index))
                 else:
@@ -826,12 +805,11 @@ class RescueTabMixin:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_phone_first"))
             return
         is_ar = self.current_lang == "ar"
-        self.part_backup_text.delete("1.0", "end")
-        self.part_backup_text.insert("end", self._tr("ui.dumping_critical_radio_partitions_efs_fsg"))
+        self._set_box(self.part_backup_text, self._tr("ui.dumping_critical_radio_partitions_efs_fsg"))
 
         def task():
             def prog(txt):
-                self.after(0, lambda: self.part_backup_text.insert("end", f"{txt}\n"))
+                self.after(0, lambda: self._append_box(self.part_backup_text, f"{self._m(txt)}\n"))
             res = self.partition_backup.backup_critical_partitions(serial=serial, progress_callback=prog)
             def upd():
                 lines = [
@@ -841,7 +819,7 @@ class RescueTabMixin:
                     self._tr("ui.saved_in_folder", backup_directory=res.backup_directory),
                     self._tr("ui.diagnosis_2", diagnosis=self._m(res.diagnosis))
                 ]
-                self.part_backup_text.insert("end", "\n".join(lines))
+                self._append_box(self.part_backup_text, "\n".join(lines))
                 if res.success:
                     messagebox.showinfo(self._tr("ui.backup_complete"), self._tr("ui.critical_partitions_saved_to", backup_directory=res.backup_directory))
                 else:
@@ -855,15 +833,14 @@ class RescueTabMixin:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_phone_first"))
             return
         is_ar = self.current_lang == "ar"
-        self.part_backup_text.delete("1.0", "end")
-        self.part_backup_text.insert("end", self._tr("ui.dumping_all_discoverable_partitions_to_pc"))
+        self._set_box(self.part_backup_text, self._tr("ui.dumping_all_discoverable_partitions_to_pc"))
 
         def task():
             def prog(txt):
-                self.after(0, lambda: self.part_backup_text.insert("end", f"{txt}\n"))
+                self.after(0, lambda: self._append_box(self.part_backup_text, f"{self._m(txt)}\n"))
             res = self.partition_backup.backup_all_partitions(serial=serial, progress_callback=prog)
             def upd():
-                self.part_backup_text.insert("end", self._tr("ui.copy_finished_partitions_folder", dumped_partitions=len(res.dumped_partitions), backup_directory=res.backup_directory))
+                self._append_box(self.part_backup_text, self._tr("ui.copy_finished_partitions_folder", dumped_partitions=len(res.dumped_partitions), backup_directory=res.backup_directory))
                 messagebox.showinfo(self._tr("ui.backup_complete"), self._tr("ui.partitions_saved_in", backup_directory=res.backup_directory))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
@@ -882,17 +859,16 @@ class RescueTabMixin:
         if not files:
             return
         is_ar = self.current_lang == "ar"
-        self.apk_log_text.delete("1.0", "end")
-        self.apk_log_text.insert("end", self._tr("ui.batch_installing_apk_files", files=len(files)))
+        self._set_box(self.apk_log_text, self._tr("ui.batch_installing_apk_files", files=len(files)))
 
         def task():
             def prog(cur, tot, f):
-                self.after(0, lambda: self.apk_log_text.insert("end", self._tr("ui.installing", cur=cur, tot=tot, f=os.path.basename(f))))
+                self.after(0, lambda: self._append_box(self.apk_log_text, self._tr("ui.installing", cur=cur, tot=tot, f=os.path.basename(f))))
             results = self.batch_apk.install_batch(serial, list(files), progress_callback=prog)
             def upd():
                 successes = sum(1 for r in results if r.success)
                 summary = self._tr("ui.batch_install_finished_successful", successes=successes, results=len(results))
-                self.apk_log_text.insert("end", self._m(summary))
+                self._append_box(self.apk_log_text, self._m(summary))
                 messagebox.showinfo(self._tr("ui.install_complete"), self._m(summary))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
@@ -903,17 +879,16 @@ class RescueTabMixin:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
             return
         is_ar = self.current_lang == "ar"
-        self.apk_log_text.delete("1.0", "end")
-        self.apk_log_text.insert("end", self._tr("ui.listing_and_extracting_user_apps_to"))
+        self._set_box(self.apk_log_text, self._tr("ui.listing_and_extracting_user_apps_to"))
 
         def task():
             def prog(cur, tot, pkg):
-                self.after(0, lambda: self.apk_log_text.insert("end", self._tr("ui.pulling", cur=cur, tot=tot, pkg=pkg)))
+                self.after(0, lambda: self._append_box(self.apk_log_text, self._tr("ui.pulling", cur=cur, tot=tot, pkg=pkg)))
             results = self.batch_apk.extract_all_user_apks(serial, progress_callback=prog)
             def upd():
                 successes = sum(1 for r in results if r.success)
                 summary = self._tr("ui.extracted_apps_to_desktop", successes=successes)
-                self.apk_log_text.insert("end", self._m(summary))
+                self._append_box(self.apk_log_text, self._m(summary))
                 messagebox.showinfo(self._tr("ui.extraction_complete"), self._m(summary))
                 done = [r for r in results if r.success and r.local_path]
                 if done:
