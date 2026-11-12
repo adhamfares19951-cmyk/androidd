@@ -216,7 +216,7 @@ Logs are written by a rotating file handler (`1 MB` per file, `5` backups) in:
 
 ## Languages
 
-All user-facing text lives in `locales/ar.json`, `locales/en.json` and `locales/fr.json` (the same keys in each file). The French translation is machine-written and should be reviewed by a native speaker before distribution; the placeholders and keys are checked by the tests. `ui/i18n.py` loads all `locales/*.json` files, exposes `available_languages()`, formats `{placeholders}` safely via `t()` / `render()`, and provides `fix_arabic()` (`arabic-reshaper` + `python-bidi`), which the UI does not call at the moment. Core modules emit `Msg(key, args)` objects via `M()` rather than building display strings.
+All user-facing text lives in `locales/ar.json`, `locales/en.json` and `locales/fr.json` (the same keys in each file). The French translation is machine-written and should be reviewed by a native speaker before distribution; the placeholders and keys are checked by the tests. `ui/i18n.py` loads all `locales/*.json` files, exposes `available_languages()`, formats `{placeholders}` safely via `t()` / `render()`. Arabic letters are shaped by Windows (DirectWrite); `ui/theme.py` `rtl_wrap()` only adds direction marks. Core modules emit `Msg(key, args)` objects via `M()` rather than building display strings.
 
 To add a language, copy `locales/en.json` to `locales/<code>.json`, translate every value and set `meta.name` (the language's own name, shown in the language switch) and `meta.dir` (`rtl` or `ltr`). Nothing else changes: right-to-left layout, the report, the verification page and the CLI `--lang` choices follow the file; the switch shows buttons for up to three languages and a list beyond that. `tests/test_i18n_keys.py` fails until every key is present.
 
@@ -256,6 +256,8 @@ Test modules:
 - `tests/test_misleading_checks.py`: Preconditions for wireless-only screen-off current, per-category thermal limits, measurable vs. unmeasurable maintenance actions, `fastboot erase cache` precondition, WhatsApp media-only pulls, unsigned report notices, and granted-permission security inventories.
 - `tests/test_i18n_keys.py`: Locale key parity, placeholder parity, AST scan for hardcoded text, and `check_id` translations.
 - `tests/test_cli_and_tools.py`: CLI exit codes (`0`–`4`), isolated stage failures, `bin/manifest.json` schema, archive SHA-256 verification before extraction, path traversal rejection, and private ADB port `5038` lifecycle.
+- `tests/test_ui_wiring.py`: Every GUI call into the core matches a real method signature, return-tuple size and result fields (AST + `inspect`), and no module uses an undefined global name.
+- `tests/test_audit_fixes.py`: One behaviour test per issue confirmed in the external audit (partition and APK backups, Msg values saved to the database, battery/forensics/report verdicts, profiler values never invented, shell quoting, signing errors, ticket notes); each failed on the code before its fix.
 
 ---
 
@@ -281,7 +283,7 @@ On an unrooted production Android device, SELinux restricts several paths and to
 
 ## Known Limitations
 
-- **Physical device coverage:** All automated tests (218) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
+- **Physical device coverage:** All automated tests (244) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
 - **Non-Windows tool manifests:** Download URLs and archive SHA-256 hashes are pinned for all 5 platforms, but pre-listed per-file `scrcpy` SHA-256 entries cover `windows-x86_64` only, and non-Windows archive downloads have not been runtime-tested.
 - **Signing is opt-in:** Reports are signed only when a key is configured (`--sign-key` / `ADP_SIGNING_KEY`); keeping the private key safe is the technician's job.
 

@@ -14,9 +14,6 @@ import logging
 import os
 from typing import Any, Dict, List
 
-import arabic_reshaper
-from bidi.algorithm import get_display
-
 from core.result import Msg, Lines, set_message_renderer
 
 logger = logging.getLogger("i18n")
@@ -24,39 +21,6 @@ logger = logging.getLogger("i18n")
 LOCALES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "locales")
 DEFAULT_LANG = "ar"
 FALLBACK_LANG = "en"
-
-# Configure Arabic reshaper
-reshaper = arabic_reshaper.ArabicReshaper(
-    configuration={
-        'delete_harakat': False,
-        'support_ligatures': True,
-        'RIAL SIGN': True,
-    }
-)
-
-
-def fix_arabic(text: str) -> str:
-    """
-    Reshapes Arabic letters and reorders bidirectional text for Tkinter LTR rendering engine.
-    Ensures letters are properly connected and sentences read in natural Right-to-Left order.
-    """
-    if not text or not isinstance(text, str):
-        return text if text is not None else ""
-
-    ranges = ((0x0600, 0x06FF), (0x0750, 0x077F), (0x08A0, 0x08FF), (0xFB50, 0xFDFF), (0xFE70, 0xFEFF))
-    has_arabic = any(lo <= ord(c) <= hi for c in text for lo, hi in ranges)
-    if not has_arabic:
-        return text
-
-    try:
-        if "\n" in text:
-            lines = text.split("\n")
-            processed = [get_display(reshaper.reshape(line)) if line.strip() else line for line in lines]
-            return "\n".join(processed)
-        return get_display(reshaper.reshape(text))
-    except Exception as e:
-        logger.debug(f"Arabic reshape error: {e}")
-        return text
 
 
 def load_locales(directory: str = LOCALES_DIR) -> Dict[str, Dict[str, str]]:

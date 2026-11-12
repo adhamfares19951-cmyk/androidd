@@ -29,7 +29,7 @@ a = Analysis(
     [os.path.join(ROOT, "main.py")],
     pathex=[ROOT],
     datas=datas,
-    hiddenimports=["darkdetect", "qrcode", "arabic_reshaper", "bidi"],
+    hiddenimports=["darkdetect", "qrcode"],
     # numpy/lxml are optional extras of other packages; nothing in this program imports them
     excludes=["pytest", "pyinstaller", "PyInstaller", "numpy", "lxml"],
     noarchive=False,
