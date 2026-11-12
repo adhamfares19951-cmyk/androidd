@@ -49,19 +49,6 @@ def parse_usb_type(text: Optional[str]) -> Optional[str]:
 
 
 @dataclass
-class DiagnosticVerdict:
-    status: str  # "PASS" | "FAIL" | "UNKNOWN" | "NEEDS_ROOT"
-    value: Any = None
-    evidence: List[Evidence] = field(default_factory=list)
-    diagnosis: Any = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        d = asdict(self)
-        d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
-        return d
-
-
-@dataclass
 class PMICStatus(ProducesCheckResult):
     # `status` here is the device's charging text; the check status is `check_status`
     _check_status_attr = "check_status"

@@ -1248,5 +1248,7 @@
   "wireless.enabled": "Wireless ADB is on: connected to {addr}. You can unplug the USB cable.",
   "part.none_found": "No partition to copy was found on the device.",
   "part.set_summary": "Copied {done} of {total} partitions. Failed: {failed}. Skipped (user data or larger than 1 GB): {skipped}.",
-  "wireless.connect_failed": "TCP/IP mode is on, but connecting failed: {output}"
+  "wireless.connect_failed": "TCP/IP mode is on, but connecting failed: {output}",
+  "sign.err.passphrase_not_needed": "{path} is not encrypted, but {env} is set. Unset {env} or use an encrypted key.",
+  "sign.err.passphrase_wrong": "Wrong passphrase in {env} for the encrypted key {path}."
 }

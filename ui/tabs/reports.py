@@ -168,7 +168,7 @@ class ReportsTabMixin:
         def build():
             ticket_id = f"TCK-{int(time.time()) % 1000000:06d}"
             try:
-                self.db.create_repair_ticket(
+                saved = self.db.create_repair_ticket(
                     ticket_id=ticket_id,
                     device_serial=serial,
                     customer_name=c_name,
@@ -178,6 +178,8 @@ class ReportsTabMixin:
                     technician_name=tech,
                     status="CERTIFIED"
                 )
+                if not saved:
+                    logger.error(f"Repair ticket {ticket_id} was not saved in the database")
             except Exception as e:
                 logger.error(f"Error creating repair ticket in DB: {e}")
 

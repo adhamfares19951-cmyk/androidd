@@ -99,11 +99,17 @@ def load_private_key(path: str, project_root: str = PROJECT_ROOT):
             data = f.read()
     except OSError as e:
         raise SigningError(M("sign.err.key_unreadable", path=path, error=str(e)))
+    encrypted = b"ENCRYPTED" in data   # PKCS#8 "-----BEGIN ENCRYPTED PRIVATE KEY-----"
+    password = _passphrase()
     try:
-        key = serialization.load_pem_private_key(data, password=_passphrase())
+        key = serialization.load_pem_private_key(data, password=password)
     except TypeError:
-        raise SigningError(M("sign.err.passphrase_needed", env=PASSPHRASE_ENV))
+        if encrypted:
+            raise SigningError(M("sign.err.passphrase_needed", env=PASSPHRASE_ENV))
+        raise SigningError(M("sign.err.passphrase_not_needed", env=PASSPHRASE_ENV, path=path))
     except ValueError:
+        if encrypted and password:
+            raise SigningError(M("sign.err.passphrase_wrong", env=PASSPHRASE_ENV, path=path))
         raise SigningError(M("sign.err.key_invalid", path=path))
     if not isinstance(key, ed25519.Ed25519PrivateKey):
         raise SigningError(M("sign.err.not_ed25519", path=path))
@@ -170,8 +176,11 @@ def verify_file(report_path: str, public_key_path: str, sig_path: Optional[str] 
     if record.get("sha256") != hashlib.sha256(data).hexdigest():
         return False, M("sign.verify.modified")
     try:
-        public_key.verify(base64.b64decode(record.get("signature", ""), validate=True), data)
-    except (InvalidSignature, ValueError):
+        signature = record.get("signature")
+        if not isinstance(signature, str):
+            return False, M("sign.verify.bad_format", path=sig_path)
+        public_key.verify(base64.b64decode(signature, validate=True), data)
+    except (InvalidSignature, ValueError, TypeError):
         return False, M("sign.verify.bad_signature")
     return True, M("sign.verify.ok", key_id=key_id)
 

@@ -239,3 +239,70 @@ class QuotingAndPathTests(unittest.TestCase):
             res = diag.backup_efs_nvram_partitions("192.168.1.5:5555")
             DatabaseManager.reset_instance()
         self.assertNotIn(":", os.path.basename(res.backup_folder))
+
+
+class SigningDbEvidenceTests(unittest.TestCase):
+    def _key(self, d, passphrase=None):
+        from core import report_signing as rs
+        env = {rs.PASSPHRASE_ENV: passphrase} if passphrase else {}
+        with patch.dict(os.environ, env, clear=False):
+            if not passphrase:
+                os.environ.pop(rs.PASSPHRASE_ENV, None)
+            priv, pub, _ = rs.generate_keypair(os.path.join(d, "keys"), project_root=os.path.join(d, "proj"))
+        return priv, pub
+
+    def test_passphrase_errors_say_what_is_wrong(self):
+        from core import report_signing as rs
+        with tempfile.TemporaryDirectory() as d:
+            plain, _ = self._key(d)
+            with patch.dict(os.environ, {rs.PASSPHRASE_ENV: "secret"}):
+                with self.assertRaises(rs.SigningError) as cm:
+                    rs.load_private_key(plain, project_root=os.path.join(d, "proj"))
+            self.assertEqual(cm.exception.msg.key, "sign.err.passphrase_not_needed")
+        with tempfile.TemporaryDirectory() as d:
+            enc, _ = self._key(d, passphrase="right")
+            with patch.dict(os.environ, {rs.PASSPHRASE_ENV: "wrong"}):
+                with self.assertRaises(rs.SigningError) as cm:
+                    rs.load_private_key(enc, project_root=os.path.join(d, "proj"))
+            self.assertEqual(cm.exception.msg.key, "sign.err.passphrase_wrong")
+
+    def test_null_signature_is_rejected_not_a_crash(self):
+        import json as _json
+        from core import report_signing as rs
+        with tempfile.TemporaryDirectory() as d:
+            priv, pub = self._key(d)
+            report = os.path.join(d, "r.html")
+            with open(report, "w", encoding="utf-8") as f:
+                f.write("x")
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop(rs.PASSPHRASE_ENV, None)
+                sig = rs.sign_file(report, rs.load_private_key(priv, project_root=os.path.join(d, "proj")))
+            with open(sig, encoding="utf-8") as f:
+                rec = _json.load(f)
+            rec["signature"] = None
+            with open(sig, "w", encoding="utf-8") as f:
+                _json.dump(rec, f)
+            ok, msg = rs.verify_file(report, pub)
+        self.assertFalse(ok)
+        self.assertEqual(msg.key, "sign.verify.bad_format")
+
+    def test_ticket_failure_and_notes_on_null(self):
+        with tempfile.TemporaryDirectory() as d:
+            db = DatabaseManager(os.path.join(d, "t.db"))
+            self.assertEqual(db.create_repair_ticket("S1", ticket_id="T1"), "T1")
+            self.assertIsNone(db.create_repair_ticket("S1", ticket_id="T1"))   # duplicate id: not saved
+            conn = db._get_connection()
+            conn.execute("UPDATE repair_tickets SET notes = NULL WHERE ticket_id = 'T1'")
+            conn.commit()
+            conn.close()
+            self.assertTrue(db.update_repair_ticket_status("T1", "DONE", notes="screen replaced"))
+            self.assertEqual(db.get_repair_ticket("T1")["notes"], "screen replaced")
+            db.close()
+            DatabaseManager.reset_instance()
+
+    def test_evidence_shows_exit_zero(self):
+        from core.result import Evidence
+        from ui.ui_helpers import format_evidence_for_display
+        txt = format_evidence_for_display([Evidence(source="cat x", raw_excerpt="1", exit_code=0)], lang="en")
+        self.assertIn("[exit 0]", txt)
+        self.assertNotIn("[exit", format_evidence_for_display([{"source": "s", "raw_excerpt": "1"}], lang="en"))

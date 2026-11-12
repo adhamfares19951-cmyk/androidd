@@ -1248,5 +1248,7 @@
   "wireless.enabled": "تم تفعيل ADB اللاسلكي والاتصال بـ {addr}. يمكنك فصل كابل USB.",
   "part.none_found": "لم يُعثر على أي قسم لنسخه على الجهاز.",
   "part.set_summary": "نُسخ {done} من {total} قسم. فشل: {failed}. تم تخطي (بيانات المستخدم أو أكبر من 1 GB): {skipped}.",
-  "wireless.connect_failed": "تم تفعيل وضع TCP/IP لكن الاتصال فشل: {output}"
+  "wireless.connect_failed": "تم تفعيل وضع TCP/IP لكن الاتصال فشل: {output}",
+  "sign.err.passphrase_not_needed": "المفتاح {path} غير مشفّر لكن المتغير {env} مضبوط. احذف {env} أو استخدم مفتاحاً مشفّراً.",
+  "sign.err.passphrase_wrong": "كلمة المرور في {env} غير صحيحة للمفتاح المشفّر {path}."
 }

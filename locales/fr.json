@@ -1248,5 +1248,7 @@
   "wireless.enabled": "ADB sans fil activé : connecté à {addr}. Vous pouvez débrancher le câble USB.",
   "part.none_found": "Aucune partition à copier n'a été trouvée sur l'appareil.",
   "part.set_summary": "{done} partitions copiées sur {total}. Échec : {failed}. Ignorées (données utilisateur ou plus de 1 Go) : {skipped}.",
-  "wireless.connect_failed": "Le mode TCP/IP est activé, mais la connexion a échoué : {output}"
+  "wireless.connect_failed": "Le mode TCP/IP est activé, mais la connexion a échoué : {output}",
+  "sign.err.passphrase_not_needed": "{path} n'est pas chiffrée, mais {env} est défini. Supprimez {env} ou utilisez une clé chiffrée.",
+  "sign.err.passphrase_wrong": "Phrase secrète incorrecte dans {env} pour la clé chiffrée {path}."
 }

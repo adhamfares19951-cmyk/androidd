@@ -46,11 +46,16 @@ def configure_logging(console_level: int = logging.WARNING) -> str:
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    for h in list(root.handlers):   # called again (tests, CLI then GUI): replace our handlers, never stack them
+        if getattr(h, "_adp_handler", False):
+            root.removeHandler(h)
+            h.close()
     try:
         os.makedirs(log_dir, exist_ok=True)
         fh = logging.handlers.RotatingFileHandler(os.path.join(log_dir, "android_doctor.log"),
                                                   maxBytes=1_000_000, backupCount=5, encoding="utf-8")
         fh.setFormatter(fmt)
+        fh._adp_handler = True
         root.addHandler(fh)
     except OSError:
         log_dir = ""
@@ -58,6 +63,7 @@ def configure_logging(console_level: int = logging.WARNING) -> str:
         ch = logging.StreamHandler(sys.stderr)
         ch.setLevel(console_level)
         ch.setFormatter(fmt)
+        ch._adp_handler = True
         root.addHandler(ch)
     return log_dir
 

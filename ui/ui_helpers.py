@@ -56,8 +56,8 @@ def format_evidence_for_display(evidence_items: Any, is_ar: bool = True, lang: A
     for ev in evidence_list:
         src = getattr(ev, "source", None) or (ev.get("source") if isinstance(ev, dict) else "")
         exc = getattr(ev, "raw_excerpt", None) or (ev.get("raw_excerpt") if isinstance(ev, dict) else "")
-        code = getattr(ev, "exit_code", 0) if hasattr(ev, "exit_code") else (ev.get("exit_code") if isinstance(ev, dict) else 0)
-        code_str = f" [exit {code}]" if code is not None and code != 0 else ""
+        code = ev.get("exit_code") if isinstance(ev, dict) else getattr(ev, "exit_code", None)
+        code_str = f" [exit {code}]" if code is not None else ""
         lines.append(t("ui.source", lang, src=src, code_str=code_str))
         if exc:
             for eline in str(exc).strip().splitlines():

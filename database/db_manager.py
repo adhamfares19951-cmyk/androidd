@@ -356,9 +356,9 @@ class DatabaseManager:
         status: str = "INSPECTION",
         notes: str = "",
         ticket_id: Optional[str] = None
-    ) -> str:
+    ) -> Optional[str]:
         """
-        Creates a new repair shop ticket for the specified device and returns unique ticket_id.
+        Creates a new repair shop ticket for the specified device; returns its ticket_id, or None if it was not saved.
         """
         import time
         if not ticket_id:
@@ -382,7 +382,7 @@ class DatabaseManager:
             except Exception as e:
                 logger.error(f"Failed to create repair ticket: {e}")
                 conn.rollback()
-                return ticket_id
+                return None
             finally:
                 conn.close()
 
@@ -426,9 +426,10 @@ class DatabaseManager:
                 if notes:
                     cursor.execute("""
                         UPDATE repair_tickets 
-                        SET status = ?, notes = notes || ' | ' || ? 
+                        SET status = ?,
+                            notes = CASE WHEN COALESCE(notes, '') = '' THEN ? ELSE notes || ' | ' || ? END
                         WHERE ticket_id = ?
-                    """, (new_status, notes, ticket_id))
+                    """, (new_status, notes, notes, ticket_id))
                 else:
                     cursor.execute("UPDATE repair_tickets SET status = ? WHERE ticket_id = ?", (new_status, ticket_id))
                 conn.commit()
