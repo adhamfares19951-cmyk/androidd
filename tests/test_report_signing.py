@@ -92,7 +92,7 @@ class KeyHandlingTests(SigningCase):
         self.assertIn(b"ENCRYPTED", _rb(priv))
         _expect_error(self, "sign.err.passphrase_needed", rs.load_private_key, priv)
         with patch.dict(os.environ, {rs.PASSPHRASE_ENV: "wrong"}):
-            _expect_error(self, "sign.err.key_invalid", rs.load_private_key, priv)
+            _expect_error(self, "sign.err.passphrase_wrong", rs.load_private_key, priv)
 
     def test_public_key_is_not_a_signing_key(self):
         _expect_error(self, "sign.err.key_invalid", rs.load_private_key, self.pub)
