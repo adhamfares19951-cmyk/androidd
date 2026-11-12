@@ -144,3 +144,71 @@ class WirelessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VerdictTests(unittest.TestCase):
+    def test_battery_check_fails_on_low_capacity_or_failed_health(self):
+        from core.board_diag import PMICStatus
+        self.assertEqual(PMICStatus(voltage_status="PASS").check_status, "PASS")
+        self.assertEqual(PMICStatus(voltage_status="PASS", health_verdict="FAIL").check_status, "FAIL")
+        for health in ("Dead", "Overheat", "Over voltage"):
+            self.assertEqual(PMICStatus(voltage_status="PASS", health=health).check_status, "FAIL", health)
+        self.assertEqual(PMICStatus(voltage_status="PASS", health="Good").check_status, "PASS")
+
+    def test_high_severity_kernel_signature_is_a_finding(self):
+        from core.board_diag import MotherboardDiagnostics
+        with tempfile.TemporaryDirectory() as d:
+            b = FakeBridge({"dmesg": (0, "\n".join(["[1.0] boot ok"] * 5 + ["[9.9] pmic: uvlo_detected, vph_pwr collapse"]), "")},
+                           root=True)
+            rep = MotherboardDiagnostics(b, DatabaseManager(os.path.join(d, "t.db"))).run_root_forensics_pro("S1")
+            DatabaseManager.reset_instance()
+        self.assertEqual(rep.status, "FAIL")
+        self.assertIn("UVLO_BROWNOUT", str([f.args for f in rep.findings]))
+
+    def test_report_overall_counts_failed_extra_checks_but_not_ca_inventory(self):
+        import re as _re
+        from ui.report_exporter import DiagnosticReportExporter
+        from ui.i18n import t
+        board = {"checks": [{"check_id": "battery.fuel_gauge", "status": "PASS"}]}
+
+        def overall(**kw):
+            with tempfile.TemporaryDirectory() as d:
+                path = DiagnosticReportExporter.generate_html_report(device_profile={"serial": "S"}, board_diag=board,
+                                                                     output_dir=d, lang="en", **kw)
+                html = open(path, encoding="utf-8").read()
+            return _re.search(_re.escape(t("report.overall", "en")) + r': <span class="badge"[^>]*>([A-Z_]+)<', html).group(1)
+        self.assertEqual(overall(), "PASS")
+        self.assertEqual(overall(leakage_result={"status": "FAIL"}), "FAIL")      # was PASS before the fix
+        self.assertEqual(overall(sec_scan={"user_ca_status": "FAIL"}), "PASS")    # security inventory: shown, not counted
+
+    def test_camera_flash_reads_the_value_not_the_type(self):
+        from core.hardware_tester import _flash_value
+        self.assertIs(_flash_value("android.flash.info.available (50000): byte[1] [ 0 ]"), False)
+        self.assertIs(_flash_value("android.flash.info.available (50000): byte[1] [ 1 ]"), True)
+        self.assertIsNone(_flash_value("android.flash.info.available (50000): byte[1]"))
+
+    def test_profiler_does_not_invent_values(self):
+        from core.profiler import DeviceProfiler
+        p = DeviceProfiler(FakeBridge()).profile_device("S1")   # nothing readable
+        self.assertIsNone(p.cpu_cores)
+        self.assertEqual(p.display_refresh_rate, "Unknown")
+        self.assertEqual(p.encryption_status, "Unknown")
+        for name in ("battery_voltage_mv", "battery_temp_c", "battery_level_pct", "ram_total_mb", "storage_free_gb"):
+            self.assertIsNone(getattr(p, name), name)
+
+    def test_negative_battery_temperature_keeps_its_sign(self):
+        from core.profiler import DeviceProfiler
+        p = DeviceProfiler(FakeBridge({"dumpsys battery": (0, "  temperature: -50\n  level: 40", "")})).profile_device("S1")
+        self.assertEqual(p.battery_temp_c, -5.0)
+
+    def test_storage_wear_retried_with_root(self):
+        from core.storage_benchmark import StorageBenchmark
+
+        class RootPhone(FakeBridge):
+            def shell(self, command, serial=None, timeout=30, root=False, use_socket=True):
+                if "life_time" in command or "pre_eol_info" in command:
+                    return (0, "0x02 0x03" if "life_time" in command else "0x01", "") if root else (1, "", "Permission denied")
+                return super().shell(command, serial, timeout, root, use_socket)
+        rep = StorageBenchmark(RootPhone(root=True)).diagnose_storage_health("S1")
+        self.assertEqual(rep.status, "PASS")
+        self.assertTrue(any("(su)" in e.source for e in rep.evidence))

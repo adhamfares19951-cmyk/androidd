@@ -3,10 +3,12 @@ import re
 import sys
 import subprocess
 import threading
+import time
 import logging
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Any, Callable
 from setup_bins import get_scrcpy_path, CREATE_NO_WINDOW, tool_env
+from app_paths import safe_name
 from core.adb_bridge import ADBBridge
 from core.result import Msg, M
 
@@ -455,7 +457,7 @@ class RescueCenter:
         """
         import re
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        clean_serial = serial or "Device"
+        clean_serial = safe_name(serial or "Device")
         backup_dir = os.path.join(
             os.path.expanduser("~"),
             "Desktop",

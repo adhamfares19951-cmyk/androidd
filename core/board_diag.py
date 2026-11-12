@@ -100,10 +100,15 @@ class PMICStatus(ProducesCheckResult):
     def temperature_c(self) -> Optional[float]:
         return self.temp_c
 
+    FAILED_HEALTH = ("dead", "overheat", "over voltage", "over_voltage", "failure", "unspecified failure")
+
     @property
     def check_status(self) -> str:
-        """Key-check status of the battery readings: FAIL on a fault flag, else the voltage read status."""
-        if self.fault_flags:
+        """Key-check status of the battery: FAIL on a fault flag, a measured capacity below the limit
+        (health_verdict FAIL) or a failure health reported by the device itself; else the voltage read status."""
+        if self.fault_flags or self.health_verdict == str(Status.FAIL):
+            return str(Status.FAIL)
+        if str(self.health).strip().lower() in self.FAILED_HEALTH:
             return str(Status.FAIL)
         return self.voltage_status
 
@@ -1446,8 +1451,8 @@ class MotherboardDiagnostics:
         if cached is not None:
             return cached
 
-        code, out, _ = self.bridge.shell("su -c id", serial=serial, timeout=8)
-        if code != 0 or "uid=0" not in out:
+        # ADBBridge.is_root_available needs a real uid 0 and also works without shell_v2
+        if not self.bridge.is_root_available(serial):
             res = (False, "NON_ROOT")
             self.bridge.set_cached_capability(serial, "root_info", res)
             return res
@@ -1532,7 +1537,7 @@ class MotherboardDiagnostics:
 
         logs_read = ram.ok or dmesg.ok
         problems: List[Msg] = []
-        crit = [m.get("id") for m in matched if m.get("severity") == "CRITICAL"]
+        crit = [m.get("id") for m in matched if str(m.get("severity", "")).upper() in ("CRITICAL", "HIGH")]
         if crit:
             problems.append(M("forensics.finding.signatures", ids=", ".join(map(str, crit))))
         if i2c_errors:

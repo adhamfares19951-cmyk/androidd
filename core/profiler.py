@@ -24,25 +24,25 @@ class DeviceProfile:
     soc_chipset: str = "Unknown"
     hardware: str = "Unknown"
     cpu_architecture: str = "Unknown"
-    cpu_cores: int = 0
+    cpu_cores: Optional[int] = None
     kernel_version: str = "Unknown"
     is_rooted: bool = False
     selinux_mode: str = "Unknown"
     encryption_status: str = "Unknown"
-    uptime_seconds: float = 0.0
+    uptime_seconds: Optional[float] = None
     uptime_human: str = "Unknown"
-    ram_total_mb: float = 0.0
-    ram_free_mb: float = 0.0
-    ram_used_pct: float = 0.0
-    storage_total_gb: float = 0.0
-    storage_free_gb: float = 0.0
-    storage_used_pct: float = 0.0
-    battery_level_pct: int = 0
+    ram_total_mb: Optional[float] = None
+    ram_free_mb: Optional[float] = None
+    ram_used_pct: Optional[float] = None
+    storage_total_gb: Optional[float] = None
+    storage_free_gb: Optional[float] = None
+    storage_used_pct: Optional[float] = None
+    battery_level_pct: Optional[int] = None
     battery_status: str = "Unknown"
     battery_health: str = "Unknown"
-    battery_technology: str = "Li-ion"
-    battery_temp_c: float = 0.0
-    battery_voltage_mv: float = 0.0
+    battery_technology: str = "Unknown"
+    battery_temp_c: Optional[float] = None
+    battery_voltage_mv: Optional[float] = None
     display_resolution: str = "Unknown"
     display_density: str = "Unknown"
     display_refresh_rate: str = "Unknown"
@@ -95,7 +95,7 @@ class DeviceProfiler:
         if not crypto:
             code_crypt, out_crypt, _ = self.bridge.shell("getprop vold.decrypt", serial=serial, timeout=5)
             crypto = out_crypt.strip()
-        profile.encryption_status = crypto if crypto else "unencrypted"
+        profile.encryption_status = crypto if crypto else "Unknown"  # not reported is not "unencrypted"
 
         self._parse_cpu_info(serial, profile)
         self._parse_kernel(serial, profile)
@@ -111,13 +111,13 @@ class DeviceProfiler:
         code, out, _ = self.bridge.shell("cat /proc/cpuinfo", serial=serial, timeout=8)
         if code == 0 and out:
             processors = re.findall(r"processor\s*:\s*\d+", out, re.IGNORECASE)
-            profile.cpu_cores = len(processors) if processors else 1
+            profile.cpu_cores = len(processors) if processors else None
             if profile.hardware == "Unknown":
                 hardware_match = re.search(r"Hardware\s*:\s*(.+)", out, re.IGNORECASE)
                 if hardware_match:
                     profile.hardware = hardware_match.group(1).strip()
         else:
-            profile.cpu_cores = 1
+            profile.cpu_cores = None
 
     def _parse_kernel(self, serial: str, profile: DeviceProfile):
         code, out, _ = self.bridge.shell("uname -a", serial=serial, timeout=5)
@@ -208,7 +208,7 @@ class DeviceProfiler:
                 elif line.startswith("technology:"):
                     profile.battery_technology = line.split(":", 1)[1].strip()
                 elif line.startswith("temperature:"):
-                    m = re.search(r"(\d+)", line)
+                    m = re.search(r"(-?\d+)", line)
                     if m:
                         profile.battery_temp_c = round(int(m.group(1)) / 10.0, 1)
                 elif line.startswith("voltage:"):
@@ -236,5 +236,3 @@ class DeviceProfiler:
                 m = re.search(r"refreshRate\s*[:=]\s*(\d+(?:\.\d+)?)", out_disp, re.IGNORECASE)
             if m:
                 profile.display_refresh_rate = f"{m.group(1)} Hz"
-        if profile.display_refresh_rate == "Unknown":
-            profile.display_refresh_rate = "60 Hz"

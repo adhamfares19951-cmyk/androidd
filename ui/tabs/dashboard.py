@@ -4,6 +4,7 @@ import threading
 import tkinter as tk
 from tkinter import messagebox
 import customtkinter as ctk
+from ui.ui_helpers import _fmt
 from ui.theme import (
     BG_CANVAS,
     BG_TILE,
@@ -342,8 +343,8 @@ class DashboardTabMixin:
                 current_ma=bdiag.pmic.current_ma,
                 temp_c=bdiag.pmic.temp_c,
                 thermal_summary=f"{len(bdiag.thermal_zones)} zones monitored",
-                storage_summary=f"{profile.storage_free_gb}GB Free",
-                ram_summary=f"{profile.ram_free_mb}MB Free",
+                storage_summary=f"{_fmt(profile.storage_free_gb, 'GB')} free",
+                ram_summary=f"{_fmt(profile.ram_free_mb, 'MB')} free",
                 sensor_summary=f"{len(haudit.sensors)} active sensors",
                 security_summary=self._m(sec.summary),
                 raw_dict={
@@ -378,7 +379,7 @@ class DashboardTabMixin:
                 self.spec_labels["model"].configure(text=f"{profile.brand} {profile.model}")
                 self.spec_labels["serial"].configure(text=profile.serial)
                 self.spec_labels["soc"].configure(text=f"{profile.soc_chipset} ({profile.hardware})")
-                self.spec_labels["cores"].configure(text=self._L(self._tr("ui.cores", cpu_cores=profile.cpu_cores, cpu_architecture=profile.cpu_architecture)))
+                self.spec_labels["cores"].configure(text=self._L(self._tr("ui.cores", cpu_cores=_fmt(profile.cpu_cores), cpu_architecture=profile.cpu_architecture)))
                 self.spec_labels["android"].configure(text=self._L(self._tr("ui.android_api", android_version=profile.android_version, sdk_version=profile.sdk_version)))
                 self.spec_labels["build_id"].configure(text=profile.build_id[:32])
                 self.spec_labels["security"].configure(text=profile.security_patch)
@@ -408,19 +409,19 @@ class DashboardTabMixin:
                     self.kpi_labels["selinux"].configure(text=profile.selinux_mode or "—")
 
                 # Gauges
-                if profile.ram_total_mb > 0:
+                if profile.ram_total_mb and profile.ram_used_pct is not None:
                     pct = profile.ram_used_pct / 100.0
                     self.ram_bar.set(pct)
                     self.ram_title_lbl.configure(text=self._L(self._tr("ui.ram_mb_free_mb", ram_free_mb=profile.ram_free_mb, ram_total_mb=profile.ram_total_mb, ram_used_pct=profile.ram_used_pct)))
 
-                if profile.storage_total_gb > 0:
+                if profile.storage_total_gb and profile.storage_used_pct is not None:
                     pct = profile.storage_used_pct / 100.0
                     self.storage_bar.set(pct)
                     self.storage_title_lbl.configure(text=self._L(self._tr("ui.storage_gb_free_gb", storage_free_gb=profile.storage_free_gb, storage_total_gb=profile.storage_total_gb, storage_used_pct=profile.storage_used_pct)))
 
-                self.batt_bar.set(profile.battery_level_pct / 100.0)
-                self.batt_title_lbl.configure(text=self._L(self._tr("ui.battery_2", battery_level_pct=profile.battery_level_pct, battery_status=profile.battery_status)))
-                self.batt_quick_lbl.configure(text=self._L(self._tr("ui.voltage_mv_temp_c_health", battery_voltage_mv=profile.battery_voltage_mv, battery_temp_c=profile.battery_temp_c, battery_health=profile.battery_health)))
+                self.batt_bar.set((profile.battery_level_pct or 0) / 100.0)
+                self.batt_title_lbl.configure(text=self._L(self._tr("ui.battery_2", battery_level_pct=_fmt(profile.battery_level_pct), battery_status=profile.battery_status)))
+                self.batt_quick_lbl.configure(text=self._L(self._tr("ui.voltage_mv_temp_c_health", battery_voltage_mv=_fmt(profile.battery_voltage_mv), battery_temp_c=_fmt(profile.battery_temp_c), battery_health=profile.battery_health)))
 
             try:
                 if self.winfo_exists():

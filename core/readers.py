@@ -96,7 +96,8 @@ def run_read(bridge: Any, command: str, serial: Optional[str] = None, timeout: i
                       path_exists=not missing, log_content=log_content)
 
 
-def read_node(bridge: Any, paths: Sequence[str], serial: Optional[str] = None, timeout: int = 5) -> ReadResult:
+def read_node(bridge: Any, paths: Sequence[str], serial: Optional[str] = None, timeout: int = 5,
+              root: bool = False) -> ReadResult:
     """
     Read the first readable sysfs/proc node out of `paths` (glob patterns allowed).
     If none is readable, return the most informative failure:
@@ -113,7 +114,8 @@ def read_node(bridge: Any, paths: Sequence[str], serial: Optional[str] = None, t
 
     for path in paths:
         target = path if "*" in path else f"'{path}'"
-        res = run_read(bridge, f"cat {target}", serial=serial, timeout=timeout, source=path)
+        res = run_read(bridge, f"cat {target}", serial=serial, timeout=timeout, root=root,
+                       source=f"{path} (su)" if root else path)
         if res.ok:
             return res
         if best is None or rank(res) > rank(best):

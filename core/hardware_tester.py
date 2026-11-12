@@ -299,6 +299,18 @@ class HardwareAuditReport:
         }
 
 
+def _flash_value(line: str):
+    """True/False from a camera "flash ... available" line, or None if the line holds no value.
+    Type annotations such as byte[1] are removed first: their digit is not the value."""
+    text = re.sub(r"\b(byte|int32|int64|float|double|boolean)\[\d+\]", "", line, flags=re.IGNORECASE)
+    text = re.sub(r"\(\s*[0-9a-fA-Fx]+\s*\)", "", text)  # tag ids like (50000)
+    m = re.search(r"\b(true|false)\b|\[\s*([01])\s*\]|[:=]\s*([01])\s*$", text, re.IGNORECASE)
+    if not m:
+        return None
+    token = (m.group(1) or m.group(2) or m.group(3)).lower()
+    return token in ("true", "1")
+
+
 COMMON_SENSORS = [
     ("Accelerometer", ["accelerometer"]),
     ("Gyroscope", ["gyroscope"]),
@@ -406,10 +418,9 @@ class HardwareTester:
             if o and current.orientation is None:
                 current.orientation = int(o.group(1))
             if "flash" in low and "available" in low and current.flash_available is None:
-                if re.search(r"(true|\b1\b|TRUE)", s):
-                    current.flash_available = True
-                elif re.search(r"(false|\b0\b|FALSE)", s):
-                    current.flash_available = False
+                value = _flash_value(s)
+                if value is not None:
+                    current.flash_available = value
 
         if not cameras:
             n = re.search(r"Number of camera devices:\s*(\d+)", res.text)

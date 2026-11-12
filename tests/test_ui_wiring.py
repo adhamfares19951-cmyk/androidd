@@ -169,3 +169,47 @@ class WiringTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _main_block_names(path):
+    """Names bound only inside `if __name__ == "__main__":` (they do not exist when the module is imported)."""
+    tree = ast.parse(open(path, encoding="utf-8").read())
+    names = set()
+    for node in tree.body:
+        if (isinstance(node, ast.If) and isinstance(node.test, ast.Compare)
+                and isinstance(node.test.left, ast.Name) and node.test.left.id == "__name__"):
+            for sub in ast.walk(node):
+                if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
+                    names.add(sub.id)
+                elif isinstance(sub, (ast.Import, ast.ImportFrom)):
+                    names |= {(a.asname or a.name).split(".")[0] for a in sub.names}
+    return names
+
+
+class UndefinedNameTests(unittest.TestCase):
+    """Every global name a module's functions use must exist (catches a missing import before it runs)."""
+
+    def test_no_undefined_globals(self):
+        import builtins
+        import importlib
+        import symtable
+
+        def global_refs(table):
+            out = {s.get_name() for s in table.get_symbols() if s.is_global() and s.is_referenced()}
+            for child in table.get_children():
+                out |= global_refs(child)
+            return out
+
+        files = (glob.glob(os.path.join(ROOT, "core", "*.py")) + glob.glob(os.path.join(ROOT, "ui", "**", "*.py"), recursive=True)
+                 + glob.glob(os.path.join(ROOT, "database", "*.py"))
+                 + [os.path.join(ROOT, f) for f in ("main.py", "diagnostics_runner.py", "app_paths.py", "setup_bins.py")])
+        problems = []
+        for path in sorted(files):
+            rel = os.path.relpath(path, ROOT)
+            mod = importlib.import_module(rel[:-3].replace(os.sep, "."))
+            table = symtable.symtable(open(path, encoding="utf-8").read(), path, "exec")
+            main_only = _main_block_names(path)
+            for name in sorted(global_refs(table)):
+                if not hasattr(mod, name) and not hasattr(builtins, name) and name not in main_only:
+                    problems.append(f"{rel}: undefined name {name}")
+        self.assertEqual(problems, [], "\n" + "\n".join(problems))

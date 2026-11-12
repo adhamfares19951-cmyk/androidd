@@ -331,7 +331,7 @@ class BoardDiagTabMixin:
             def update_ui():
                 self._ensure_tab("board_diag")
                 self._set_box(self.pmic_text, "\n".join(out_lines))
-                self._set_pill("pmic", getattr(pmic, "voltage_status", "UNKNOWN"))
+                self._set_pill("pmic", getattr(pmic, "check_status", "UNKNOWN"))
 
             try:
                 if self.winfo_exists():

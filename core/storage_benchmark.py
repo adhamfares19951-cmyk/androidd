@@ -130,6 +130,14 @@ class StorageBenchmark:
         ufs_b = read_node(self.bridge, [f"{d}/life_time_estimation_b" for d in self.UFS_DESC_DIRS], serial=serial, timeout=4)
         ufs_eol = read_node(self.bridge, [f"{d}/eol_info" for d in self.UFS_DESC_DIRS], serial=serial, timeout=4)
         reads: List[ReadResult] = [life, eol, ufs_a, ufs_b, ufs_eol]
+        if not any(r.ok for r in reads) and any(r.status == Status.NEEDS_ROOT for r in reads) \
+                and self.bridge.is_root_available(serial):
+            life = read_node(self.bridge, ["/sys/block/mmcblk0/device/life_time"], serial=serial, timeout=4, root=True)
+            eol = read_node(self.bridge, ["/sys/block/mmcblk0/device/pre_eol_info"], serial=serial, timeout=4, root=True)
+            ufs_a = read_node(self.bridge, [f"{d}/life_time_estimation_a" for d in self.UFS_DESC_DIRS], serial=serial, timeout=4, root=True)
+            ufs_b = read_node(self.bridge, [f"{d}/life_time_estimation_b" for d in self.UFS_DESC_DIRS], serial=serial, timeout=4, root=True)
+            ufs_eol = read_node(self.bridge, [f"{d}/eol_info" for d in self.UFS_DESC_DIRS], serial=serial, timeout=4, root=True)
+            reads = [life, eol, ufs_a, ufs_b, ufs_eol]
 
         life_values: List[int] = []
         pre_eol: Optional[int] = None

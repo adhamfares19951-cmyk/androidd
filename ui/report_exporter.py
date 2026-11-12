@@ -218,7 +218,8 @@ class DiagnosticReportExporter:
             ("board.root_forensics", rforensics.get("status"), rforensics.get("diagnosis")),
         ]
         checks += [c for c in extra if c[1]]
-        overall = str(aggregate_status([st for _, st, _ in key_rows]))
+        info_only = {"security.user_ca_certificates"}
+        overall = str(aggregate_status([st for cid, st, _ in checks if cid not in info_only]))
 
         rows = "".join(
             f"<tr><td>{tr(cid)}</td><td>{badge(st)}</td><td>{esc(diag) if diag else ''}</td></tr>"
