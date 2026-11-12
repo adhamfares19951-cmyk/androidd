@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from core.adb_bridge import ADBBridge
 
 from core.result import Msg, M
+from app_paths import desktop_dir, safe_name
 
 logger = logging.getLogger("BatchAPKManager")
 
@@ -136,8 +137,7 @@ class BatchAPKManager:
 
     def extract_app(self, serial: str, package_name: str, output_dir: Optional[str] = None) -> ExtractResult:
         if not output_dir:
-            user_profile = os.environ.get("USERPROFILE", "C:\\Users\\Default")
-            output_dir = os.path.join(user_profile, "Desktop", "Android_Doctor_Extracted_APKs", serial)
+            output_dir = os.path.join(desktop_dir(), "Android_Doctor_Extracted_APKs", safe_name(serial))
 
         os.makedirs(output_dir, exist_ok=True)
 
@@ -158,7 +158,7 @@ class BatchAPKManager:
         base_line = next((l for l in lines if "base.apk" in l), lines[0])
         remote_apk = base_line.replace("package:", "").strip()
 
-        local_apk = os.path.join(output_dir, f"{package_name}.apk")
+        local_apk = os.path.join(output_dir, f"{safe_name(package_name)}.apk")
         ok, msg = self.bridge.pull(remote_apk, local_apk, serial=serial, timeout=60)
 
         if ok and os.path.exists(local_apk):
@@ -180,3 +180,13 @@ class BatchAPKManager:
                 success=False,
                 error_message=M("apk.extract_failed", output=msg)
             )
+
+    def extract_all_user_apks(self, serial: str, progress_callback=None) -> List[ExtractResult]:
+        """Copies the base APK of every third-party app to the PC. progress_callback(current, total, package)."""
+        apps = self.list_installed_apps(serial, third_party_only=True)
+        results = []
+        for i, app in enumerate(apps, start=1):
+            if progress_callback:
+                progress_callback(i, len(apps), app["package"])
+            results.append(self.extract_app(serial, app["package"]))
+        return results

@@ -345,7 +345,7 @@ class DashboardTabMixin:
                 storage_summary=f"{profile.storage_free_gb}GB Free",
                 ram_summary=f"{profile.ram_free_mb}MB Free",
                 sensor_summary=f"{len(haudit.sensors)} active sensors",
-                security_summary=sec.summary,
+                security_summary=self._m(sec.summary),
                 raw_dict={
                     "profile": profile.to_dict(),
                     "board": bdiag.to_dict(),

@@ -1244,5 +1244,9 @@
   "ui.companion_running": "جارٍ تثبيت التطبيق المرافق وتشغيل الفحوص على الهاتف (نحو 30 ثانية).\nاترك الهاتف مفتوح القفل والشاشة مضاءة وثابتاً على طاولة.\n",
   "cli.stage.companion": "التطبيق المرافق على الهاتف",
   "meta.name": "عربي",
-  "meta.dir": "rtl"
+  "meta.dir": "rtl",
+  "wireless.enabled": "تم تفعيل ADB اللاسلكي والاتصال بـ {addr}. يمكنك فصل كابل USB.",
+  "part.none_found": "لم يُعثر على أي قسم لنسخه على الجهاز.",
+  "part.set_summary": "نُسخ {done} من {total} قسم. فشل: {failed}. تم تخطي (بيانات المستخدم أو أكبر من 1 GB): {skipped}.",
+  "wireless.connect_failed": "تم تفعيل وضع TCP/IP لكن الاتصال فشل: {output}"
 }

@@ -453,10 +453,10 @@ class RescueTabMixin:
         self.wireless_log_text.insert("end", self._tr("ui.switching_adb_to_tcp_ip_mode"))
 
         def task():
-            ok, msg = self.bridge.enable_wireless_adb(serial, 5555)
+            ok, _target, msg = self.bridge.enable_wireless_adb(serial, 5555)
             ip = self.bridge.get_device_ip_address(serial)
             def done():
-                self.wireless_log_text.insert("end", f"{msg}\n")
+                self._append_box(self.wireless_log_text, f"{self._m(msg)}\n")
                 if ip:
                     ip_port = f"{ip}:5555"
                     self.lbl_wireless_ip.configure(text=self._tr("ui.ip_2", ip_port=ip_port))
@@ -839,7 +839,7 @@ class RescueTabMixin:
                     self._tr("ui.success", warning_partial=self._tr("ui.yes_completed_2") if res.success else self._tr("ui.warning_partial")),
                     self._tr("ui.partitions_copied", dumped_partitions=len(res.dumped_partitions)),
                     self._tr("ui.saved_in_folder", backup_directory=res.backup_directory),
-                    self._tr("ui.diagnosis_2", diagnosis=res.diagnosis)
+                    self._tr("ui.diagnosis_2", diagnosis=self._m(res.diagnosis))
                 ]
                 self.part_backup_text.insert("end", "\n".join(lines))
                 if res.success:
@@ -888,7 +888,7 @@ class RescueTabMixin:
         def task():
             def prog(cur, tot, f):
                 self.after(0, lambda: self.apk_log_text.insert("end", self._tr("ui.installing", cur=cur, tot=tot, f=os.path.basename(f))))
-            results = self.batch_apk.install_multiple_apks(serial, list(files), progress_callback=prog)
+            results = self.batch_apk.install_batch(serial, list(files), progress_callback=prog)
             def upd():
                 successes = sum(1 for r in results if r.success)
                 summary = self._tr("ui.batch_install_finished_successful", successes=successes, results=len(results))
@@ -915,7 +915,8 @@ class RescueTabMixin:
                 summary = self._tr("ui.extracted_apps_to_desktop", successes=successes)
                 self.apk_log_text.insert("end", self._m(summary))
                 messagebox.showinfo(self._tr("ui.extraction_complete"), self._m(summary))
-                if results and results[0].output_path:
-                    webbrowser.open(os.path.dirname(results[0].output_path))
+                done = [r for r in results if r.success and r.local_path]
+                if done:
+                    webbrowser.open(os.path.dirname(done[0].local_path))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()

@@ -1244,5 +1244,9 @@
   "ui.companion_running": "Installation de l'application compagnon et exécution des tests sur le téléphone (environ 30 s).\nGardez le téléphone déverrouillé, l'écran allumé et immobile sur une table.\n",
   "cli.stage.companion": "Application compagnon sur le téléphone",
   "meta.name": "Français",
-  "meta.dir": "ltr"
+  "meta.dir": "ltr",
+  "wireless.enabled": "ADB sans fil activé : connecté à {addr}. Vous pouvez débrancher le câble USB.",
+  "part.none_found": "Aucune partition à copier n'a été trouvée sur l'appareil.",
+  "part.set_summary": "{done} partitions copiées sur {total}. Échec : {failed}. Ignorées (données utilisateur ou plus de 1 Go) : {skipped}.",
+  "wireless.connect_failed": "Le mode TCP/IP est activé, mais la connexion a échoué : {output}"
 }

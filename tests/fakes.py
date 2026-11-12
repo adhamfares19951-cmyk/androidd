@@ -51,7 +51,7 @@ class FakeBridge:
                 return reply
         return (1, "", "")
 
-    def pull(self, remote_path: str, local_path: str, serial: Optional[str] = None):
+    def pull(self, remote_path: str, local_path: str, serial: Optional[str] = None, timeout: int = 60):
         self.commands.append(f"pull {remote_path}")
         return False, "remote object does not exist"
 

@@ -1244,5 +1244,9 @@
   "ui.companion_running": "Installing the companion app and running the tests on the phone (about 30 s).\nKeep the phone unlocked, screen on, lying still on a table.\n",
   "cli.stage.companion": "Companion app on the phone",
   "meta.name": "English",
-  "meta.dir": "ltr"
+  "meta.dir": "ltr",
+  "wireless.enabled": "Wireless ADB is on: connected to {addr}. You can unplug the USB cable.",
+  "part.none_found": "No partition to copy was found on the device.",
+  "part.set_summary": "Copied {done} of {total} partitions. Failed: {failed}. Skipped (user data or larger than 1 GB): {skipped}.",
+  "wireless.connect_failed": "TCP/IP mode is on, but connecting failed: {output}"
 }

@@ -575,12 +575,12 @@ class ADBBridge:
                     pass
         return default
 
-    def push(self, local_path: str, remote_path: str, serial: Optional[str] = None) -> Tuple[bool, str]:
-        code, out, err = self.run_adb(["push", local_path, remote_path], serial=serial, timeout=60)
+    def push(self, local_path: str, remote_path: str, serial: Optional[str] = None, timeout: int = 60) -> Tuple[bool, str]:
+        code, out, err = self.run_adb(["push", local_path, remote_path], serial=serial, timeout=timeout)
         return code == 0, out if code == 0 else err
 
-    def pull(self, remote_path: str, local_path: str, serial: Optional[str] = None) -> Tuple[bool, str]:
-        code, out, err = self.run_adb(["pull", remote_path, local_path], serial=serial, timeout=60)
+    def pull(self, remote_path: str, local_path: str, serial: Optional[str] = None, timeout: int = 60) -> Tuple[bool, str]:
+        code, out, err = self.run_adb(["pull", remote_path, local_path], serial=serial, timeout=timeout)
         return code == 0, out if code == 0 else err
 
     def reboot(self, mode: str = "", serial: Optional[str] = None) -> Tuple[bool, str]:
@@ -786,9 +786,9 @@ class ADBBridge:
         conn_output = f"{out_conn} {err_conn}"
         if "connected to" in conn_output.lower():
             logger.info(f"Wireless ADB connected to {target_addr}")
-            return True, target_addr, f"Connected to {target_addr} wirelessly! You may now safely unplug the USB cable."
+            return True, target_addr, M("wireless.enabled", addr=target_addr)
         else:
-            return False, target_addr, f"TCP/IP enabled, but connect returned: {conn_output.strip()}"
+            return False, target_addr, M("wireless.connect_failed", output=conn_output.strip())
 
     def pair_wireless_adb(self, host_port: str, pairing_code: str) -> Tuple[bool, str]:
         """

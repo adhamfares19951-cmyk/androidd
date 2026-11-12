@@ -13,6 +13,13 @@ from app_paths import default_db_path
 DEFAULT_DB_PATH = default_db_path()  # data/android_doctor.db from source; %LOCALAPPDATA% in a packaged build
 
 
+def _db_value(value: Any) -> Any:
+    """SQLite stores None/int/float/str/bytes; anything else (e.g. a Msg) is stored as its text."""
+    if value is None or isinstance(value, (int, float, str, bytes)):
+        return value
+    return str(value)
+
+
 class DatabaseManager:
     _instance = None
     _lock = threading.Lock()
@@ -265,18 +272,18 @@ class DatabaseManager:
                 """, (
                     device_serial,
                     now,
-                    report_title,
-                    overall_status,
-                    battery_health_pct,
-                    voltage_mv,
-                    current_ma,
-                    temp_c,
-                    thermal_summary,
-                    storage_summary,
-                    ram_summary,
-                    sensor_summary,
-                    security_summary,
-                    json.dumps(raw_dict, ensure_ascii=False)
+                    _db_value(report_title),
+                    _db_value(overall_status),
+                    _db_value(battery_health_pct),
+                    _db_value(voltage_mv),
+                    _db_value(current_ma),
+                    _db_value(temp_c),
+                    _db_value(thermal_summary),
+                    _db_value(storage_summary),
+                    _db_value(ram_summary),
+                    _db_value(sensor_summary),
+                    _db_value(security_summary),
+                    json.dumps(raw_dict, ensure_ascii=False, default=str)
                 ))
                 conn.commit()
                 report_id = cursor.lastrowid

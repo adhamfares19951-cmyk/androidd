@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from core.adb_bridge import ADBBridge
 
 from core.result import Msg, M
+from app_paths import desktop_dir, safe_name
 
 logger = logging.getLogger("PartitionBackup")
 
@@ -33,6 +34,21 @@ class BackupResult:
     duration_sec: float = 0.0
     success: bool = False
     error_message: Any = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class PartitionSetResult:
+    """Result of backing up several partitions (critical set or all)."""
+    success: bool = False                       # every attempted partition was copied, and at least one
+    dumped_partitions: List[str] = field(default_factory=list)
+    failed_partitions: List[str] = field(default_factory=list)
+    skipped_partitions: List[str] = field(default_factory=list)   # too large or user data
+    backup_directory: str = ""
+    diagnosis: Any = None
+    results: List[BackupResult] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -71,8 +87,17 @@ class PartitionBackupManager:
         "misc": "Firmware"
     }
 
+    # Never copied by "all partitions": user data, and anything larger than this, because the image is
+    # first written to /data/local/tmp on the phone itself and could fill its storage.
+    SKIP_ALWAYS = {"userdata", "super", "cache", "metadata"}
+    MAX_IMAGE_BYTES = 1024 * 1024 * 1024
+
     def __init__(self, bridge: Optional[ADBBridge] = None):
         self.bridge = bridge or ADBBridge()
+
+    @property
+    def backup_base_dir(self) -> str:
+        return os.path.join(desktop_dir(), "Android_Doctor_Backups")
 
     def scan_partition_table(self, serial: str) -> List[PartitionInfo]:
         """
@@ -171,73 +196,89 @@ class PartitionBackupManager:
                     ))
         return partitions
 
-    def backup_partition(self, serial: str, partition_name: str, output_dir: Optional[str] = None) -> BackupResult:
+    def backup_partition(self, serial: str, partition_name: str, output_dir: Optional[str] = None,
+                         target: Optional[PartitionInfo] = None) -> BackupResult:
         """
-        Dumps a partition image file to the technician's PC desktop backups directory.
-        Uses dd on device to /data/local/tmp/<part>.img, pulls to PC, then removes the temp file.
+        Copies one partition image to the PC: dd on the phone to /data/local/tmp, chmod so adb can read
+        a root-written file, pull, and always remove the phone-side copy (also when something fails).
+        A copy is accepted only if a non-empty file arrived on the PC.
         """
         start_time = time.time()
         res = BackupResult(serial=serial, partition_name=partition_name, local_file_path="")
 
         if not output_dir:
-            user_profile = os.environ.get("USERPROFILE", "C:\\Users\\Default")
-            output_dir = os.path.join(user_profile, "Desktop", "Android_Doctor_Backups", serial)
-
+            output_dir = os.path.join(self.backup_base_dir, safe_name(serial))
         os.makedirs(output_dir, exist_ok=True)
         timestamp = int(time.time())
-        local_filename = f"{partition_name}_{serial}_{timestamp}.img"
-        local_dest = os.path.join(output_dir, local_filename)
+        local_dest = os.path.join(output_dir, f"{safe_name(partition_name)}_{safe_name(serial)}_{timestamp}.img")
         res.local_file_path = local_dest
 
-        # 1. Locate partition block path
-        partitions = self.scan_partition_table(serial)
-        target = next((p for p in partitions if p.name.lower() == partition_name.lower()), None)
+        if target is None:
+            target = next((p for p in self.scan_partition_table(serial) if p.name.lower() == partition_name.lower()), None)
         if not target:
-            res.success = False
             res.error_message = M("part.not_found", name=partition_name)
             return res
 
-        remote_tmp = f"/data/local/tmp/{partition_name}_{timestamp}.img"
+        remote_tmp = f"/data/local/tmp/adp_{safe_name(partition_name)}_{timestamp}.img"
+        timeout = max(45, int((target.size_bytes or 0) / (8 * 1024 * 1024)) + 30)  # ~8 MB/s worst case
+        try:
+            dd_cmd = f"dd if={target.block_path} of={remote_tmp} bs=4096 conv=sync,noerror 2>&1"
+            code, out, err = self.bridge.shell(dd_cmd, serial=serial, timeout=timeout)
+            if code != 0 or "permission denied" in (out + err).lower():
+                code, out, err = self.bridge.shell(f"{dd_cmd} && chmod 644 {remote_tmp}", serial=serial,
+                                                   timeout=timeout, root=True)
+            if code != 0 and "permission denied" in (out + err).lower():
+                res.error_message = M("part.needs_root")
+                return res
 
-        # 2. Dump partition via dd (trying with root/su fallback)
-        dd_cmd = f"dd if={target.block_path} of={remote_tmp} bs=4096 conv=sync,noerror 2>&1"
-        code, out, err = self.bridge.shell(dd_cmd, serial=serial, timeout=45)
-
-        if code != 0 or "permission denied" in (out + err).lower():
-            # Try su -c if rooted
-            code, out, err = self.bridge.shell(f"su -c '{dd_cmd}'", serial=serial, timeout=45)
-
-        if code != 0 and "permission denied" in (out + err).lower():
-            res.success = False
-            res.error_message = M("part.needs_root")
-            return res
-
-        # 3. Pull image file from device to PC
-        pull_success, pull_msg = self.bridge.pull(remote_tmp, local_dest, serial=serial, timeout=60)
-
-        # 4. Remove remote temp file
-        self.bridge.shell(f"rm -f {remote_tmp}", serial=serial, timeout=5)
-
-        if pull_success and os.path.exists(local_dest):
-            file_size = os.path.getsize(local_dest)
-            res.size_bytes = file_size
-            res.duration_sec = round(time.time() - start_time, 2)
-            res.success = True
-            logger.info(f"Partition {partition_name} backed up successfully ({file_size} bytes) -> {local_dest}")
-        else:
-            res.success = False
-            res.error_message = M("part.pull_failed", output=pull_msg)
-
+            pull_success, pull_msg = self.bridge.pull(remote_tmp, local_dest, serial=serial, timeout=max(60, timeout))
+            if pull_success and os.path.exists(local_dest) and os.path.getsize(local_dest) > 0:
+                res.size_bytes = os.path.getsize(local_dest)
+                res.duration_sec = round(time.time() - start_time, 2)
+                res.success = True
+                logger.info(f"Partition {partition_name} backed up ({res.size_bytes} bytes) -> {local_dest}")
+            else:
+                res.error_message = M("part.pull_failed", output=pull_msg or "empty file")
+                if os.path.exists(local_dest) and os.path.getsize(local_dest) == 0:
+                    os.remove(local_dest)
+        finally:
+            # never leave a raw image of a sensitive partition on the phone
+            self.bridge.shell(f"rm -f {remote_tmp}", serial=serial, timeout=10, root=True)
         return res
 
     def backup_all_critical(self, serial: str) -> List[BackupResult]:
-        """
-        Dumps all detected critical partitions (EFS, Persist, Modem) sequentially.
-        """
-        partitions = self.scan_partition_table(serial)
-        critical_parts = [p for p in partitions if p.is_critical]
-        results = []
-        for p in critical_parts:
-            r = self.backup_partition(serial, p.name)
-            results.append(r)
-        return results
+        """Dumps all detected critical partitions (EFS, Persist, Modem) sequentially."""
+        return self.backup_critical_partitions(serial).results
+
+    def _backup_set(self, serial: str, partitions: List[PartitionInfo], skipped: List[str],
+                    progress_callback=None) -> PartitionSetResult:
+        out = PartitionSetResult(skipped_partitions=list(skipped))
+        out.backup_directory = os.path.join(self.backup_base_dir, f"{safe_name(serial)}_{int(time.time())}")
+        if not partitions:
+            out.diagnosis = M("part.none_found")
+            return out
+        for i, p in enumerate(partitions, start=1):
+            if progress_callback:
+                progress_callback(f"[{i}/{len(partitions)}] {p.name}")
+            r = self.backup_partition(serial, p.name, output_dir=out.backup_directory, target=p)
+            out.results.append(r)
+            (out.dumped_partitions if r.success else out.failed_partitions).append(p.name)
+        out.success = bool(out.dumped_partitions) and not out.failed_partitions
+        out.diagnosis = M("part.set_summary", done=len(out.dumped_partitions), total=len(partitions),
+                          failed=", ".join(out.failed_partitions) or "-", skipped=", ".join(out.skipped_partitions) or "-")
+        return out
+
+    def backup_critical_partitions(self, serial: str, progress_callback=None) -> PartitionSetResult:
+        """EFS / modem / persist / boot... (CRITICAL_PARTITIONS) into one folder."""
+        parts = [p for p in self.scan_partition_table(serial) if p.is_critical]
+        return self._backup_set(serial, parts, [], progress_callback)
+
+    def backup_all_partitions(self, serial: str, progress_callback=None) -> PartitionSetResult:
+        """Every listed partition except user data and images over MAX_IMAGE_BYTES (reported as skipped)."""
+        parts, skipped = [], []
+        for p in self.scan_partition_table(serial):
+            if p.name.lower() in self.SKIP_ALWAYS or (p.size_bytes or 0) > self.MAX_IMAGE_BYTES:
+                skipped.append(p.name)
+            else:
+                parts.append(p)
+        return self._backup_set(serial, parts, skipped, progress_callback)
