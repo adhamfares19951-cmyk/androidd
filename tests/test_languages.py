@@ -1,4 +1,5 @@
 """Adding a language is a locale file: name and direction come from meta.name / meta.dir."""
+import gc
 import os
 import tempfile
 import unittest
@@ -83,6 +84,9 @@ class SwitcherTests(unittest.TestCase):
                     result["sidebar_col"] = int(app.sidebar_frame.grid_info()["column"])
             finally:
                 app.destroy()
+                # free Tk fonts/images here, on the main thread: if a later worker thread's
+                # garbage collection finalizes them, it waits for a Tk main loop that is not running
+                gc.collect()
                 DatabaseManager.reset_instance()
         return result
 

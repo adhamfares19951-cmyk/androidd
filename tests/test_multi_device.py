@@ -1,4 +1,5 @@
 """Several devices at once: parallel runs, isolated failures, one report each, shared DB closed once."""
+import gc
 import io
 import os
 import subprocess
@@ -186,6 +187,9 @@ class GuiBatchScanTests(unittest.TestCase):
                     text = app.batch_text.get("1.0", "end")
                 finally:
                     app.destroy()
+                    # free Tk fonts/images here, on the main thread: if a later worker thread's
+                    # garbage collection finalizes them, it waits for a Tk main loop that is not running
+                    gc.collect()
                     DatabaseManager.reset_instance()
             self.assertIn("G1", text)
             self.assertIn("G2", text)

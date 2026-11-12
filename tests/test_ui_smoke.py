@@ -1,4 +1,5 @@
 """Headless smoke, RTL/LTR switch, and responsive fit tests for the desktop UI."""
+import gc
 
 import os
 import sys
@@ -118,6 +119,9 @@ class TestMainWindowSmoke(unittest.TestCase):
                 self.assertEqual(app.nav_buttons["dashboard"].cget("anchor"), "e")
             finally:
                 app.destroy()
+                # free Tk fonts/images here, on the main thread: if a later worker thread's
+                # garbage collection finalizes them, it waits for a Tk main loop that is not running
+                gc.collect()
 
 
 class TestPillStatusRules(unittest.TestCase):

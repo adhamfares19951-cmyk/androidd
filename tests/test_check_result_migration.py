@@ -1,4 +1,5 @@
 """Every judged check surfaces as a CheckResult; CLI and report read the same lists."""
+import gc
 import os
 import re
 import tempfile
@@ -168,6 +169,9 @@ class GuiReportIncludesLeakageTests(unittest.TestCase):
                     self.assertEqual(leak["avg_ma"], 300.0)
                 finally:
                     app.destroy()
+                    # free Tk fonts/images here, on the main thread: if a later worker thread's
+                    # garbage collection finalizes them, it waits for a Tk main loop that is not running
+                    gc.collect()
 
 
 if __name__ == "__main__":
