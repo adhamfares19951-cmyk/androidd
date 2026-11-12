@@ -11,8 +11,9 @@ from ui.theme import get_layout, rtl_wrap
 
 
 def _with_languages(*extra):
-    """STRINGS plus fake languages: ('fa', 'rtl') copies Arabic, ('fr', 'ltr') copies English."""
-    strings = dict(i18n.STRINGS)
+    """Exactly Arabic + English plus fake languages: ('fa', 'rtl') copies Arabic, ('xx', 'ltr') copies English.
+    Independent of which real locale files exist, so the switch tests stay meaningful."""
+    strings = {code: i18n.STRINGS[code] for code in ("ar", "en")}
     for code, direction in extra:
         base = dict(i18n.STRINGS["ar" if direction == "rtl" else "en"])
         base["meta.name"] = f"Lang-{code}"
@@ -31,18 +32,18 @@ class MetadataTests(unittest.TestCase):
         self.assertFalse(i18n.is_rtl("en"))
 
     def test_direction_follows_metadata_not_language_code(self):
-        with _with_languages(("fa", "rtl"), ("fr", "ltr")):
+        with _with_languages(("fa", "rtl"), ("xx", "ltr")):
             self.assertTrue(get_layout("fa")["is_rtl"])
-            self.assertFalse(get_layout("fr")["is_rtl"])
+            self.assertFalse(get_layout("xx")["is_rtl"])
             self.assertTrue(rtl_wrap("x", "fa").startswith("‫"))
-            self.assertEqual(rtl_wrap("x", "fr"), "x")
+            self.assertEqual(rtl_wrap("x", "xx"), "x")
             self.assertEqual(i18n.language_name("fa"), "Lang-fa")
         self.assertFalse(get_layout("unknown-language")["is_rtl"])  # missing language: left to right
 
     def test_report_and_verifier_page_direction(self):
         from ui.report_exporter import DiagnosticReportExporter
-        with tempfile.TemporaryDirectory() as d, _with_languages(("fa", "rtl"), ("fr", "ltr")):
-            for code, direction in (("fa", "rtl"), ("fr", "ltr")):
+        with tempfile.TemporaryDirectory() as d, _with_languages(("fa", "rtl"), ("xx", "ltr")):
+            for code, direction in (("fa", "rtl"), ("xx", "ltr")):
                 path = DiagnosticReportExporter.generate_html_report(device_profile={"serial": "S"}, output_dir=d, lang=code)
                 with open(path, encoding="utf-8") as f:
                     self.assertIn(f'dir="{direction}"', f.read())
@@ -56,9 +57,9 @@ class MetadataTests(unittest.TestCase):
     def test_evidence_text_in_the_current_language(self):
         from core.result import Evidence
         from ui.ui_helpers import format_evidence_for_display
-        with _with_languages(("fr", "ltr")):
-            i18n.STRINGS["fr"]["ui.technical_evidence"] = "PREUVES"
-            text = format_evidence_for_display([Evidence(source="cat x", raw_excerpt="1")], lang="fr")
+        with _with_languages(("xx", "ltr")):
+            i18n.STRINGS["xx"]["ui.technical_evidence"] = "PREUVES"
+            text = format_evidence_for_display([Evidence(source="cat x", raw_excerpt="1")], lang="xx")
         self.assertIn("PREUVES", text)
 
 
@@ -100,7 +101,7 @@ class SwitcherTests(unittest.TestCase):
         self.assertEqual(r["sidebar_col"], 2)  # right side
 
     def test_many_languages_use_a_menu(self):
-        r = self.build(("fr", "ltr"), ("fa", "rtl"))
+        r = self.build(("xx", "ltr"), ("fa", "rtl"))
         self.assertTrue(r["menu"])
         self.assertEqual(r["buttons"], [])
         self.assertFalse(r["rtl_after_switch"])

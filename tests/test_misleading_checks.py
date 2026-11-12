@@ -300,6 +300,16 @@ class TestNoMisleadingWording(unittest.TestCase):
             self.assertIsNone(self.AR.search(claim), f"ar.{key}")
             self.assertNotIn("موقّع", claim, f"ar.{key}")
 
+    FR = re.compile(r"\bRAT\b|logiciel espion|espionn|Spyware|Malware Hunter|\bsign[ée]e?s?\b|NUMÉRIQUEMENT|HMAC"
+                    r"|officiel|\bcertifié|fantôme|Optimiseur|\bfuite", re.I)
+
+    def test_i18n_values_french(self):
+        # Same rule for French: only the disclaimer "n'est pas signé (numériquement)" may say "signé".
+        self.assertIn("fr", STRINGS)
+        for key, value in STRINGS["fr"].items():
+            claim = re.sub(r"n'est pas signé( numériquement)?", "", value, flags=re.I)
+            self.assertIsNone(self.FR.search(claim), f"fr.{key}")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -55,7 +55,7 @@ def _placeholders(text: str):
 
 class TestLocaleFiles(unittest.TestCase):
     def test_languages_available(self):
-        self.assertEqual(set(available_languages()), {"ar", "en"})
+        self.assertEqual(set(available_languages()), {"ar", "en", "fr"})
 
     def test_same_keys_in_every_language(self):
         langs = available_languages()
