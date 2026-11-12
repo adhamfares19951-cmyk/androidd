@@ -35,3 +35,6 @@ skills-lock.json
 # PyInstaller output
 /build/
 /dist/
+
+# Companion APK build output (rebuilt by companion/build.py)
+/companion/build/

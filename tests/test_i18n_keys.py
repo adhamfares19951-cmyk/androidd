@@ -104,7 +104,7 @@ class TestKeysUsedInCode(unittest.TestCase):
             "bloat.desc.": list(OEM_DEBLOAT_PACKAGES),
             "bloat.impact.": sorted({v["battery_impact"] for v in OEM_DEBLOAT_PACKAGES.values()}),
             "bloat.safety.": sorted({v["safety"] for v in OEM_DEBLOAT_PACKAGES.values()}),
-            "cli.stage.": ["profile", "board", "hardware", "security"],
+            "cli.stage.": ["profile", "board", "hardware", "security", "companion"],
             "cli.state.": ["unauthorized", "offline"],
             "verifier.": list(verifier_strings),
         }

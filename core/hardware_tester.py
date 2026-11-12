@@ -911,45 +911,6 @@ class HardwareTester:
                 report.diagnosis = M("panel.not_exposed")
         return report
 
-    COMPANION_PKG = "com.androiddoctor.companion"
-
-    def install_companion_apk(self, serial: str, apk_path: Optional[str] = None) -> Tuple[bool, str]:
-        if not apk_path:
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            apk_path = os.path.join(base_dir, "bin", "companion_diag.apk")
-
-        if not os.path.exists(apk_path):
-            return False, M("companion.apk_missing", path=apk_path)
-
-        code, out, err = self.bridge.run_adb(["install", "-r", "-t", "-g", apk_path], serial=serial, timeout=45)
-        if code == 0 and "Success" in out:
-            return True, M("companion.installed")
-        return False, M("companion.install_failed", output=err or out)
-
-    def run_companion_broadcast(self, serial: str, action: str = "TEST_ALL") -> Tuple[bool, str]:
-        code, out, err = self.bridge.shell(
-            f"am broadcast -a com.androiddoctor.companion.ACTION_DIAG --es action {action}",
-            serial=serial, timeout=10
-        )
-        if code == 0:
-            return True, M("companion.broadcast_sent", output=out)
-        return False, M("companion.broadcast_failed", output=err or out)
-
-    def read_companion_results(self, serial: str) -> Dict[str, Any]:
-        code, out, _ = self.bridge.shell("logcat -d -s AndroidDoctorCompanion:I *:S", serial=serial, timeout=8)
-        results = {"raw_logcat": out, "events": []}
-        if code == 0 and out:
-            for line in out.splitlines():
-                if "AndroidDoctorCompanion" in line:
-                    results["events"].append(line.strip())
-        return results
-
-    def uninstall_companion_apk(self, serial: str) -> Tuple[bool, str]:
-        code, out, err = self.bridge.shell(f"pm uninstall {self.COMPANION_PKG}", serial=serial, timeout=15)
-        if "Success" in out:
-            return True, M("companion.uninstalled")
-        return False, M("companion.uninstall_failed", output=out or err)
-
     def launch_screen_color_test(self, serial: str) -> Tuple[bool, str]:
         """
         Interactive LCD Dead-Pixel & Burn-in Color Tester.

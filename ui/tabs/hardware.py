@@ -1,8 +1,10 @@
 """Hardware & Sensors tab: subsystem audit, keys, touch/colour/tone bench helpers."""
 
+import logging
 import threading
 from tkinter import messagebox
 import customtkinter as ctk
+from core.result import CheckResult
 from ui.theme import (
     BG_CANVAS,
     BG_CARD,
@@ -20,6 +22,8 @@ from ui.theme import (
     pack_button_grid,
 )
 from ui.ui_helpers import _tri_key, _feature_key, _flinger_key, format_evidence_for_display
+
+logger = logging.getLogger("MainWindow")
 
 
 class HardwareTabMixin:
@@ -512,20 +516,32 @@ class HardwareTabMixin:
             messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_a_device_first"))
             return
         self._ensure_tab("hardware_tester")
-        is_ar = self.current_lang == "ar"
-        self._set_box(self.sensors_text, self._tr("ui.checking_companion_apk_or_activating_zero"))
+        self._set_box(self.sensors_text, self._tr("ui.companion_running"))
+        self.btn_companion_diag.configure(state="disabled")
 
         def task():
-            ok, msg = self.hardware_tester.install_companion_apk(serial)
-            if ok:
-                self.hardware_tester.run_companion_broadcast(serial, "START_DIAGNOSTICS")
-                res = self.hardware_tester.read_companion_results(serial)
-                diag_txt = self._tr("ui.companion_results", res=res)
-            else:
-                diag_txt = self._tr("ui.companion_status_zero_apk_interactive_suite", msg=msg)
+            from core import companion
+            from core.model_db import default_db
+            try:
+                run = companion.run_companion(self.bridge, serial)
+                spec = default_db().lookup(self.bridge.get_prop("ro.product.model", serial=serial) or "")
+                checks = companion.judge(run, spec)
+            except Exception as e:
+                logger.error(f"Companion run failed: {e}")
+                checks = [CheckResult(check_id="companion.run", detail=str(e))]
+            self.last_companion_checks = checks  # added to the diagnostic report
+            lines = []
+            for c in checks:
+                lines.append(f"[{c.status}] {self._tr(c.check_id)}")
+                if c.detail is not None:
+                    lines.append(f"    {self._m(c.detail)}")
+                for cause in c.possible_causes:
+                    lines.append(f"    - {self._tr('common.possible_cause')}: {self._m(cause)}")
+            diag_txt = "\n".join(lines)
+
             def upd():
                 self._ensure_tab("hardware_tester")
                 self._set_box(self.sensors_text, diag_txt)
-                messagebox.showinfo(self._tr("ui.interactive_diag"), diag_txt)
+                self.btn_companion_diag.configure(state="normal")
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()

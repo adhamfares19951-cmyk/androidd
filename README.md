@@ -65,6 +65,16 @@ Manufacturer specifications per model number (`ro.product.model`, dual-SIM suffi
 - **Subsystem checks**: Evaluates AudioFlinger/ALSA soundcards (`/proc/asound/cards`, `/proc/asound/pcm`), biometric HAL (`pm has-system-feature`, `dumpsys fingerprint`, `dumpsys biometric`, `getprop ro.hardware.fingerprint`), physical keys (interactive `getevent -l`, passing each key only on observed `DOWN` + `UP`), SIM & baseband (`getprop`, `dumpsys telephony.registry`), display backlight + DSI logs, display panel controller & verified boot state (`display.panel_info`, without claiming screen originality), Wi-Fi (`cmd wifi status`, `dumpsys wifi`), Bluetooth (`dumpsys bluetooth_manager`), and declared features (`pm has-system-feature` flags for GPS, NFC, and USB host).
 - **Interactive bench helpers**: Pushes standalone HTML5 screen color and `8x14` touch-grid test pages (`core/touch_matrix.py`) opened via intent with `pointer_location` enabled, generates a temporary `1000 Hz` PCM speaker WAV tone in the OS temp folder, triggers haptic vibration pulses, and includes optional companion APK broadcast helpers.
 
+### Companion App (`companion/`, `core/companion.py`)
+A small Android app that measures on the phone what ADB cannot read without root. The desktop program installs it (`adb install -r -g`), starts its test screen with a unique run id and reads that run's raw readings from logcat (`ADP|{json}`, tag `AndroidDoctorCompanion`). The app never decides PASS/FAIL and stores no images or recordings; `core/companion.py` judges the readings, with the raw line as evidence:
+- **Battery capacity:** Android's charge counter / charge level gives the present full capacity (a fuel-gauge estimate, only at 50% charge or more), compared with the manufacturer's capacity from the model database (FAIL below 80%). No spec: the value is shown, not judged.
+- **Sensors (live):** a listed sensor that delivers no reading in 2.5 s is FAIL.
+- **Vibration:** accelerometer jitter while vibrating vs. at rest (PASS at 3x, FAIL below 1.5x; not judged if the phone moved).
+- **Speaker to microphone:** the 1 kHz test tone recorded vs. without it (PASS at 20 dB, FAIL below 6 dB, with possible causes).
+- **Cameras:** each camera opens and delivers frames (PASS) or not (FAIL with Android's error); image brightness is information only.
+
+GUI: Hardware & Sensors tab, "Companion APK Test" (results go into the next report). CLI: `--cli --companion`. Keep the phone unlocked, screen on, lying still. Build: `python companion/build.py` (Android SDK `platforms;android-35` + `build-tools;35.0.0`, JDK 17+, no Gradle); the APK signing key is created in `%LOCALAPPDATA%\AndroidDoctorPro\companion-signing\` and never committed. `packaging\build.ps1` builds it first and bundles it.
+
 ### Apps with Sensitive Permissions & Debloater (`core/malware_hunter.py`)
 - Lists third-party packages holding granted sensitive permissions (`install permissions:` / `runtime permissions:` with `granted=true` in `dumpsys package`; ungranted declarations are ignored), enabled accessibility services, active device admins, user CA storage (`/data/misc/user/0/cacerts-added`), and active `/proc/net/tcp` + `/proc/net/tcp6` sockets mapped to UIDs. Reported strictly as a technician review inventory, with no threat or malware labels.
 - Checks installed packages against `OEM_DEBLOAT_PACKAGES` (Xiaomi, Samsung, Oppo/Realme) and supports background restriction, disabling, `--user 0` uninstallation, and restoration (`cmd package install-existing`) tracked in SQLite `rollback_history`.
@@ -152,6 +162,7 @@ Arguments parsed in `main.py`:
 - `--repair-tools`: download/reinstall missing or mismatched packages after SHA-256 verification
 - `--output-dir OUTPUT_DIR`: custom folder for the CLI HTML report
 - `--all-devices`: with `--cli`, diagnose every connected device in parallel (`--workers N`, default 4); one report per device, a summary table at the end, and the exit code of the worst device (`4` > `3` > `2` > `0`)
+- `--companion`: with `--cli`, also run the companion app on the phone
 - `--pdf`: also write a PDF copy of the CLI report (signed too when a signing key is used)
 - `--sign-key PATH`: sign the CLI report with this Ed25519 private key (default: `ADP_SIGNING_KEY` environment variable)
 - `--verify-qr TEXT --public-key PUB`: verify a report QR code (text or link)
@@ -236,6 +247,7 @@ Test modules:
 - `tests/test_model_db.py`: Sourced entries only (missing URL, implausible or swapped capacities rejected), `/DS` suffix and case, user file overrides, rated capacity preferred, spec fills a missing design value but never a missing reading, kernel value wins with a note when it differs by more than 10%.
 - `tests/test_multi_device.py`: Parallel runs (timed), worker limit, order kept, one crash isolated, database closed once, combined exit code, `--all-devices` CLI with one report per authorized device, the GUI button end to end, per-device ADB locks (different phones do not wait, the same phone stays in order).
 - `tests/test_qr_verify.py`: Signed QR summary round trip, any changed field or another key rejected, link and percent-encoded forms, the report QR content (signed, https link only, unsigned plain), the offline page contents, the page checking signatures in a real Edge/Chrome, and CLI exit codes.
+- `tests/test_companion.py`: Java app and Python agree on package, log tag, prefix, extras and field names; the app stores nothing; run flow (results until done, timeout keeps partial results, reinstall on another signing key, missing APK, failed install); every judging rule (battery vs rated spec and no verdict without reading/level/spec, live sensors, vibration, audio, cameras).
 - `tests/test_app_paths.py`: Database/report paths unchanged from source, outside the install folder in a packaged build.
 - `tests/test_ui_smoke.py`: Headless build of every GUI tab in Arabic and English, width fit, language switch, and status-pill rules.
 - `tests/test_misleading_checks.py`: Preconditions for wireless-only screen-off current, per-category thermal limits, measurable vs. unmeasurable maintenance actions, `fastboot erase cache` precondition, WhatsApp media-only pulls, unsigned report notices, and granted-permission security inventories.
@@ -266,7 +278,7 @@ On an unrooted production Android device, SELinux restricts several paths and to
 
 ## Known Limitations
 
-- **Physical device coverage:** All automated tests (197) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
+- **Physical device coverage:** All automated tests (210) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
 - **Non-Windows tool manifests:** Download URLs and archive SHA-256 hashes are pinned for all 5 platforms, but pre-listed per-file `scrcpy` SHA-256 entries cover `windows-x86_64` only, and non-Windows archive downloads have not been runtime-tested.
 - **Signing is opt-in:** Reports are signed only when a key is configured (`--sign-key` / `ADP_SIGNING_KEY`); keeping the private key safe is the technician's job.
 
@@ -287,6 +299,7 @@ android/
 │   └── tabs/              # One mixin per GUI tab (dashboard, board_diag, hardware, security, optimizer, rescue, reports)
 ├── main.py                # Application entrypoint (GUI default, --cli console mode)
 ├── app_paths.py           # Database/report locations (source run vs. packaged build)
+├── companion/             # Android companion app source (Java, no Gradle) and build.py
 ├── packaging/             # PyInstaller spec, build script, build-only requirements
 ├── setup_bins.py          # Manifest verification, hash-checked repair, and port 5038 configuration
 ├── requirements.txt       # Base GUI Python package dependencies

@@ -109,7 +109,7 @@ def _db_factory():
 
 
 def run_cli_diagnostics(serial: str = "", lang: str = "ar", output_dir: Optional[str] = None,
-                        signing_key: Optional[str] = None, pdf: bool = False) -> int:
+                        signing_key: Optional[str] = None, pdf: bool = False, companion: bool = False) -> int:
     from core.adb_bridge import ADBBridge
     from diagnostics_runner import diagnose_device
     from ui.i18n import t, set_current_language
@@ -137,14 +137,15 @@ def run_cli_diagnostics(serial: str = "", lang: str = "ar", output_dir: Optional
         return opened[0]
 
     try:
-        return diagnose_device(bridge, target, lang, get_db, output_dir, signing_key, pdf).exit_code
+        return diagnose_device(bridge, target, lang, get_db, output_dir, signing_key, pdf,
+                               companion=companion).exit_code
     finally:
         if opened and hasattr(opened[0], "close"):
             opened[0].close()
 
 
 def run_cli_all_devices(lang: str = "ar", output_dir: Optional[str] = None, signing_key: Optional[str] = None,
-                        pdf: bool = False, max_workers: int = 4) -> int:
+                        pdf: bool = False, max_workers: int = 4, companion: bool = False) -> int:
     """Every connected device in parallel, one report each. Exit code: the worst device result."""
     from core.adb_bridge import ADBBridge
     from diagnostics_runner import combined_exit_code, diagnose_all
@@ -168,7 +169,7 @@ def run_cli_all_devices(lang: str = "ar", output_dir: Optional[str] = None, sign
         print(t("cli.batch_device_done", lang, serial=run.serial, status=run.overall, code=run.exit_code), flush=True)
 
     runs = diagnose_all(bridge, devices, lang, _db_factory, output_dir, signing_key, pdf,
-                        max_workers=max_workers, on_done=done)
+                        max_workers=max_workers, on_done=done, companion=companion)
     for run in runs:
         print(f"\n{'=' * 60}\n{run.serial}  {run.model}\n{'=' * 60}")
         for line in run.output:
@@ -193,6 +194,8 @@ def build_parser():
     parser.add_argument("--all-devices", action="store_true",
                         help="with --cli: diagnose every connected device in parallel (one report each)")
     parser.add_argument("--workers", type=int, default=4, help="parallel devices for --all-devices (default 4)")
+    parser.add_argument("--companion", action="store_true",
+                        help="with --cli: also install and run the companion app on the phone (screen on, unlocked)")
     parser.add_argument("--pdf", action="store_true",
                         help="also write a PDF copy of the CLI report (printed by the installed Edge/Chrome)")
     parser.add_argument("--sign-key", type=str, default=None,
@@ -263,8 +266,9 @@ def main() -> int:
             key = args.sign_key or os.environ.get("ADP_SIGNING_KEY") or None
             if args.all_devices:
                 return run_cli_all_devices(args.lang, args.output_dir, key, pdf=args.pdf,
-                                           max_workers=max(1, args.workers))
-            return run_cli_diagnostics(args.serial, args.lang, args.output_dir, key, pdf=args.pdf)
+                                           max_workers=max(1, args.workers), companion=args.companion)
+            return run_cli_diagnostics(args.serial, args.lang, args.output_dir, key, pdf=args.pdf,
+                                       companion=args.companion)
         except Exception:
             logger.critical(f"Internal error\n{traceback.format_exc()}")
             return EXIT_INTERNAL

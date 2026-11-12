@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android Doctor Pro companion: measures on the phone what ADB cannot read without root and writes
+  the raw readings to logcat (tag AndroidDoctorCompanion). It stores no images or recordings.
+  Started by the desktop program with: am start -n com.androiddoctor.companion/.DiagActivity
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.androiddoctor.companion">
+
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <application
+        android:label="ADP Companion"
+        android:allowBackup="false"
+        android:hasFragileUserData="false">
+        <!-- exported so `adb shell am start` can launch it; it only reports measurements -->
+        <activity
+            android:name=".DiagActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+    </application>
+</manifest>

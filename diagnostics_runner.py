@@ -51,7 +51,7 @@ def print_status_table(rows: List[Tuple[str, str, Any]], lang: str, emit: Emit =
 
 def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[[], Any],
                     output_dir: Optional[str] = None, signing_key: Optional[str] = None,
-                    pdf: bool = False, emit: Emit = print) -> DeviceRun:
+                    pdf: bool = False, emit: Emit = print, companion: bool = False) -> DeviceRun:
     """Diagnose one listed device. Never closes the database (the caller owns it)."""
     from core.result import aggregate_status, CheckResult, Status, M
     from core.report_signing import SigningError
@@ -115,6 +115,16 @@ def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[
         emit(t("cli.reported_sensors", lang, count=len(hw.sensors), status=hw.sensors_status))
         emit(t("cli.reported_cameras", lang, count=len(hw.cameras), status=hw.cameras_status))
 
+    companion_checks: List[Any] = []
+    if companion:
+        def run_companion_stage():
+            from core import companion as comp
+            from core.model_db import default_db
+            run = comp.run_companion(bridge, target_serial)
+            spec = default_db().lookup(bridge.get_prop("ro.product.model", serial=target_serial) or "")
+            return comp.judge(run, spec)
+        companion_checks = stage("companion", run_companion_stage) or []
+
     sec = stage("security", lambda: MalwareHunter(bridge, db).audit_security(target_serial))
     if sec is not None:
         emit(render(sec.summary, lang))
@@ -123,7 +133,7 @@ def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[
     stage_checks = [CheckResult(check_id=f"cli.stage.{name}", status=Status.UNKNOWN,
                                 detail=M("cli.stage_failed_short")) for name in failed_stages]
     device_checks: List[CheckResult] = ((bdiag.checks if bdiag is not None else [])
-                                        + (hw.checks if hw is not None else []))
+                                        + (hw.checks if hw is not None else []) + companion_checks)
     info_checks: List[CheckResult] = sec.check_results() if sec is not None else []  # shown, not counted
     rows: List[Tuple[str, str, Any]] = [(c.check_id, str(c.status), c.detail)
                                         for c in device_checks + info_checks + stage_checks]
@@ -139,7 +149,7 @@ def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[
             board_diag=bdiag.to_dict() if bdiag is not None else {},
             hw_audit=hw.to_dict() if hw is not None else {},
             sec_scan=sec.to_dict() if sec is not None else {},
-            extra_checks=[c.to_dict() for c in stage_checks],
+            extra_checks=[c.to_dict() for c in stage_checks + companion_checks],
             signing_key_path=signing_key,
             lang=lang,
             output_dir=output_dir,
@@ -175,7 +185,8 @@ def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[
 
 def diagnose_all(bridge, devices: List[Dict[str, Any]], lang: str, get_db: Callable[[], Any],
                  output_dir: Optional[str] = None, signing_key: Optional[str] = None, pdf: bool = False,
-                 max_workers: int = 4, on_done: Optional[Callable[[DeviceRun], None]] = None) -> List[DeviceRun]:
+                 max_workers: int = 4, on_done: Optional[Callable[[DeviceRun], None]] = None,
+                 companion: bool = False) -> List[DeviceRun]:
     """Diagnose every device in parallel; results in the order of `devices`.
 
     `on_done` is called (from a worker thread) as each device finishes. A crash inside one device's
@@ -194,7 +205,8 @@ def diagnose_all(bridge, devices: List[Dict[str, Any]], lang: str, get_db: Calla
     def one(target: Dict[str, Any]) -> DeviceRun:
         out: List[str] = []
         try:
-            run = diagnose_device(bridge, target, lang, shared_db, output_dir, signing_key, pdf, emit=out.append)
+            run = diagnose_device(bridge, target, lang, shared_db, output_dir, signing_key, pdf, emit=out.append,
+                                  companion=companion)
         except Exception as e:
             logger.error(f"[{target.get('serial')}] Diagnostics crashed: {e}\n{traceback.format_exc()}")
             run = DeviceRun(serial=target.get("serial", "?"), state=target.get("state", "unknown"),

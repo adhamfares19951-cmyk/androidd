@@ -20,6 +20,10 @@ datas = [
     (os.path.join(ROOT, "README.md"), "."),
 ]
 datas += collect_data_files("customtkinter")
+# Companion APK (built by companion/build.py; build.ps1 runs it first). Without it the GUI says so.
+_companion_apk = os.path.join(ROOT, "companion", "build", "companion_diag.apk")
+if os.path.isfile(_companion_apk):
+    datas.append((_companion_apk, os.path.join("companion", "build")))
 
 a = Analysis(
     [os.path.join(ROOT, "main.py")],

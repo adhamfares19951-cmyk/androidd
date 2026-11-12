@@ -8,6 +8,11 @@ Set-Location $root
 python -m unittest discover -s tests -t .
 if ($LASTEXITCODE -ne 0) { throw "Tests failed; not building." }
 
+python companion\build.py
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "Companion APK not built (Android SDK / JDK missing?): the package will not include it."
+}
+
 python -m PyInstaller --noconfirm --clean --distpath dist --workpath build packaging\android_doctor.spec
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed." }
 

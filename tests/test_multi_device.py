@@ -44,7 +44,7 @@ class RunnerTests(unittest.TestCase):
     DEVICES = [{"serial": f"S{i}", "state": "device"} for i in range(3)]
 
     def fake_diagnose(self, counter, delay=0.3, crash=None):
-        def run(bridge, target, lang, get_db, output_dir=None, signing_key=None, pdf=False, emit=print):
+        def run(bridge, target, lang, get_db, output_dir=None, signing_key=None, pdf=False, emit=print, **kw):
             with counter:
                 get_db()
                 if target["serial"] == crash:
@@ -94,7 +94,7 @@ class RunnerTests(unittest.TestCase):
             opened.append(1)
             return DB()
 
-        def run(bridge, target, lang, get_db, output_dir=None, signing_key=None, pdf=False, emit=print):
+        def run(bridge, target, lang, get_db, output_dir=None, signing_key=None, pdf=False, emit=print, **kw):
             get_db()
             time.sleep(0.05)
             events.append(f"end {target['serial']}")

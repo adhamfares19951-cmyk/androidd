@@ -194,6 +194,7 @@ class ReportsTabMixin:
                 panel_info=panel_info_dict,
                 root_forensics=root_forensics_dict,
                 leakage_result=leakage_dict,
+                extra_checks=[c.to_dict() for c in getattr(self, "last_companion_checks", [])],
                 signing_key_path=os.environ.get(KEY_PATH_ENV) or None,
                 technician_name=tech,
                 ticket_id=ticket_id,
