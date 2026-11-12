@@ -71,6 +71,16 @@ def load_locales(directory: str = LOCALES_DIR) -> Dict[str, Dict[str, str]]:
 STRINGS: Dict[str, Dict[str, str]] = load_locales()
 
 
+def is_rtl(lang: str) -> bool:
+    """Right-to-left languages declare meta.dir = "rtl" in their locale file."""
+    return STRINGS.get(lang, {}).get("meta.dir", "ltr") == "rtl"
+
+
+def language_name(lang: str) -> str:
+    """The language's own name (meta.name), e.g. for the language switch."""
+    return STRINGS.get(lang, {}).get("meta.name", lang)
+
+
 def available_languages() -> List[str]:
     return sorted(STRINGS.keys())
 

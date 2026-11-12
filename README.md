@@ -218,6 +218,8 @@ Logs are written by a rotating file handler (`1 MB` per file, `5` backups) in:
 
 All user-facing text lives in `locales/ar.json` and `locales/en.json` (the same keys in each file). `ui/i18n.py` loads all `locales/*.json` files, exposes `available_languages()`, formats `{placeholders}` safely via `t()` / `render()`, and provides `fix_arabic()` (`arabic-reshaper` + `python-bidi`), which the UI does not call at the moment. Core modules emit `Msg(key, args)` objects via `M()` rather than building display strings.
 
+To add a language, copy `locales/en.json` to `locales/<code>.json`, translate every value and set `meta.name` (the language's own name, shown in the language switch) and `meta.dir` (`rtl` or `ltr`). Nothing else changes: right-to-left layout, the report, the verification page and the CLI `--lang` choices follow the file; the switch shows buttons for up to three languages and a list beyond that. `tests/test_i18n_keys.py` fails until every key is present.
+
 To add or modify text:
 1. Add the same key and matching `{placeholder}` names to both `locales/ar.json` and `locales/en.json`.
 2. Reference the key from code via `M("key", ...)` (in `core/`) or `self._tr("key", ...)` / `t("key", lang, ...)` (in UI/CLI).
@@ -248,6 +250,7 @@ Test modules:
 - `tests/test_multi_device.py`: Parallel runs (timed), worker limit, order kept, one crash isolated, database closed once, combined exit code, `--all-devices` CLI with one report per authorized device, the GUI button end to end, per-device ADB locks (different phones do not wait, the same phone stays in order).
 - `tests/test_qr_verify.py`: Signed QR summary round trip, any changed field or another key rejected, link and percent-encoded forms, the report QR content (signed, https link only, unsigned plain), the offline page contents, the page checking signatures in a real Edge/Chrome, and CLI exit codes.
 - `tests/test_companion.py`: Java app and Python agree on package, log tag, prefix, extras and field names; the app stores nothing; run flow (results until done, timeout keeps partial results, reinstall on another signing key, missing APK, failed install); every judging rule (battery vs rated spec and no verdict without reading/level/spec, live sensors, vibration, audio, cameras).
+- `tests/test_languages.py`: Every locale declares `meta.name`/`meta.dir`; direction follows the metadata (layout, text wrapping, report, verification page, evidence text) for added RTL and LTR languages; the switch with two, three and four languages.
 - `tests/test_app_paths.py`: Database/report paths unchanged from source, outside the install folder in a packaged build.
 - `tests/test_ui_smoke.py`: Headless build of every GUI tab in Arabic and English, width fit, language switch, and status-pill rules.
 - `tests/test_misleading_checks.py`: Preconditions for wireless-only screen-off current, per-category thermal limits, measurable vs. unmeasurable maintenance actions, `fastboot erase cache` precondition, WhatsApp media-only pulls, unsigned report notices, and granted-permission security inventories.
@@ -278,7 +281,7 @@ On an unrooted production Android device, SELinux restricts several paths and to
 
 ## Known Limitations
 
-- **Physical device coverage:** All automated tests (210) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
+- **Physical device coverage:** All automated tests (217) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
 - **Non-Windows tool manifests:** Download URLs and archive SHA-256 hashes are pinned for all 5 platforms, but pre-listed per-file `scrcpy` SHA-256 entries cover `windows-x86_64` only, and non-Windows archive downloads have not been runtime-tested.
 - **Signing is opt-in:** Reports are signed only when a key is configured (`--sign-key` / `ADP_SIGNING_KEY`); keeping the private key safe is the technician's job.
 

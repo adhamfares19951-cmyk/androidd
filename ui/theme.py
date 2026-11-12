@@ -103,9 +103,14 @@ LAYOUT: dict[str, dict[str, Any]] = {
 }
 
 
+def _rtl(lang: str) -> bool:
+    from ui.i18n import is_rtl
+    return is_rtl(lang)
+
+
 def get_layout(lang: str) -> dict[str, Any]:
-    """Return directional layout attributes for the requested language."""
-    return LAYOUT.get(lang, LAYOUT["en"])
+    """Directional layout for the language: right-to-left languages use the "ar" layout."""
+    return LAYOUT["ar"] if _rtl(lang) else LAYOUT["en"]
 
 
 def rtl_wrap(text: str, lang: str) -> str:
@@ -114,7 +119,7 @@ def rtl_wrap(text: str, lang: str) -> str:
     Preserves native Windows DirectWrite letter shaping while preventing trailing
     punctuation and mixed ASCII tokens from flipping to the wrong side.
     """
-    if lang != "ar" or not text:
+    if not text or not _rtl(lang):
         return text
     out_lines: list[str] = []
     for line in str(text).splitlines():
@@ -290,7 +295,7 @@ def set_console_text(box: ctk.CTkTextbox | None, text: str, lang: str) -> None:
         box.delete("1.0", "end")
         wrapped = rtl_wrap(text, lang)
         box.insert("1.0", wrapped)
-        if lang == "ar":
+        if _rtl(lang):
             box._textbox.tag_configure("rtl", justify="right")
             box._textbox.tag_add("rtl", "1.0", "end")
         else:

@@ -14,7 +14,7 @@ import os
 from typing import Tuple
 
 from core.report_signing import QR_FIELDS, QR_PREFIX, key_id_from_public, load_public_key, public_key_raw_b64
-from ui.i18n import t
+from ui.i18n import is_rtl, t
 
 PAGE_NAME = "adp_verify.html"
 
@@ -173,7 +173,7 @@ def build_verifier_html(public_key_path: str, lang: str = "ar") -> str:
     page = _TEMPLATE
     for token, value in (
         ("__LANG__", html.escape(lang)),
-        ("__DIR__", "rtl" if lang == "ar" else "ltr"),
+        ("__DIR__", "rtl" if is_rtl(lang) else "ltr"),
         ("__TITLE__", html.escape(strings["title"])),
         ("__INTRO__", html.escape(strings["intro"])),
         ("__PASTE__", html.escape(strings["paste_label"])),

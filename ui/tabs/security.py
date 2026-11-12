@@ -199,7 +199,7 @@ class SecurityTabMixin:
             t_lines.append(f"\n[{scan.user_ca_status}] {scan.user_ca_diagnosis}")
             for cert in scan.user_certificates:
                 t_lines.append(f"   • {cert}")
-            t_lines.append(format_evidence_for_display(scan.evidence, is_ar=is_ar))
+            t_lines.append(format_evidence_for_display(scan.evidence, lang=self.current_lang))
 
             def upd():
                 self._ensure_tab("malware_hunter")

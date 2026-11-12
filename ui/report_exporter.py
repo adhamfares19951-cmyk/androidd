@@ -428,7 +428,8 @@ class DiagnosticReportExporter:
             qr = _qr_svg(qr_text, size_px=128)
         else:
             qr = _qr_svg({"ref": report_id, "sn": serial, "status": overall, "date": timestamp_str, "ticket": ticket_id or None})
-        direction = "rtl" if lang == "ar" else "ltr"
+        from ui.i18n import is_rtl
+        direction = "rtl" if is_rtl(lang) else "ltr"
         page = f"""<!DOCTYPE html>
 <html lang="{html.escape(lang)}" dir="{direction}">
 <head><meta charset="UTF-8"><title>{tr("report.doc_title", serial=serial)}</title><style>{CSS}</style></head>

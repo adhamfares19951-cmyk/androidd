@@ -210,7 +210,7 @@ class HardwareTabMixin:
             for cause in report.fingerprint.possible_causes:
                 fp_lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if report.fingerprint.evidence:
-                fp_lines.append(format_evidence_for_display(report.fingerprint.evidence, is_ar=is_ar))
+                fp_lines.append(format_evidence_for_display(report.fingerprint.evidence, lang=self.current_lang))
 
             # Physical Keys
             key_lines = [
@@ -221,7 +221,7 @@ class HardwareTabMixin:
                 self._tr("ui.diagnosis_2", diagnosis=report.buttons.diagnosis)
             ]
             if report.buttons.evidence:
-                key_lines.append(format_evidence_for_display(report.buttons.evidence, is_ar=is_ar))
+                key_lines.append(format_evidence_for_display(report.buttons.evidence, lang=self.current_lang))
 
             # SIM & Baseband
             sim_lines = [
@@ -237,7 +237,7 @@ class HardwareTabMixin:
             for cause in report.sim_baseband.possible_causes:
                 sim_lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if report.sim_baseband.evidence:
-                sim_lines.append(format_evidence_for_display(report.sim_baseband.evidence, is_ar=is_ar))
+                sim_lines.append(format_evidence_for_display(report.sim_baseband.evidence, lang=self.current_lang))
 
             # Display Backlight
             disp_lines = [
@@ -248,7 +248,7 @@ class HardwareTabMixin:
             for cause in report.display_backlight.possible_causes:
                 disp_lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if report.display_backlight.evidence:
-                disp_lines.append(format_evidence_for_display(report.display_backlight.evidence, is_ar=is_ar))
+                disp_lines.append(format_evidence_for_display(report.display_backlight.evidence, lang=self.current_lang))
 
             # Wi-Fi Chipset
             wifi_lines = [
@@ -262,7 +262,7 @@ class HardwareTabMixin:
                 self._tr("ui.diagnosis_2", diagnosis=report.wifi.diagnosis)
             ]
             if report.wifi.evidence:
-                wifi_lines.append(format_evidence_for_display(report.wifi.evidence, is_ar=is_ar))
+                wifi_lines.append(format_evidence_for_display(report.wifi.evidence, lang=self.current_lang))
 
             # Bluetooth Controller
             bt_lines = [
@@ -276,7 +276,7 @@ class HardwareTabMixin:
             for cause in report.bluetooth.possible_causes:
                 bt_lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if report.bluetooth.evidence:
-                bt_lines.append(format_evidence_for_display(report.bluetooth.evidence, is_ar=is_ar))
+                bt_lines.append(format_evidence_for_display(report.bluetooth.evidence, lang=self.current_lang))
 
             # Peripheral Chips (GPS, NFC, OTG)
             chip_lines = [
@@ -287,7 +287,7 @@ class HardwareTabMixin:
                 self._tr("ui.diagnosis_2", diagnosis=report.peripherals.diagnosis)
             ]
             if report.peripherals.evidence:
-                chip_lines.append(format_evidence_for_display(report.peripherals.evidence, is_ar=is_ar))
+                chip_lines.append(format_evidence_for_display(report.peripherals.evidence, lang=self.current_lang))
 
             # Audio Codec IC (ALSA Soundcards)
             codec_lines = [
@@ -301,7 +301,7 @@ class HardwareTabMixin:
             for cause in report.audio_codec.possible_causes:
                 codec_lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if report.audio_codec.evidence:
-                codec_lines.append(format_evidence_for_display(report.audio_codec.evidence, is_ar=is_ar))
+                codec_lines.append(format_evidence_for_display(report.audio_codec.evidence, lang=self.current_lang))
 
             # Display Controller & Panel Info
             panel_lines = [
@@ -313,7 +313,7 @@ class HardwareTabMixin:
                 self._tr("ui.diagnosis_2", diagnosis=report.display_panel_info.diagnosis)
             ]
             if report.display_panel_info.evidence:
-                panel_lines.append(format_evidence_for_display(report.display_panel_info.evidence, is_ar=is_ar))
+                panel_lines.append(format_evidence_for_display(report.display_panel_info.evidence, lang=self.current_lang))
 
             self.last_audio_codec = report.audio_codec
             self.last_panel_info = report.display_panel_info
@@ -433,7 +433,7 @@ class HardwareTabMixin:
                 self._tr("ui.diagnosis", diagnosis=report.diagnosis)
             ]
             if report.evidence:
-                lines.append(format_evidence_for_display(report.evidence, is_ar=is_ar))
+                lines.append(format_evidence_for_display(report.evidence, lang=self.current_lang))
             def upd():
                 self._ensure_tab("hardware_tester")
                 self._set_box(self.storage_text, "\n".join(lines))

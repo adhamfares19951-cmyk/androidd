@@ -1242,5 +1242,7 @@
   "companion.cause.camera_flex": "Camera flex cable or connector",
   "companion.cause.camera_in_use": "Camera held by another app",
   "ui.companion_running": "Installing the companion app and running the tests on the phone (about 30 s).\nKeep the phone unlocked, screen on, lying still on a table.\n",
-  "cli.stage.companion": "Companion app on the phone"
+  "cli.stage.companion": "Companion app on the phone",
+  "meta.name": "English",
+  "meta.dir": "ltr"
 }

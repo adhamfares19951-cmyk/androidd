@@ -89,7 +89,7 @@ from core.rescue_center import RescueCenter, FastbootVariables
 from core.provisioning_manager import ProvisioningManager, ProvisioningStatus
 from core.result import Evidence, Status, CheckResult, aggregate_status
 from ui.report_exporter import DiagnosticReportExporter, REPORTS_DIR
-from ui.i18n import t, render, set_current_language
+from ui.i18n import t, render, set_current_language, available_languages, language_name
 
 # Re-exported: tests and older callers import these from ui.main_window.
 from ui.ui_helpers import _tri_key, _feature_key, _flinger_key, maintenance_pill_status, bootrom_pill_status, _fmt, format_evidence_for_display  # noqa: F401
@@ -332,21 +332,31 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
         self.sidebar_spacer = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
         self.sidebar_spacer.grid(row=6, column=0, sticky="nsew")
 
-        # Language switch (segmented)
+        # Language switch: one segment per locale file (up to 3), a drop-down list beyond that
+        self._languages = sorted(available_languages(), key=lambda c: (c not in ("ar", "en"), c))
         lang_bar = ctk.CTkFrame(self.sidebar_frame, fg_color=BG_TILE, corner_radius=8,
                                 border_width=1, border_color=BORDER_SUBTLE)
         lang_bar.grid(row=7, column=0, padx=14, pady=(0, 10), sticky="ew")
-        lang_bar.grid_columnconfigure((0, 1), weight=1, uniform="lang_col")
-        self.btn_lang_ar = ctk.CTkButton(
-            lang_bar, text=self._L(self._tr("ui.text")), height=28, corner_radius=6,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
-            command=lambda: self.switch_language("ar"),
-        )
-        self.btn_lang_en = ctk.CTkButton(
-            lang_bar, text=self._tr("ui.english"), height=28, corner_radius=6,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
-            command=lambda: self.switch_language("en"),
-        )
+        self.lang_buttons: dict[str, ctk.CTkButton] = {}
+        self.lang_menu = None
+        if len(self._languages) <= 3:
+            lang_bar.grid_columnconfigure(tuple(range(len(self._languages))), weight=1, uniform="lang_col")
+            for code in self._languages:
+                self.lang_buttons[code] = ctk.CTkButton(
+                    lang_bar, text=self._L(language_name(code)), height=28, corner_radius=6,
+                    font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+                    command=lambda c=code: self.switch_language(c),
+                )
+        else:
+            names = {language_name(c): c for c in self._languages}
+            self.lang_menu = ctk.CTkOptionMenu(
+                lang_bar, values=list(names), height=28, corner_radius=6,
+                fg_color=BG_CARD_ELEVATED, button_color=BG_CARD_ELEVATED, button_hover_color=BG_HOVER,
+                dropdown_fg_color=BG_CARD_ELEVATED, text_color=TEXT_PRIMARY,
+                font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+                command=lambda name: self.switch_language(names[name]),
+            )
+            self.lang_menu.pack(fill="x", padx=3, pady=3)
         self._style_lang_buttons()
 
         # Connection status
@@ -428,15 +438,19 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
             self.tools_banner.grid(row=0, column=content, sticky="ew", padx=20, pady=(14, 0))
 
     def _style_lang_buttons(self):
-        for btn, code, col in ((self.btn_lang_ar, "ar", 0), (self.btn_lang_en, "en", 1)):
+        if self.lang_menu is not None:
+            self.lang_menu.set(language_name(self.current_lang))
+            return
+        count = len(self.lang_buttons)
+        for col, (code, btn) in enumerate(self.lang_buttons.items()):
             active = self.current_lang == code
             btn.configure(
                 fg_color=BG_CARD_ELEVATED if active else "transparent",
                 hover_color=BG_HOVER,
                 text_color=TEXT_PRIMARY if active else TEXT_MUTED,
             )
-            # Arabic first on the right in RTL, English first on the left in LTR
-            pos = (1 - col) if self._layout()["is_rtl"] else col
+            # first language at the reading-start side: right in RTL, left in LTR
+            pos = (count - 1 - col) if self._layout()["is_rtl"] else col
             btn.grid(row=0, column=pos, padx=3, pady=3, sticky="ew")
 
     def _auto_poll_devices(self):

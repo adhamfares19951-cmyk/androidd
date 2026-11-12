@@ -326,7 +326,7 @@ class BoardDiagTabMixin:
                 out_lines.append(f"\n[{pmic.voltage_status}]")
 
             if pmic.evidence:
-                out_lines.append(format_evidence_for_display(pmic.evidence, is_ar=is_ar))
+                out_lines.append(format_evidence_for_display(pmic.evidence, lang=self.current_lang))
 
             def update_ui():
                 self._ensure_tab("board_diag")
@@ -406,7 +406,7 @@ class BoardDiagTabMixin:
             for cause in res.possible_causes:
                 lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if res.evidence:
-                lines.append(format_evidence_for_display(res.evidence, is_ar=is_ar))
+                lines.append(format_evidence_for_display(res.evidence, lang=self.current_lang))
             verdict = "\n".join(lines)
             def done():
                 self._ensure_tab("board_diag")
@@ -528,7 +528,7 @@ class BoardDiagTabMixin:
             for cause in result.possible_causes:
                 lines.append(self._tr("ui.text_2", possible_cause=self._tr("ui.possible_cause"), cause=cause))
             if result.evidence:
-                lines.append(format_evidence_for_display(result.evidence, is_ar=is_ar))
+                lines.append(format_evidence_for_display(result.evidence, lang=self.current_lang))
 
             def upd():
                 self._ensure_tab("board_diag")
@@ -769,7 +769,7 @@ class BoardDiagTabMixin:
                 for err in rep.i2c_bus_errors[:5]:
                     lines.append(f"  • {err}")
             if rep.evidence:
-                lines.append(format_evidence_for_display(rep.evidence, is_ar=is_ar))
+                lines.append(format_evidence_for_display(rep.evidence, lang=self.current_lang))
 
             def upd():
                 self._ensure_tab("board_diag")

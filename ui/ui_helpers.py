@@ -36,7 +36,7 @@ def _fmt(value: Any, unit: str = "") -> str:
     return f"{value} {unit}".strip()
 
 
-def format_evidence_for_display(evidence_items: Any, is_ar: bool = True) -> str:
+def format_evidence_for_display(evidence_items: Any, is_ar: bool = True, lang: Any = None) -> str:
     """Renders a list of Evidence objects with source and excerpt formatted separately for UI display."""
     if not evidence_items:
         return ""
@@ -50,14 +50,15 @@ def format_evidence_for_display(evidence_items: Any, is_ar: bool = True) -> str:
     if not evidence_list:
         return ""
 
-    header = t("ui.technical_evidence", ("ar" if is_ar else "en"))
+    lang = lang or ("ar" if is_ar else "en")
+    header = t("ui.technical_evidence", lang)
     lines = [header]
     for ev in evidence_list:
         src = getattr(ev, "source", None) or (ev.get("source") if isinstance(ev, dict) else "")
         exc = getattr(ev, "raw_excerpt", None) or (ev.get("raw_excerpt") if isinstance(ev, dict) else "")
         code = getattr(ev, "exit_code", 0) if hasattr(ev, "exit_code") else (ev.get("exit_code") if isinstance(ev, dict) else 0)
         code_str = f" [exit {code}]" if code is not None and code != 0 else ""
-        lines.append(t("ui.source", ("ar" if is_ar else "en"), src=src, code_str=code_str))
+        lines.append(t("ui.source", lang, src=src, code_str=code_str))
         if exc:
             for eline in str(exc).strip().splitlines():
                 lines.append(f"    {eline}")
