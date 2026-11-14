@@ -62,7 +62,7 @@ Manufacturer specifications per model number (`ro.product.model`, dual-SIM suffi
 
 ### Hardware Subsystem Checks & Interactive Tools (`core/hardware_tester.py`, `core/touch_matrix.py`)
 - **Reported sensors & cameras**: Parses `dumpsys sensorservice` and `dumpsys media.camera` for reported sensors and camera modules; absent fields stay `None`. Missing common sensors are listed for reference rather than treated as an automatic fault.
-- **Subsystem checks**: Evaluates AudioFlinger/ALSA soundcards (`/proc/asound/cards`, `/proc/asound/pcm`), biometric HAL (`pm has-system-feature`, `dumpsys fingerprint`, `dumpsys biometric`, `getprop ro.hardware.fingerprint`), physical keys (interactive `getevent -l`, passing each key only on observed `DOWN` + `UP`), SIM & baseband (`getprop`, `dumpsys telephony.registry`), display backlight + DSI logs, display panel controller & verified boot state (`display.panel_info`, without claiming screen originality), Wi-Fi (`cmd wifi status`, `dumpsys wifi`), Bluetooth (`dumpsys bluetooth_manager`), and declared features (`pm has-system-feature` flags for GPS, NFC, and USB host).
+- **Subsystem checks**: Evaluates AudioFlinger/ALSA soundcards (`/proc/asound/cards`, `/proc/asound/pcm`), biometric HAL (`pm has-feature`, `dumpsys fingerprint`, `dumpsys biometric`, `getprop ro.hardware.fingerprint`), physical keys (interactive `getevent -l`, passing each key only on observed `DOWN` + `UP`), SIM & baseband (`getprop`, `dumpsys telephony.registry`), display backlight + DSI logs, display panel controller & verified boot state (`display.panel_info`, without claiming screen originality), Wi-Fi (`cmd wifi status`, `dumpsys wifi`), Bluetooth (`dumpsys bluetooth_manager`), and declared features (`pm has-feature` flags for GPS, NFC, and USB host; the command prints `true` with exit 0 and `false` with exit 1, and both are answers).
 - **Interactive bench helpers**: Pushes standalone HTML5 screen color and `8x14` touch-grid test pages (`core/touch_matrix.py`) opened via intent with `pointer_location` enabled, generates a temporary `1000 Hz` PCM speaker WAV tone in the OS temp folder, triggers haptic vibration pulses, and includes optional companion APK broadcast helpers.
 
 ### Companion App (`companion/`, `core/companion.py`)
@@ -258,6 +258,7 @@ Test modules:
 - `tests/test_cli_and_tools.py`: CLI exit codes (`0`–`4`), isolated stage failures, `bin/manifest.json` schema, archive SHA-256 verification before extraction, path traversal rejection, and private ADB port `5038` lifecycle.
 - `tests/test_ui_wiring.py`: Every GUI call into the core matches a real method signature, return-tuple size and result fields (AST + `inspect`), and no module uses an undefined global name.
 - `tests/test_audit_fixes.py`: One behaviour test per issue confirmed in the external audit (partition and APK backups, Msg values saved to the database, battery/forensics/report verdicts, profiler values never invented, shell quoting, signing errors, ticket notes); each failed on the code before its fix.
+- `tests/test_device_findings.py`: One test per issue found on a real phone, using that phone's own command output (`pm has-feature` and its exit-1 `false`, blocked battery current and cycle count shown as `NEEDS_ROOT`, an implausible -26 °C sensor listed but not judged, an unreadable sound-card list not counted as zero, camera sections after the device list, numbers kept left-to-right in the Arabic report, the wireless pairing code never logged); each failed on the code before its fix.
 
 ---
 
@@ -283,7 +284,7 @@ On an unrooted production Android device, SELinux restricts several paths and to
 
 ## Known Limitations
 
-- **Physical device coverage:** All automated tests (244) use mocked/fake ADB responses (`tests/fakes.py`); end-to-end validation across physical Android devices over USB and wireless ADB has not yet been run on this refactored codebase.
+- **Physical device coverage:** All automated tests (258) use mocked/fake ADB responses (`tests/fakes.py`). Checked on one real phone so far (Redmi Note 9, MT6768, Android 12, not rooted) over USB: shell v2 exit codes, CLI diagnostics and exit codes `0`/`1`/`4`/`5`, Arabic and English HTML and PDF reports, signing and verification, and `scrcpy` mirroring. Not yet checked on a real phone: wireless ADB and the screen-off battery current test, a rooted phone, `scrcpy --otg`, and the GUI tabs.
 - **Non-Windows tool manifests:** Download URLs and archive SHA-256 hashes are pinned for all 5 platforms, but pre-listed per-file `scrcpy` SHA-256 entries cover `windows-x86_64` only, and non-Windows archive downloads have not been runtime-tested.
 - **Signing is opt-in:** Reports are signed only when a key is configured (`--sign-key` / `ADP_SIGNING_KEY`); keeping the private key safe is the technician's job.
 

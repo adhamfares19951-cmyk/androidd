@@ -11,7 +11,7 @@ Only a parser that successfully reads a real value may turn a read into PASS or 
 
 import re
 from dataclasses import dataclass
-from typing import Any, List, Optional, Sequence
+from typing import Any, List, Optional, Sequence, Tuple
 
 from core.result import Evidence, Status, status_from_read, PERMISSION_PATTERNS
 
@@ -142,10 +142,26 @@ def parse_int(text: Optional[str]) -> Optional[int]:
 
 
 def parse_bool_feature(text: Optional[str]) -> Optional[bool]:
-    """Parse `pm has-system-feature` output ("true"/"false")."""
+    """Parse `pm has-feature` output ("true"/"false")."""
     t = (text or "").strip().lower()
     if t == "true":
         return True
     if t == "false":
         return False
     return None
+
+
+def read_feature(bridge: Any, feature: str, serial: Optional[str] = None, timeout: int = 5) -> Tuple[ReadResult, Optional[bool]]:
+    """
+    Whether the system image declares `feature` (`pm has-feature`). The command prints "true" with exit 0
+    and "false" with exit 1, so exit 1 with "false" is an answer, not a failed read. Anything else is None.
+    """
+    res = run_read(bridge, f"pm has-feature {feature}", serial=serial, timeout=timeout)
+    value = parse_bool_feature(res.text)
+    if res.status == Status.NEEDS_ROOT or not res.path_exists:
+        return res, None
+    if value is True and res.exit_code in (0, None):
+        return res, True
+    if value is False and res.exit_code in (0, 1, None):
+        return res, False
+    return res, None

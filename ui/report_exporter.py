@@ -44,6 +44,7 @@ body { font-family: -apple-system, "Segoe UI", Roboto, "Cairo", Tahoma, sans-ser
 .prop-name { color: #8b949e; }
 .prop-val { color: #f0f6fc; font-weight: 500; }
 .src { color: #8b949e; font-size: 11px; }
+.num { white-space: nowrap; }
 .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; color: #fff; }
 .table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
 .table th, .table td { padding: 7px 10px; border: 1px solid #21262d; vertical-align: top; }
@@ -130,8 +131,13 @@ class DiagnosticReportExporter:
         def esc(value: Any) -> str:
             return html.escape(render(value, lang))
 
+        def ltr(text: str, cls: str = "") -> str:
+            # Numbers, units and command names stay left-to-right inside an Arabic (RTL) report.
+            return f'<bdi dir="ltr"{f" class={chr(34)}{cls}{chr(34)}" if cls else ""}>{text}</bdi>'
+
         def val(value: Any, unit: str = "") -> str:
-            return "UNKNOWN" if value is None else html.escape(f"{value} {unit}".strip())
+            # a value and its unit never wrap apart ("55.2" / "°C")
+            return "UNKNOWN" if value is None else ltr(html.escape(f"{value} {unit}".strip()), "num")
 
         def badge(status: Any) -> str:
             s = str(status or "UNKNOWN")
@@ -241,21 +247,23 @@ class DiagnosticReportExporter:
         ]))
 
         # ---------------- battery ----------------
-        def reading(value, unit, source):
+        def reading(value, unit, source, status):
+            # Not read: show why (NEEDS_ROOT / UNKNOWN); the "UNKNOWN" source placeholder is not a source.
             if value is None:
-                return f'{badge("UNKNOWN")} <span class="src">({html.escape(str(source or "UNKNOWN"))})</span>'
-            return f'{val(value, unit)} <span class="src">({html.escape(str(source))})</span>'
+                return badge(status or "UNKNOWN")
+            return f'{val(value, unit)} <span class="src">{ltr(html.escape("(" + str(source) + ")"))}</span>'
 
         health_pct = pmic.get("true_health_pct")
+        cycles = pmic.get("cycle_count")
         battery_card = card(tr("battery.fuel_gauge"), "".join([
-            row("report.battery_voltage", reading(pmic.get("voltage_mv"), "mV", pmic.get("voltage_source"))),
-            row("report.battery_current", reading(pmic.get("current_ma"), "mA", pmic.get("current_source"))
+            row("report.battery_voltage", reading(pmic.get("voltage_mv"), "mV", pmic.get("voltage_source"), pmic.get("voltage_status"))),
+            row("report.battery_current", reading(pmic.get("current_ma"), "mA", pmic.get("current_source"), pmic.get("current_status"))
                 + (f'<br><span class="src">{esc(pmic.get("current_note"))}</span>' if pmic.get("current_note") else "")),
-            row("report.battery_temp", reading(pmic.get("temp_c"), "°C", pmic.get("temp_source"))),
+            row("report.battery_temp", reading(pmic.get("temp_c"), "°C", pmic.get("temp_source"), pmic.get("temp_status"))),
             row("report.capacity_vs_design", (val(health_pct, "%") + " " if health_pct is not None else "") + badge(pmic.get("health_verdict"))
                 + (f'<br><span class="src">{tr("report.design_from_spec", name=pmic.get("model_spec_name") or "-")}</span>'
                    if pmic.get("design_capacity_source") == "model_db" else "")),
-            row("report.cycle_count", val(pmic.get("cycle_count"))),
+            row("report.cycle_count", val(cycles) if cycles is not None else badge(pmic.get("cycle_status") or "UNKNOWN")),
             row("report.reported_health", val(pmic.get("health"))),
             evidence(pmic.get("evidence")),
         ]), right=badge(bdiag.get("check_statuses", {}).get("battery.fuel_gauge", pmic.get("voltage_status"))))
@@ -268,7 +276,9 @@ class DiagnosticReportExporter:
         zone_rows = []
         for z in zones:
             limit = z.get("limit_c")
-            if limit is None:
+            if z.get("plausible") is False:
+                zst = tr("report.zone_implausible")
+            elif limit is None:
                 zst = tr("report.zone_not_judged")
             elif z.get("is_overheated"):
                 zst = tr("report.zone_above", limit=limit)

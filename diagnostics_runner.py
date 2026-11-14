@@ -103,10 +103,16 @@ def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[
     bdiag = stage("board", lambda: MotherboardDiagnostics(bridge, db).run_full_diagnostics(target_serial))
     if bdiag is not None:
         p = bdiag.pmic
-        emit(t("cli.battery_voltage", lang, value=p.voltage_mv, source=p.voltage_source))
-        emit(t("cli.battery_current", lang, value=p.current_ma, source=p.current_source, note=p.current_note))
+        # A value that was not read shows why (NEEDS_ROOT / UNKNOWN), never the "UNKNOWN" source placeholder.
+        def reading(key, value, source, status, **kw):
+            if value is None:
+                return t(key + "_unread", lang, status=status, **kw)
+            return t(key, lang, value=value, source=source, **kw)
+
+        emit(reading("cli.battery_voltage", p.voltage_mv, p.voltage_source, p.voltage_status))
+        emit(reading("cli.battery_current", p.current_ma, p.current_source, p.current_status, note=p.current_note))
         emit(t("cli.battery_capacity", lang, value=p.true_health_pct, status=p.health_verdict))
-        emit(t("cli.battery_temp", lang, value=p.temp_c, source=p.temp_source))
+        emit(reading("cli.battery_temp", p.temp_c, p.temp_source, p.temp_status))
         for f in bdiag.critical_findings:
             emit(f"  [!] {render(f, lang)}")
 

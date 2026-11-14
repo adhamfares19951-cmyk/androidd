@@ -69,6 +69,7 @@ class PMICStatus(ProducesCheckResult):
     charge_full_uah: Optional[int] = None
     charge_full_design_uah: Optional[int] = None
     cycle_count: Optional[int] = None
+    cycle_status: Optional[str] = None  # why cycle_count is None (NEEDS_ROOT / UNKNOWN); not a verdict
     temp_c: Optional[float] = None
     temp_source: str = "UNKNOWN"
     temp_status: str = "UNKNOWN"
@@ -114,7 +115,8 @@ class ThermalZone:
     is_overheated: bool
     source: str = ""
     category: str = "other"
-    limit_c: Optional[float] = None  # None: zone not classified, reported but not judged
+    limit_c: Optional[float] = None  # None: zone not classified or reading implausible, reported but not judged
+    plausible: bool = True           # False: a running phone cannot be this cold (absent sensor), not judged
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -514,6 +516,7 @@ class MotherboardDiagnostics:
         pmic.charge_full_uah = cf if (cf is not None and cf > 0) else None
         pmic.charge_full_design_uah = cfd if (cfd is not None and cfd > 0) else None
         pmic.cycle_count = cyc if (cyc is not None and cyc >= 0) else None
+        pmic.cycle_status = None if pmic.cycle_count is not None else str(failure_status([cyc_read]))
         ev.append(cf_read.evidence(f"charge_full={pmic.charge_full_uah} uAh" if pmic.charge_full_uah else "charge_full not parsed"))
         ev.append(cfd_read.evidence(f"charge_full_design={pmic.charge_full_design_uah} uAh" if pmic.charge_full_design_uah else "charge_full_design not parsed"))
         if cyc_read.ok or cyc_read.status == Status.NEEDS_ROOT:
@@ -801,11 +804,18 @@ class MotherboardDiagnostics:
         limit = rules.get("categories", {}).get(category, {}).get("limit_c")
         return category, (float(limit) if limit is not None else None)
 
+    # Below this a running phone's sensor reading is not believable (seen: an absent power-amplifier
+    # sensor reporting -26.0 while the battery read 31 C). Such a zone is listed but never judged.
+    PLAUSIBLE_MIN_C = -20.0
+
     def _make_zone(self, zone_id: int, name: str, temp_c: float, source: str, hal_type: Optional[int] = None) -> ThermalZone:
         category, limit = self.classify_zone(name, hal_type)
+        plausible = temp_c >= self.PLAUSIBLE_MIN_C
+        if not plausible:
+            limit = None
         return ThermalZone(zone_id=zone_id, zone_type=name, temp_c=temp_c,
                            is_overheated=(limit is not None and temp_c > limit),
-                           source=source, category=category, limit_c=limit)
+                           source=source, category=category, limit_c=limit, plausible=plausible)
 
     def read_thermal(self, serial: str) -> ThermalReport:
         """Read thermal zones from dumpsys thermalservice (non-root), falling back to sysfs."""

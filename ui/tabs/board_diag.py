@@ -299,10 +299,10 @@ class BoardDiagTabMixin:
             pmic = self.board_diag.analyze_pmic(serial)
             is_ar = self.current_lang == "ar"
 
-            v_display = f"{pmic.voltage_mv:.0f} mV ({pmic.voltage_mv / 1000.0:.2f} V) [{pmic.voltage_source}]" if (pmic.voltage_mv is not None and pmic.voltage_mv > 0) else "UNKNOWN"
+            v_display = f"{pmic.voltage_mv:.0f} mV ({pmic.voltage_mv / 1000.0:.2f} V) [{pmic.voltage_source}]" if (pmic.voltage_mv is not None and pmic.voltage_mv > 0) else pmic.voltage_status
             c_note = f" ({pmic.current_note})" if pmic.current_note else ""
-            c_display = f"{pmic.current_ma:+.0f} mA [{pmic.current_source}]{c_note}" if pmic.current_ma is not None else "UNKNOWN"
-            t_display = f"{pmic.temp_c:.1f} °C [{pmic.temp_source}]" if pmic.temp_c is not None else "UNKNOWN"
+            c_display = f"{pmic.current_ma:+.0f} mA [{pmic.current_source}]{c_note}" if pmic.current_ma is not None else f"{pmic.current_status}{c_note}"
+            t_display = f"{pmic.temp_c:.1f} °C [{pmic.temp_source}]" if pmic.temp_c is not None else pmic.temp_status
             h_display = f"{pmic.true_health_pct:.1f}% ({pmic.health_verdict})" if pmic.true_health_pct is not None else pmic.health_verdict
 
             out_lines = [
@@ -314,7 +314,7 @@ class BoardDiagTabMixin:
                 self._tr("ui.reported_health_os", health=pmic.health),
                 self._tr("ui.true_calculated_health", h_display=h_display),
                 self._tr("ui.design_capacity", unknown=f'{pmic.charge_full_design_uah} uAh' if pmic.charge_full_design_uah else 'UNKNOWN'),
-                self._tr("ui.charge_cycle_count", unknown=pmic.cycle_count if pmic.cycle_count is not None else 'UNKNOWN'),
+                self._tr("ui.charge_cycle_count", unknown=pmic.cycle_count if pmic.cycle_count is not None else (pmic.cycle_status or 'UNKNOWN')),
             ]
             if pmic.fault_flags:
                 out_lines.append(self._tr("ui.potential_fault_indicators"))
@@ -432,7 +432,9 @@ class BoardDiagTabMixin:
             is_ar = self.current_lang == "ar"
             out = [self._tr("ui.thermal_zones_zones", zones=len(zones), status=thermal.status)]
             for z in zones:
-                if z.limit_c is None:
+                if not z.plausible:
+                    status = self._tr("report.zone_implausible")
+                elif z.limit_c is None:
                     status = self._tr("ui.unclassified_not_judged")
                 elif z.is_overheated:
                     status = self._tr("ui.above_c_limit", limit_c=z.limit_c)

@@ -10,7 +10,7 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Optional, Tuple, Any
 from core.adb_bridge import ADBBridge
 from core.result import Evidence, Status, CheckResult, ProducesCheckResult, status_from_read, aggregate_status, Msg, M
-from core.readers import ReadResult, run_read, read_node, failure_status, parse_int, parse_bool_feature
+from core.readers import ReadResult, run_read, read_node, failure_status, parse_int, read_feature
 
 logger = logging.getLogger("HardwareTester")
 
@@ -169,7 +169,7 @@ class BluetoothDiagnostics(ProducesCheckResult):
 
 @dataclass
 class PeripheralChipsDiagnostics(ProducesCheckResult):
-    """Features DECLARED by the system image (pm has-system-feature). This is not a hardware test."""
+    """Features DECLARED by the system image (pm has-feature). This is not a hardware test."""
     check_id: str = "system.declared_features"
     gps_present: Optional[bool] = None
     gps_status: str = "UNKNOWN"
@@ -393,16 +393,20 @@ class HardwareTester:
             return cameras
 
         current: Optional[CameraInfo] = None
-        ids_seen = set()
+        by_id: Dict[str, CameraInfo] = {}
         for line in res.text.splitlines():
             s = line.strip()
             id_match = (re.search(r"Camera ID:\s*([0-9a-zA-Z_]+)", s)
                         or re.search(r"== Camera HAL device \S*/(\d+)\b", s)
                         or re.search(r"^Device\s+(\d+)\s+(?:is|static)", s))
-            if id_match and id_match.group(1) not in ids_seen:
-                ids_seen.add(id_match.group(1))
-                current = CameraInfo(camera_id=id_match.group(1))
-                cameras.append(current)
+            if id_match:
+                # A camera already listed (e.g. "Device 0 is closed" before its static section):
+                # the lines that follow belong to that camera, not to the last one created.
+                cam_id = id_match.group(1)
+                if cam_id not in by_id:
+                    by_id[cam_id] = CameraInfo(camera_id=cam_id)
+                    cameras.append(by_id[cam_id])
+                current = by_id[cam_id]
                 continue
             if current is None:
                 continue
@@ -454,7 +458,7 @@ class HardwareTester:
     # ------------------------------------------------------------------
     def diagnose_fingerprint(self, serial: str) -> FingerprintDiagnostics:
         fp = FingerprintDiagnostics()
-        feat = run_read(self.bridge, "pm has-system-feature android.hardware.fingerprint", serial=serial, timeout=5)
+        feat, declared = read_feature(self.bridge, "android.hardware.fingerprint", serial=serial, timeout=5)
         dfp = run_read(self.bridge, "dumpsys fingerprint", serial=serial, timeout=8)
         dbio = run_read(self.bridge, "dumpsys biometric", serial=serial, timeout=8)
         prop = run_read(self.bridge, "getprop ro.hardware.fingerprint", serial=serial, timeout=5)
@@ -465,7 +469,6 @@ class HardwareTester:
 
         combined = f"{dfp.text}\n{dbio.text}"
         fp.raw_details = combined[:4000]
-        declared = parse_bool_feature(feat.text) if feat.ok else None
 
         hw_error = re.search(r"(?i)(hw_unavailable|hardware not available|error_hw_unavailable)", combined)
         # A sensor entry reported by the fingerprint HAL / service
@@ -553,8 +556,7 @@ class HardwareTester:
     # ------------------------------------------------------------------
     def diagnose_sim_and_baseband(self, serial: str) -> SIMBasebandDiagnostics:
         diag = SIMBasebandDiagnostics()
-        feat = run_read(self.bridge, "pm has-system-feature android.hardware.telephony", serial=serial, timeout=5)
-        diag.has_telephony_feature = parse_bool_feature(feat.text) if feat.ok else None
+        feat, diag.has_telephony_feature = read_feature(self.bridge, "android.hardware.telephony", serial=serial, timeout=5)
         props = {}
         for name in ("gsm.sim.state", "gsm.sim.state.2", "gsm.version.baseband", "gsm.operator.alpha", "gsm.network.type"):
             r = run_read(self.bridge, f"getprop {name}", serial=serial, timeout=5)
@@ -690,11 +692,9 @@ class HardwareTester:
     # ------------------------------------------------------------------
     def diagnose_bluetooth(self, serial: str) -> BluetoothDiagnostics:
         diag = BluetoothDiagnostics()
-        feat = run_read(self.bridge, "pm has-system-feature android.hardware.bluetooth", serial=serial, timeout=4)
-        ble = run_read(self.bridge, "pm has-system-feature android.hardware.bluetooth_le", serial=serial, timeout=4)
+        feat, declared = read_feature(self.bridge, "android.hardware.bluetooth", serial=serial, timeout=4)
+        _ble, diag.ble_supported = read_feature(self.bridge, "android.hardware.bluetooth_le", serial=serial, timeout=4)
         bt = run_read(self.bridge, "dumpsys bluetooth_manager", serial=serial, timeout=6)
-        declared = parse_bool_feature(feat.text) if feat.ok else None
-        diag.ble_supported = parse_bool_feature(ble.text) if ble.ok else None
         diag.evidence = [feat.evidence(), bt.evidence()]
 
         if bt.ok:
@@ -741,9 +741,8 @@ class HardwareTester:
         values = {}
         for key, feature in (("gps", "android.hardware.location.gps"), ("nfc", "android.hardware.nfc"),
                              ("otg", "android.hardware.usb.host")):
-            r = run_read(self.bridge, f"pm has-system-feature {feature}", serial=serial, timeout=4)
+            r, values[key] = read_feature(self.bridge, feature, serial=serial, timeout=4)
             reads.append(r)
-            values[key] = parse_bool_feature(r.text) if r.ok else None
             diag.evidence.append(r.evidence(f"{feature}={values[key]}"))
 
         def label(v):
@@ -860,7 +859,12 @@ class HardwareTester:
             report.possible_causes = [M("audio.cause.codec_kernel"), M("audio.cause.codec_bus"), M("audio.cause.driver")]
         elif report.cards_detected or report.output_threads > 0:
             report.status = str(Status.PASS)
-            report.diagnosis = M("audio.ok", cards=len(report.cards_detected), threads=report.output_threads)
+            if cards.ok:
+                report.diagnosis = M("audio.ok", cards=len(report.cards_detected), threads=report.output_threads)
+            else:
+                # The card list was not read (often SELinux): say so instead of counting zero cards.
+                report.diagnosis = M("audio.ok_cards_unread", threads=report.output_threads,
+                                     status=str(failure_status([cards])))
         else:
             report.status = str(failure_status([af, cards]))
             report.diagnosis = M("audio.unreadable")

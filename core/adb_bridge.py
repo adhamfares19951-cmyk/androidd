@@ -795,7 +795,7 @@ class ADBBridge:
         Pair with Android 11+ Wireless Debugging using 6-digit pairing code.
         Format: host_port = '192.168.1.50:37123', pairing_code = '123456'
         """
-        logger.info(f"Pairing with {host_port} using code {pairing_code}...")
+        logger.info(f"Pairing with {host_port}...")  # the pairing code is a secret: never logged
         code, out, err = self.run_adb(["pair", host_port.strip(), pairing_code.strip()], timeout=20)
         msg = f"{out}\n{err}".strip()
         if code == 0 and "successfully paired" in msg.lower():

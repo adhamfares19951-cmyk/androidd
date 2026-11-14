@@ -315,7 +315,7 @@ class TestStorageBenchmarkMatrix(_Base):
 
 
 class TestHardwareMatrix(_Base):
-    FEATURES = {"has-system-feature": (0, "true", "")}
+    FEATURES = {"pm has-feature": (0, "true", "")}
 
     def test_fingerprint(self):
         def check(b):
