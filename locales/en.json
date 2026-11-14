@@ -380,6 +380,7 @@
   "camera.facing.UNKNOWN": "UNKNOWN",
   "fp.hw_unavailable": "The fingerprint service reports the hardware as unavailable.",
   "fp.service_missing": "The device declares a fingerprint sensor but the fingerprint service is not running.",
+  "fp.hal_crash_loop": "The fingerprint driver ({process}) crashed {count} times in Android's crash log ({signal}). The sensor cannot work while its driver keeps crashing, even though the service still lists it.",
   "fp.reported": "The fingerprint sensor is reported by the fingerprint service. A touch / enrolment test is still needed to confirm it works.",
   "fp.not_declared": "The device does not declare a fingerprint sensor.",
   "fp.unknown": "The fingerprint sensor state could not be determined from the service output.",

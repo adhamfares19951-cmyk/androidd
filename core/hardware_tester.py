@@ -326,7 +326,42 @@ _SENSOR_LINE = re.compile(
 )
 
 
+_CRASH_PID_RE = re.compile(r"pid: (\d+), tid: \d+, name: .*>>> (\S+) <<<")
+_CRASH_SIGNAL_RE = re.compile(r"(signal \d+ \([A-Z]+\))")
+
+
+def _hal_crashes(crash_log: str, process_pattern: str) -> List[Dict[str, Any]]:
+    """
+    Separate crashes (one per pid) of processes matching `process_pattern` in `logcat -b crash` output:
+    [{"pid", "process", "signal", "lines"}], oldest first. Only the debuggerd "pid: N ... >>> path <<<"
+    header counts as a crash; other mentions of the path (backtrace frames) do not.
+    """
+    crashes: Dict[str, Dict[str, Any]] = {}
+    current: Optional[Dict[str, Any]] = None
+    for line in (crash_log or "").splitlines():
+        _, _, msg = line.partition(" : ")
+        msg = msg.strip() if msg else line.strip()
+        m = _CRASH_PID_RE.search(msg)
+        if m:
+            current = None
+            if re.search(process_pattern, m.group(2)) and m.group(1) not in crashes:
+                current = {"pid": m.group(1), "process": m.group(2), "signal": None, "lines": [msg]}
+                crashes[m.group(1)] = current
+            continue
+        if current is not None and len(current["lines"]) < 6:
+            s = _CRASH_SIGNAL_RE.search(msg)
+            if s and current["signal"] is None:
+                current["signal"] = s.group(1)
+            if msg.startswith(("signal ", "Cause:", "Abort message:")):
+                current["lines"].append(msg)
+    return list(crashes.values())
+
+
 class HardwareTester:
+    # Fingerprint HAL processes (AOSP and vendor names) and how many separate crashes make a crash loop.
+    FP_HAL_PATTERN = r"(?i)biometrics\.fingerprint|fingerprint.*(hal|service)|/fpc|goodix.*fp"
+    HAL_CRASH_LOOP_MIN = 3
+
     def __init__(self, bridge: Optional[ADBBridge] = None):
         self.bridge = bridge or ADBBridge()
         self.last_sensor_read: Optional[ReadResult] = None
@@ -470,6 +505,18 @@ class HardwareTester:
         combined = f"{dfp.text}\n{dbio.text}"
         fp.raw_details = combined[:4000]
 
+        # Android's crash log (readable without root): a fingerprint HAL that keeps crashing means the
+        # sensor cannot work, even while the service still lists the sensor and its saved prints.
+        crash = run_read(self.bridge, "logcat -b crash -d -t 2000", serial=serial, timeout=10, source="logcat -b crash")
+        hal_crashes = _hal_crashes(crash.text, self.FP_HAL_PATTERN) if crash.ok else []
+        if hal_crashes:
+            fp.evidence.append(crash.evidence(f"{len(hal_crashes)} crash(es) of {hal_crashes[0]['process']}")
+                               if len(hal_crashes) < self.HAL_CRASH_LOOP_MIN else
+                               Evidence(source="logcat -b crash", exit_code=crash.exit_code,
+                                        raw_excerpt="\n".join(hal_crashes[0]["lines"])
+                                        + f"\n[parsed] {len(hal_crashes)} separate crashes (pids "
+                                        + ", ".join(c["pid"] for c in hal_crashes[:10]) + ")"))
+
         hw_error = re.search(r"(?i)(hw_unavailable|hardware not available|error_hw_unavailable)", combined)
         # A sensor entry reported by the fingerprint HAL / service
         sensor_reported = re.search(r"(?i)(\"sensorId\"|sensorId[=:]\s*\d|FingerprintSensorProperties|\bprints\b\s*[:=]|Fingerprint sensor \d)", combined)
@@ -479,6 +526,14 @@ class HardwareTester:
             fp.is_functional = False
             fp.error_status = "HW_UNAVAILABLE"
             fp.diagnosis = M("fp.hw_unavailable")
+            fp.possible_causes = [M("fp.cause.flex"), M("fp.cause.sensor"), M("fp.cause.firmware")]
+        elif len(hal_crashes) >= self.HAL_CRASH_LOOP_MIN:
+            first = hal_crashes[0]
+            fp.status = str(Status.FAIL)
+            fp.is_functional = False
+            fp.error_status = "HAL_CRASH_LOOP"
+            fp.diagnosis = M("fp.hal_crash_loop", count=len(hal_crashes), process=first["process"],
+                             signal=first["signal"] or "-")
             fp.possible_causes = [M("fp.cause.flex"), M("fp.cause.sensor"), M("fp.cause.firmware")]
         elif dfp.service_missing and declared:
             fp.status = str(Status.FAIL)

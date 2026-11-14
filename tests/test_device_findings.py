@@ -161,6 +161,53 @@ class TestAudioCardsUnreadable(unittest.TestCase):
         self.assertIn("NEEDS_ROOT", text)
 
 
+def fp_crash(pid, path="/vendor/bin/hw/android.hardware.biometrics.fingerprint@2.1-service"):
+    """One crash record as the phone's `logcat -b crash` prints it."""
+    return "\n".join(
+        f"11-14 11:10:44.187  {pid + 5}  {pid + 5} F DEBUG   : {line}" for line in (
+            "*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***",
+            "Process uptime: 0s",
+            f"Cmdline: {path}",
+            f"pid: {pid}, tid: {pid}, name: android.hardwar  >>> {path} <<<",
+            "signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0",
+            "Cause: null pointer dereference",
+        ))
+
+
+class TestFingerprintHalCrashLoop(unittest.TestCase):
+    """The phone's fingerprint flex cable is cut: the HAL crashes at start every 5 s (SIGSEGV), yet
+    `dumpsys fingerprint` still lists the sensor and the saved prints, which used to give PASS."""
+    DUMPSYS = (0, 'Fingerprint21 {"service":"[FingerprintService]Fingerprint21","prints":[{"id":0,"count":2}]} sensorId: 0', "")
+
+    def check(self, crash_log):
+        b = FakeBridge({"pm has-feature android.hardware.fingerprint": (0, "true", ""),
+                        "dumpsys fingerprint": self.DUMPSYS,
+                        "logcat -b crash": (0, crash_log, "")})
+        return HardwareTester(b).diagnose_fingerprint("s")
+
+    def test_repeated_hal_crashes_are_a_fail(self):
+        fp = self.check("\n".join(fp_crash(p) for p in (8749, 8771, 8790)))
+        self.assertEqual(fp.status, "FAIL")
+        self.assertFalse(fp.is_functional)
+        self.assertEqual(fp.error_status, "HAL_CRASH_LOOP")
+        self.assertTrue(fp.possible_causes)
+        self.assertIn("3", render(fp.diagnosis, "en"))
+        self.assertTrue(any("SIGSEGV" in e.raw_excerpt and "fingerprint@2.1-service" in e.raw_excerpt for e in fp.evidence))
+
+    def test_one_crash_is_not_a_fail(self):
+        self.assertEqual(self.check(fp_crash(8749)).status, "PASS")
+
+    def test_other_process_crashing_is_not_a_fingerprint_fail(self):
+        log = "\n".join(fp_crash(p, "/system/bin/cameraserver") for p in (1, 2, 3))
+        self.assertEqual(self.check(log).status, "PASS")
+
+    def test_unreadable_crash_log_keeps_the_old_verdict(self):
+        b = FakeBridge({"pm has-feature android.hardware.fingerprint": (0, "true", ""),
+                        "dumpsys fingerprint": self.DUMPSYS,
+                        "logcat -b crash": (1, "", "logcat: permission denied")})
+        self.assertEqual(HardwareTester(b).diagnose_fingerprint("s").status, "PASS")
+
+
 class TestStressLoopsAlwaysEnd(_Db):
     """On the phone the 4 busy loops kept running at 100% CPU after the test: `$!` was the `timeout`
     process, and killing it at the end orphaned the loop inside it with no time limit left."""

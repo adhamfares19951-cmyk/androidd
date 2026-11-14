@@ -380,6 +380,7 @@
   "camera.facing.UNKNOWN": "UNKNOWN",
   "fp.hw_unavailable": "Le service d'empreintes indique que le matériel est indisponible.",
   "fp.service_missing": "L'appareil déclare un capteur d'empreintes mais le service d'empreintes ne fonctionne pas.",
+  "fp.hal_crash_loop": "Le pilote d'empreinte ({process}) a planté {count} fois dans le journal des plantages d'Android ({signal}). Le capteur ne peut pas fonctionner tant que son pilote plante, même si le service le liste encore.",
   "fp.reported": "Le capteur d'empreintes est indiqué par le service d'empreintes. Un test de contact / d'enregistrement reste nécessaire pour confirmer qu'il fonctionne.",
   "fp.not_declared": "L'appareil ne déclare pas de capteur d'empreintes.",
   "fp.unknown": "L'état du capteur d'empreintes n'a pas pu être déterminé à partir de la sortie du service.",
