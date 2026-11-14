@@ -980,7 +980,7 @@
   "ui.touch_test_2": "اختبار اللمس",
   "ui.touch_test_grid_opened_on_device": "تم فتح شبكة فحص اللمس على شاشة الهاتف!\nالمس جميع المربعات للتأكد من خلو الشاشة من المناطق الميتة (Dead Zones).",
   "ui.full_scan_finished": "اكتمل الفحص الشامل",
-  "ui.full_scan_finished_board_checks_apps": "تم فحص العتاد بالكامل!\nصحة اللوحة الأم: {overall_health}\nتطبيقات بأذونات حساسة: {sensitive_apps}\nكفاءة البطارية الحقيقية: {true_health_pct}%",
+  "ui.full_scan_finished_board_checks_apps": "تم فحص العتاد بالكامل!\nصحة اللوحة الأم: {overall_health}\nتطبيقات بأذونات حساسة: {sensitive_apps}\nكفاءة البطارية الحقيقية: {true_health_pct}",
   "ui.select_a_device_first": "الرجاء اختيار هاتف أولاً.",
   "ui.deploying_full_screen_rgbw_dead_pixel": "جاري تشغيل شاشة فحص الألوان والبكسلات الميتة (RGBW) وتفعيل تتبع مسار اللمس...\n",
   "ui.screen_test_status": "حالة فحص الشاشة:\n{msg}\n",

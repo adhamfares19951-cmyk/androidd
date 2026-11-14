@@ -4,7 +4,7 @@ import threading
 import tkinter as tk
 from tkinter import messagebox
 import customtkinter as ctk
-from ui.ui_helpers import _fmt
+from ui.ui_helpers import _fmt, value_or_status
 from ui.theme import (
     BG_CANVAS,
     BG_TILE,
@@ -356,7 +356,7 @@ class DashboardTabMixin:
             )
 
             def done():
-                messagebox.showinfo(self._tr("ui.full_scan_finished"), self._tr("ui.full_scan_finished_board_checks_apps", overall_health=bdiag.overall_health, sensitive_apps=len(sec.sensitive_apps), true_health_pct=bdiag.pmic.true_health_pct))
+                messagebox.showinfo(self._tr("ui.full_scan_finished"), self._tr("ui.full_scan_finished_board_checks_apps", overall_health=bdiag.overall_health, sensitive_apps=len(sec.sensitive_apps), true_health_pct=value_or_status(bdiag.pmic.true_health_pct, "%", bdiag.pmic.health_verdict)))
                 self.run_profile_async()
             self.after(0, done)
 

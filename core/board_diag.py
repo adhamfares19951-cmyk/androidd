@@ -1319,6 +1319,21 @@ class MotherboardDiagnostics:
             diag = M("bench.ok", write=write_speed, read=read_speed)
         return write_speed, read_speed, str(status), diag
 
+    STRESS_MARKER = "adp_stress_loop"
+    # "[a]dp..." matches the loops but not the cleanup shell, whose own command line holds "[a]dp..."
+    _STRESS_PATTERN = "[a]dp_stress_loop"
+
+    def _stop_stress_loops(self, serial: str) -> Evidence:
+        """Kill the stress loops by name and count what is left (each loop also ends at its own deadline)."""
+        res = run_read(self.bridge,
+                       f"pkill -f '{self._STRESS_PATTERN}'; sleep 1; ps -A -o ARGS | grep -c '{self._STRESS_PATTERN}'",
+                       serial=serial, timeout=8, source="stress cleanup (pkill, then ps count)")
+        left = parse_int(res.text)
+        if left:
+            logger.warning(f"{left} stress loop(s) still running on {serial}; they end at their deadline")
+            return res.evidence(f"{left} stress loop(s) still running after kill; each ends at its deadline")
+        return res.evidence("stress loops left running: " + ("0" if left == 0 else "unknown"))
+
     def run_cpu_pmic_stress_test(
         self,
         serial: str,
@@ -1326,12 +1341,14 @@ class MotherboardDiagnostics:
         progress_callback: Optional[Callable[[StressTestSnapshot, str], None]] = None
     ) -> StressTestReport:
         """
-        CPU load test: starts 4 busy loops (each limited by `timeout`), samples CPU frequency,
-        battery voltage and one thermal zone every 2 seconds. Unreadable samples stay None.
+        CPU load test: starts 4 busy loops, samples CPU frequency, battery voltage and one thermal
+        zone every 2 seconds. Unreadable samples stay None.
+        Each loop checks its own deadline, so it ends even if the cleanup below never runs (lost
+        connection, crash). It is not wrapped in `timeout`: killing that wrapper orphaned the loop,
+        which then ran forever at 100% CPU (seen on a Redmi Note 9).
         """
         logger.info(f"Starting {duration_sec}s CPU stress test on {serial}...")
         report = StressTestReport(duration_seconds=duration_sec)
-        pid_file = "/data/local/tmp/ad_stress.pids"
 
         def read_voltage() -> Optional[float]:
             res = read_node(self.bridge, ["/sys/class/power_supply/battery/voltage_now"], serial=serial, timeout=3)
@@ -1354,9 +1371,11 @@ class MotherboardDiagnostics:
         report.temp_source = "/sys/class/thermal/thermal_zone0/temp"
 
         limit = duration_sec + 5
+        # $0 = STRESS_MARKER names the loops in `ps`; $1 = the deadline (epoch seconds) each loop checks.
         launch_cmd = (
-            f"rm -f {pid_file}; for i in 1 2 3 4; do "
-            f"timeout {limit} sh -c 'while :; do :; done' >/dev/null 2>&1 & echo $! >> {pid_file}; done"
+            f"end=$(( $(date +%s) + {limit} )); for i in 1 2 3 4; do "
+            f"sh -c 'while [ $(date +%s) -lt $1 ]; do i=0; while [ $i -lt 5000 ]; do i=$((i+1)); done; done' "
+            f"{self.STRESS_MARKER} $end >/dev/null 2>&1 & done"
         )
         launch = run_read(self.bridge, launch_cmd, serial=serial, timeout=8, source="stress launcher")
         report.evidence.append(launch.evidence())
@@ -1388,7 +1407,7 @@ class MotherboardDiagnostics:
                     progress_callback(snap, M("stress.progress", second=snap.second, total=duration_sec,
                                               freq=snap.avg_freq_mhz, volts=cur_v, temp=cur_t))
         finally:
-            self.bridge.shell(f"kill $(cat {pid_file}) 2>/dev/null; rm -f {pid_file}", serial=serial, timeout=5)
+            report.evidence.append(self._stop_stress_loops(serial))
 
         if freqs_all:
             report.max_freq_mhz = max(freqs_all)

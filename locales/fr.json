@@ -980,7 +980,7 @@
   "ui.touch_test_2": "Test tactile",
   "ui.touch_test_grid_opened_on_device": "Grille du test tactile ouverte sur l'appareil. Touchez toutes les cases pour repérer les zones mortes.",
   "ui.full_scan_finished": "Diagnostic complet terminé",
-  "ui.full_scan_finished_board_checks_apps": "Diagnostic complet terminé.\nVérifications de la carte : {overall_health}\nApplications avec autorisations sensibles : {sensitive_apps}\nCapacité de la batterie par rapport à la capacité nominale : {true_health_pct} %",
+  "ui.full_scan_finished_board_checks_apps": "Diagnostic complet terminé.\nVérifications de la carte : {overall_health}\nApplications avec autorisations sensibles : {sensitive_apps}\nCapacité de la batterie par rapport à la capacité nominale : {true_health_pct}",
   "ui.select_a_device_first": "Sélectionnez d'abord un appareil.",
   "ui.deploying_full_screen_rgbw_dead_pixel": "Envoi de l'écran plein RGBW de test des pixels morts et des couleurs, avec suivi tactile...\n",
   "ui.screen_test_status": "État du test de l'écran :\n{msg}\n",

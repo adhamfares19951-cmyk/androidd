@@ -16,8 +16,8 @@ logger = logging.getLogger("PartitionBackup")
 class PartitionInfo:
     name: str
     block_path: str
-    size_bytes: int = 0
-    size_mb: float = 0.0
+    size_bytes: Optional[int] = None   # None: size not readable (often SELinux), never shown as 0
+    size_mb: Optional[float] = None
     category: str = "Standard"  # Network_IMEI, Calibration, Bootloader, Firmware, UserData
     is_critical: bool = False
 
@@ -156,7 +156,7 @@ class PartitionBackupManager:
                     name=part_name,
                     block_path=target_block,
                     size_bytes=size_b,
-                    size_mb=round(size_b / (1024 * 1024), 2) if size_b else 0.0,
+                    size_mb=round(size_b / (1024 * 1024), 2) if size_b is not None else None,
                     category=cat,
                     is_critical=is_crit
                 ))
@@ -165,13 +165,13 @@ class PartitionBackupManager:
         partitions.sort(key=lambda x: (not x.is_critical, x.category, x.name))
         return partitions
 
-    def _get_block_size(self, serial: str, block_path: str) -> int:
+    def _get_block_size(self, serial: str, block_path: str) -> Optional[int]:
         block_basename = os.path.basename(block_path)
         # Check /sys/class/block/<name>/size (in 512-byte sectors)
         code, out, _ = self.bridge.shell(f"cat /sys/class/block/{block_basename}/size 2>/dev/null", serial=serial, timeout=2)
         if code == 0 and out.strip().isdigit():
             return int(out.strip()) * 512
-        return 0
+        return None
 
     def _scan_from_proc_partitions(self, serial: str) -> List[PartitionInfo]:
         partitions = []

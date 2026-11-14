@@ -36,6 +36,13 @@ def _fmt(value: Any, unit: str = "") -> str:
     return f"{value} {unit}".strip()
 
 
+def value_or_status(value: Any, unit: str = "", status: Any = None) -> str:
+    """A reading with its unit, or, when it was not read, why (NEEDS_ROOT / UNKNOWN) without the unit."""
+    if value is None:
+        return str(status or "UNKNOWN")
+    return f"{value}{unit}" if unit == "%" else f"{value} {unit}".strip()
+
+
 def format_evidence_for_display(evidence_items: Any, is_ar: bool = True, lang: Any = None) -> str:
     """Renders a list of Evidence objects with source and excerpt formatted separately for UI display."""
     if not evidence_items:

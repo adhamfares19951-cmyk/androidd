@@ -161,6 +161,62 @@ class TestAudioCardsUnreadable(unittest.TestCase):
         self.assertIn("NEEDS_ROOT", text)
 
 
+class TestStressLoopsAlwaysEnd(_Db):
+    """On the phone the 4 busy loops kept running at 100% CPU after the test: `$!` was the `timeout`
+    process, and killing it at the end orphaned the loop inside it with no time limit left."""
+
+    def run_stress(self, bridge):
+        with patch("core.board_diag.time.sleep"):
+            return MotherboardDiagnostics(bridge, self.db).run_cpu_pmic_stress_test("s", duration_sec=2)
+
+    def test_loops_end_by_themselves_and_are_killed_by_name(self):
+        b = FakeBridge({"[a]dp_stress_loop": (0, "0", "")})
+        self.run_stress(b)
+        launch = next(c for c in b.commands if "while" in c)
+        self.assertNotIn("timeout ", launch)                      # no wrapper whose death orphans the loop
+        self.assertIn("date +%s", launch)                         # each loop checks its own deadline
+        self.assertIn("adp_stress_loop", launch)
+        cleanup = [c for c in b.commands if "pkill" in c]
+        self.assertTrue(cleanup)
+        self.assertIn("[a]dp_stress_loop", cleanup[0])            # the pattern cannot match the cleanup shell itself
+
+    def test_loops_left_running_are_reported(self):
+        b = FakeBridge({"[a]dp_stress_loop": (0, "2", "")})
+        rep = self.run_stress(b)
+        self.assertTrue(any("2 stress loop" in e.raw_excerpt for e in rep.evidence))
+
+
+class TestDeepScanDialogShowsWhyNotRead(unittest.TestCase):
+    """The deep-scan dialog said "Battery capacity vs design: UNKNOWN%" on the phone (blocked: NEEDS_ROOT)."""
+
+    def test_value_or_status(self):
+        from ui.ui_helpers import value_or_status
+        self.assertEqual(value_or_status(None, "%", "NEEDS_ROOT"), "NEEDS_ROOT")
+        self.assertEqual(value_or_status(87.5, "%", "PASS"), "87.5%")
+        self.assertEqual(value_or_status(None, "%", None), "UNKNOWN")
+
+    def test_dialog_text_has_no_unit_after_a_status(self):
+        for lang in ("ar", "en", "fr"):
+            text = t("ui.full_scan_finished_board_checks_apps", lang, overall_health="UNKNOWN", sensitive_apps=20,
+                     true_health_pct="NEEDS_ROOT")
+            self.assertIn("NEEDS_ROOT", text, lang)
+            self.assertNotRegex(text, r"NEEDS_ROOT\s*%", lang)
+
+
+class TestPartitionSizeNotInvented(unittest.TestCase):
+    def test_denied_size_is_unknown_not_zero(self):
+        from core.partition_backup import PartitionBackupManager
+        b = FakeBridge({"ls -d /dev/block/bootdevice/by-name": (1, "", "No such file or directory"),
+                        "ls -d /dev/block/by-name": (0, "/dev/block/by-name", ""),
+                        "ls -l /dev/block/by-name": (0, "lrwxrwxrwx 1 root root 21 2026-11-12 10:27 boot -> /dev/block/mmcblk0p34", ""),
+                        "/size": (1, "", "cat: /sys/class/block/mmcblk0p34/size: Permission denied"),
+                        "/proc/partitions": (1, "", "cat: /proc/partitions: Permission denied")})
+        parts = PartitionBackupManager(bridge=b).scan_partition_table("s")
+        boot = next(p for p in parts if p.name == "boot")
+        self.assertIsNone(boot.size_bytes)
+        self.assertIsNone(boot.size_mb)
+
+
 class TestCameraSectionsAfterDeviceList(unittest.TestCase):
     """The Redmi lists every camera ("Device N is closed") before the per-camera static sections."""
 
