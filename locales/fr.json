@@ -458,6 +458,8 @@
   "panel.not_exposed": "Le nom du contrôleur d'écran n'est exposé ni dans le journal du noyau ni dans sysfs.",
   "companion.apk_missing": "APK compagnon introuvable : {path}.",
   "companion.install_failed": "L'installation de l'APK a échoué : {output}",
+  "companion.install_user_restricted": "Le téléphone a refusé d'installer l'application compagnon ({output}). Sur Xiaomi / Redmi / POCO, activez « Installer via USB » dans les options pour les développeurs (un compte Mi et une carte SIM peuvent être demandés) ; sur les autres téléphones, acceptez la demande d'installation à l'écran. Puis relancez le test.",
+  "companion.permission_denied": "Non testé : le téléphone n'a pas accordé l'autorisation {permission} à l'application compagnon. Appuyez sur Autoriser quand l'application la demande, ou activez-la dans ses paramètres.",
   "colortest.started": "Test des couleurs ouvert sur le téléphone. Touchez l'écran pour changer de couleur.",
   "colortest.failed": "Impossible d'ouvrir le test des couleurs : {error}",
   "colortest.stopped": "Test des couleurs fermé et superpositions tactiles désactivées.",

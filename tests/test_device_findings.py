@@ -208,6 +208,72 @@ class TestFingerprintHalCrashLoop(unittest.TestCase):
         self.assertEqual(HardwareTester(b).diagnose_fingerprint("s").status, "PASS")
 
 
+MIUI_NO_GRANT = (1, "", "Performing Streamed Install\nadb.exe: failed to install companion_diag.apk: \n"
+                 "Exception occurred while executing 'install':\njava.lang.SecurityException: You need the "
+                 "android.permission.INSTALL_GRANT_RUNTIME_PERMISSIONS permission to use the "
+                 "PackageManager.INSTALL_GRANT_RUNTIME_PERMISSIONS flag\n"
+                 + "\n".join(f"\tat com.android.server.pm.Frame{i}(File.java:{i})" for i in range(40)))
+
+
+class TestCompanionOnMiui(unittest.TestCase):
+    """MIUI refuses `adb install -g` (and `pm grant`) unless "USB debugging (Security settings)" is on."""
+
+    def setUp(self):
+        import core.companion as comp
+        self.comp = comp
+        self.tmp = tempfile.TemporaryDirectory()
+        self.apk = os.path.join(self.tmp.name, "companion_diag.apk")
+        with open(self.apk, "wb") as f:
+            f.write(b"PK")
+        p = patch.object(comp, "apk_path", return_value=self.apk)
+        p.start()
+        self.addCleanup(p.stop)
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_install_without_g_when_the_phone_refuses_it(self):
+        from tests.test_companion import FakePhone
+        phone = FakePhone(['ADP|{"type":"done","run":"RUN"}'], install_replies=[MIUI_NO_GRANT, (0, "Success", "")])
+        run = self.comp.run_companion(phone, "S1", sleep=lambda s: None)
+        self.assertIsNone(run.error)
+        installs = [c[1] for c in phone.calls if c[0] == "adb"]
+        self.assertEqual(installs, [("install", "-r", "-g", self.apk), ("install", "-r", self.apk)])
+
+    def test_install_error_shows_the_exception_line(self):
+        from tests.test_companion import FakePhone
+        refused = (1, "", MIUI_NO_GRANT[2].replace("You need the android.permission.INSTALL_GRANT_RUNTIME_PERMISSIONS "
+                                                   "permission to use the PackageManager.INSTALL_GRANT_RUNTIME_PERMISSIONS flag",
+                                                   "Installs are disabled (INSTALL_FAILED_USER_RESTRICTED)"))
+        run = self.comp.run_companion(FakePhone([], install_replies=[refused]), "S1", sleep=lambda s: None)
+        text = render(run.error, "en")
+        self.assertIn("java.lang.SecurityException: Installs are disabled (INSTALL_FAILED_USER_RESTRICTED)", text)
+        self.assertNotIn("\tat ", text)
+
+    def test_user_restricted_install_says_which_setting(self):
+        from tests.test_companion import FakePhone
+        refused = (1, "", "Performing Streamed Install\nadb.exe: failed to install companion_diag.apk: "
+                          "Failure [INSTALL_FAILED_USER_RESTRICTED: Install canceled by user]")
+        run = self.comp.run_companion(FakePhone([], install_replies=[refused]), "S1", sleep=lambda s: None)
+        self.assertEqual(run.error.key, "companion.install_user_restricted")
+        self.assertIn("INSTALL_FAILED_USER_RESTRICTED", render(run.error, "en"))
+
+    def test_denied_permission_is_not_tested_with_a_reason(self):
+        run = self.comp.CompanionRun(run_id="r")
+        run.results = {"cameras": {"error": "permission_denied:CAMERA"}, "audio": {"error": "permission_denied:RECORD_AUDIO"}}
+        checks = {c.check_id: c for c in self.comp.judge(run)}
+        for cid in ("companion.cameras", "companion.audio_loop"):
+            self.assertEqual(checks[cid].status, "UNKNOWN", cid)
+            self.assertEqual(checks[cid].detail.key, "companion.permission_denied", cid)
+
+    def test_app_asks_for_camera_and_microphone_before_testing(self):
+        src = open(os.path.join(os.path.dirname(__file__), "..", "companion", "src", "com", "androiddoctor",
+                                "companion", "DiagActivity.java"), encoding="utf-8").read()
+        self.assertIn("requestPermissions(", src)
+        self.assertIn("onRequestPermissionsResult(", src)
+        on_create = src[src.index("protected void onCreate"):src.index("// ---", src.index("protected void onCreate"))]
+        self.assertNotIn("new Thread(() -> runAll(tests)", on_create.split("requestPermissions(")[0]
+                         if "requestPermissions(" in on_create else on_create)
+
+
 class TestStressLoopsAlwaysEnd(_Db):
     """On the phone the 4 busy loops kept running at 100% CPU after the test: `$!` was the `timeout`
     process, and killing it at the end orphaned the loop inside it with no time limit left."""

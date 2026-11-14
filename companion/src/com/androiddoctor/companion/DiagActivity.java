@@ -87,7 +87,35 @@ public class DiagActivity extends Activity {
                 if (ALL.contains(t.trim())) tests.add(t.trim());
             }
         }
+        pending = tests;
+        // `adb install -g` / `pm grant` are refused on some phones (MIUI without "USB debugging
+        // (Security settings)"): ask for what the requested tests need, then start. A refusal is
+        // reported per test as permission_denied, never as a hardware fault.
+        List<String> missing = new ArrayList<>();
+        if (tests.contains("cameras") && !granted(Manifest.permission.CAMERA)) missing.add(Manifest.permission.CAMERA);
+        if (tests.contains("audio") && !granted(Manifest.permission.RECORD_AUDIO)) missing.add(Manifest.permission.RECORD_AUDIO);
+        if (missing.isEmpty()) {
+            start();
+        } else {
+            show("Android Doctor Pro\nTap Allow so the camera and microphone tests can run.\n\n");
+            requestPermissions(missing.toArray(new String[0]), PERMISSION_REQUEST);
+        }
+    }
+
+    static final int PERMISSION_REQUEST = 1;
+    private Set<String> pending;
+    private boolean started = false;
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        if (requestCode == PERMISSION_REQUEST) start();
+    }
+
+    private void start() {
+        if (started) return;
+        started = true;
         show("Android Doctor Pro\nRunning tests. Keep the phone still on a table.\n\n");
+        final Set<String> tests = pending;
         new Thread(() -> runAll(tests), "adp-diag").start();
     }
 

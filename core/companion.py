@@ -18,6 +18,7 @@ The app only sends raw readings. Everything is judged here, with the raw line as
 
 import json
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -73,20 +74,43 @@ def parse_lines(text: str, run_id: str) -> List[Dict[str, Any]]:
     return out
 
 
+def _install_failure_line(text: str) -> str:
+    """The line that says why `adb install` failed (Failure [...] or the exception), not the stack trace."""
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    for line in lines:
+        if line.startswith("Failure [") or re.match(r"^[\w.$]+(Exception|Error): ", line):
+            return line[:400]
+    useful = [l for l in lines if not l.startswith("at ")]
+    return (useful[-1] if useful else text.strip())[:400]
+
+
 def install(bridge, serial: str) -> tuple:
-    """(ok, output). Reinstalls when the phone has a companion signed with a different key."""
+    """
+    (ok, output). Reinstalls when the phone has a companion signed with a different key.
+    `-g` grants the permissions at install time. MIUI refuses that flag (and `pm grant`) unless
+    "USB debugging (Security settings)" is on, so the install is repeated without it and the app
+    asks for camera and microphone itself.
+    """
     path = apk_path()
     if not os.path.isfile(path):
         return False, M("companion.apk_missing", path=path)
-    code, out, err = bridge.run_adb(["install", "-r", "-g", path], serial=serial, timeout=120)
+    args = ["install", "-r", "-g", path]
+    code, out, err = bridge.run_adb(args, serial=serial, timeout=120)
     text = f"{out}\n{err}".strip()
+    if "INSTALL_GRANT_RUNTIME_PERMISSIONS" in text:
+        args = ["install", "-r", path]
+        code, out, err = bridge.run_adb(args, serial=serial, timeout=120)
+        text = f"{out}\n{err}".strip()
     if "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in text or "signatures do not match" in text.lower():
         bridge.shell(f"pm uninstall {PACKAGE}", serial=serial, timeout=30)
-        code, out, err = bridge.run_adb(["install", "-r", "-g", path], serial=serial, timeout=120)
+        code, out, err = bridge.run_adb(args, serial=serial, timeout=120)
         text = f"{out}\n{err}".strip()
     if code == 0 and "Success" in text:
         return True, text
-    return False, M("companion.install_failed", output=text[-400:])
+    if "INSTALL_FAILED_USER_RESTRICTED" in text:
+        # MIUI and some other ROMs: "Install via USB" is off, or its on-screen prompt was not accepted.
+        return False, M("companion.install_user_restricted", output=_install_failure_line(text))
+    return False, M("companion.install_failed", output=_install_failure_line(text))
 
 
 def run_companion(bridge, serial: str, tests: str = "all", timeout: float = 120.0,
@@ -205,10 +229,19 @@ def judge_vibration(run: CompanionRun) -> CheckResult:
     return cr
 
 
+def _permission_denied(result: dict) -> str:
+    """The Android permission the app was refused for this test ("" if none). Never a hardware verdict."""
+    err = str(result.get("error") or "")
+    return err.split(":", 1)[1] if err.startswith("permission_denied:") else ""
+
+
 def judge_audio(run: CompanionRun) -> CheckResult:
     r = run.results.get("audio", {})
     cr = CheckResult(check_id="companion.audio_loop", evidence=_ev(run, "audio"))
     snr = r.get("snr_db")
+    if _permission_denied(r):
+        cr.detail = M("companion.permission_denied", permission=_permission_denied(r))
+        return cr
     if r.get("error") or not isinstance(snr, (int, float)):
         cr.detail = M("companion.audio.not_measured", error=r.get("error", "-"))
         return cr
@@ -225,6 +258,9 @@ def judge_audio(run: CompanionRun) -> CheckResult:
 
 def judge_cameras(run: CompanionRun) -> List[CheckResult]:
     r = run.results.get("cameras", {})
+    if _permission_denied(r):
+        return [CheckResult(check_id="companion.cameras", evidence=_ev(run, "cameras"),
+                            detail=M("companion.permission_denied", permission=_permission_denied(r)))]
     if r.get("error"):
         return [CheckResult(check_id="companion.cameras", detail=M("companion.camera.not_tested", error=r["error"]),
                             evidence=_ev(run, "cameras"))]
