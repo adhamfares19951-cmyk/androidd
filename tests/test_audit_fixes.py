@@ -2,6 +2,7 @@
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from core.result import M
@@ -175,7 +176,7 @@ class VerdictTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as d:
                 path = DiagnosticReportExporter.generate_html_report(device_profile={"serial": "S"}, board_diag=board,
                                                                      output_dir=d, lang="en", **kw)
-                html = open(path, encoding="utf-8").read()
+                html = Path(path).read_text(encoding="utf-8")
             return _re.search(_re.escape(t("report.overall", "en")) + r': <span class="badge"[^>]*>([A-Z_]+)<', html).group(1)
         self.assertEqual(overall(), "PASS")
         self.assertEqual(overall(leakage_result={"status": "FAIL"}), "FAIL")      # was PASS before the fix

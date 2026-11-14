@@ -18,6 +18,7 @@ import inspect
 import os
 import typing
 import unittest
+from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -99,7 +100,7 @@ def _check_attribute_reads(tree, rel, classes, problems):
 
 def _check_file(path, classes, problems):
     rel = os.path.relpath(path, ROOT)
-    tree = ast.parse(open(path, encoding="utf-8").read())
+    tree = ast.parse(Path(path).read_text(encoding="utf-8"))
     _check_attribute_reads(tree, rel, classes, problems)
     for func in [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
         results = {}  # local name -> (dataclass, is_list)
@@ -173,7 +174,7 @@ if __name__ == "__main__":
 
 def _main_block_names(path):
     """Names bound only inside `if __name__ == "__main__":` (they do not exist when the module is imported)."""
-    tree = ast.parse(open(path, encoding="utf-8").read())
+    tree = ast.parse(Path(path).read_text(encoding="utf-8"))
     names = set()
     for node in tree.body:
         if (isinstance(node, ast.If) and isinstance(node.test, ast.Compare)
@@ -207,7 +208,7 @@ class UndefinedNameTests(unittest.TestCase):
         for path in sorted(files):
             rel = os.path.relpath(path, ROOT)
             mod = importlib.import_module(rel[:-3].replace(os.sep, "."))
-            table = symtable.symtable(open(path, encoding="utf-8").read(), path, "exec")
+            table = symtable.symtable(Path(path).read_text(encoding="utf-8"), path, "exec")
             main_only = _main_block_names(path)
             for name in sorted(global_refs(table)):
                 if not hasattr(mod, name) and not hasattr(builtins, name) and name not in main_only:

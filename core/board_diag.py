@@ -104,6 +104,7 @@ class PMICStatus(ProducesCheckResult):
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["evidence"] = [e.to_dict() if isinstance(e, Evidence) else e for e in self.evidence]
+        d["check_status"] = self.check_status   # a property: asdict() leaves it out
         return d
 
 

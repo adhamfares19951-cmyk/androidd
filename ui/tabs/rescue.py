@@ -227,6 +227,20 @@ class RescueTabMixin:
             ],
             cols=3,
         )
+        prov_url_row = ctk.CTkFrame(prov_card, fg_color="transparent")
+        prov_url_row.pack(fill="x", padx=14, pady=(0, 8))
+        self.prov_url_entry = ctk.CTkEntry(prov_url_row, placeholder_text="https://...", height=32)
+        style_entry(self.prov_url_entry, L)
+        b_url = make_button(prov_url_row, self._L(self._tr("btn_open_browser")), self._launch_prov_url,
+                            variant="secondary", height=32)
+        if L["is_rtl"]:
+            prov_url_row.grid_columnconfigure(1, weight=1)
+            b_url.grid(row=0, column=0, padx=3)
+            self.prov_url_entry.grid(row=0, column=1, padx=6, sticky="ew")
+        else:
+            prov_url_row.grid_columnconfigure(0, weight=1)
+            self.prov_url_entry.grid(row=0, column=0, padx=6, sticky="ew")
+            b_url.grid(row=0, column=1, padx=3)
         self.prov_log_text = make_console_box(
             prov_card, 90, L, self._L(self._tr("ui.click_inspect_setup_flags_to_verify"))
         )
@@ -528,7 +542,10 @@ class RescueTabMixin:
                 self._tr("ui.provisioning_status"),
                 self._tr("ui.device_provisioned", raw_provisioned_val=p_status.raw_provisioned_val, not_completed=self._tr("ui.yes_completed") if p_status.is_device_provisioned else self._tr("ui.not_completed")),
                 self._tr("ui.user_setup_complete", raw_setup_complete_val=p_status.raw_setup_complete_val, not_completed=self._tr("ui.yes_completed") if p_status.is_user_setup_complete else self._tr("ui.not_completed")),
-                self._tr("ui.result", status_summary=p_status.status_summary)
+                self._tr("ui.result", status_summary=p_status.status_summary),
+                self._tr("ui.frp_pst_block", value=p_status.pst_block_path),
+                self._tr("ui.oem_unlock_allowed", value=p_status.oem_unlock_allowed),
+                self._tr("ui.oem_unlock_supported", value=p_status.oem_unlock_supported),
             ]
             def upd():
                 self._set_box(self.prov_log_text, "\n".join(lines))
@@ -559,6 +576,22 @@ class RescueTabMixin:
             ok, msg = self.provisioning.launch_settings_activity(serial)
             def upd():
                 self._set_box(self.prov_log_text, f"{self._m(msg)}\n")
+            self.after(0, upd)
+        threading.Thread(target=task, daemon=True).start()
+
+    def _launch_prov_url(self):
+        serial = self.current_serial.get()
+        if not serial:
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
+            return
+        url = self.prov_url_entry.get().strip()
+        if not url:
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.enter_a_url_first"))
+            return
+        def task():
+            ok, msg = self.provisioning.launch_browser_url(url, serial)
+            def upd():
+                self._set_box(self.prov_log_text, self._m(msg))
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 

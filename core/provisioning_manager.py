@@ -17,6 +17,10 @@ class ProvisioningStatus:
     raw_provisioned_val: str = "0"
     raw_setup_complete_val: str = "0"
     status_summary: Any = None
+    # Informational system properties, shown as read; "UNKNOWN" when empty or unreadable.
+    pst_block_path: str = "UNKNOWN"         # ro.frp.pst: the FRP (factory reset protection) block
+    oem_unlock_allowed: str = "UNKNOWN"     # sys.oem_unlock_allowed: "OEM unlocking" switched on (1) or off (0)
+    oem_unlock_supported: str = "UNKNOWN"   # ro.oem_unlock_supported: bootloader unlock supported; not "allowed"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -46,7 +50,17 @@ class ProvisioningManager:
         else:
             status.status_summary = M("prov.incomplete")
 
+        # Each field reads exactly one property: no fallback to a property with another meaning
+        # (ro.boot.cid is a carrier id, not the FRP path; "supported" is not "allowed").
+        status.pst_block_path = self._prop(serial, "ro.frp.pst")
+        status.oem_unlock_allowed = self._prop(serial, "sys.oem_unlock_allowed")
+        status.oem_unlock_supported = self._prop(serial, "ro.oem_unlock_supported")
         return status
+
+    def _prop(self, serial: str, name: str) -> str:
+        code, out, _ = self.bridge.shell(f"getprop {name}", serial=serial, timeout=8)
+        value = (out or "").strip().splitlines()[0].strip() if (out or "").strip() else ""
+        return value if code in (0, None) and value else "UNKNOWN"
 
     def complete_setup_wizard_flags(self, serial: str) -> Tuple[bool, str]:
         logger.info(f"Completing setup wizard flags on device: {serial}")
@@ -88,6 +102,8 @@ class ProvisioningManager:
         logger.info(f"Opening URL {clean_url} on device: {serial}")
         code, out, err = self.bridge.shell(f"am start -a android.intent.action.VIEW -d {shlex.quote(clean_url)}",
                                        serial=serial, timeout=8)
-        if code == 0:
+        # `am start` can exit 0 and still print "Error: Activity not started" (no app for the link).
+        error_lines = [l.strip() for l in f"{out}\n{err}".splitlines() if l.strip().startswith(("Error", "Exception"))]
+        if code == 0 and not error_lines:
             return True, M("prov.url_opened", url=clean_url)
-        return False, M("prov.url_failed", output=err or out)
+        return False, M("prov.url_failed", output="\n".join(error_lines) or (err or out).strip())

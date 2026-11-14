@@ -10,6 +10,7 @@ from html import escape as html_escape
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
 import main as app_main
@@ -265,8 +266,8 @@ class TestCompanionOnMiui(unittest.TestCase):
             self.assertEqual(checks[cid].detail.key, "companion.permission_denied", cid)
 
     def test_app_asks_for_camera_and_microphone_before_testing(self):
-        src = open(os.path.join(os.path.dirname(__file__), "..", "companion", "src", "com", "androiddoctor",
-                                "companion", "DiagActivity.java"), encoding="utf-8").read()
+        src = Path(os.path.dirname(__file__), "..", "companion", "src", "com", "androiddoctor",
+                   "companion", "DiagActivity.java").read_text(encoding="utf-8")
         self.assertIn("requestPermissions(", src)
         self.assertIn("onRequestPermissionsResult(", src)
         on_create = src[src.index("protected void onCreate"):src.index("// ---", src.index("protected void onCreate"))]

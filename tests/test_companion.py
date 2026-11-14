@@ -4,6 +4,7 @@ import os
 import re
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from core import companion as comp
@@ -30,8 +31,8 @@ class ProtocolTests(unittest.TestCase):
     """The Java app and this module must agree on every name."""
 
     def test_java_and_python_agree(self):
-        java = open(JAVA, encoding="utf-8").read()
-        manifest = open(MANIFEST, encoding="utf-8").read()
+        java = Path(JAVA).read_text(encoding="utf-8")
+        manifest = Path(MANIFEST).read_text(encoding="utf-8")
         self.assertIn(f'package="{comp.PACKAGE}"', manifest)
         self.assertIn(f'TAG = "{comp.LOG_TAG}"', java)
         self.assertIn(f'"{comp.LINE_PREFIX}"', java)
@@ -45,7 +46,7 @@ class ProtocolTests(unittest.TestCase):
             self.assertIn(f'"{key}"', java)
 
     def test_app_stores_nothing(self):
-        java = open(JAVA, encoding="utf-8").read()
+        java = Path(JAVA).read_text(encoding="utf-8")
         for forbidden in ("FileOutputStream", "openFileOutput", "MediaStore", "compressToJpeg", "MediaRecorder.setOutputFile"):
             self.assertNotIn(forbidden, java)
 

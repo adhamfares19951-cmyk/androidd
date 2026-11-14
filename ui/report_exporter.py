@@ -266,7 +266,8 @@ class DiagnosticReportExporter:
             row("report.cycle_count", val(cycles) if cycles is not None else badge(pmic.get("cycle_status") or "UNKNOWN")),
             row("report.reported_health", val(pmic.get("health"))),
             evidence(pmic.get("evidence")),
-        ]), right=badge(bdiag.get("check_statuses", {}).get("battery.fuel_gauge", pmic.get("voltage_status"))))
+        ]), right=badge(bdiag.get("check_statuses", {}).get("battery.fuel_gauge",
+                                pmic.get("check_status", pmic.get("voltage_status")))))
 
         findings = bdiag.get("critical_findings", [])
         findings_html = "".join(f'<div class="card" style="border-color:#ef4444">{tr("report.finding")}: {esc(f)}</div>' for f in findings)

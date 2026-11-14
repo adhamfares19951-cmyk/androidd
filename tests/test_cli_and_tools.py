@@ -12,6 +12,7 @@ import tempfile
 import unittest
 import zipfile
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -105,7 +106,7 @@ class TestMainEntry(unittest.TestCase):
         self.assertEqual(sorted(action.choices), sorted(available_languages()))
 
     def test_no_download_before_gui_and_no_unused_threading(self):
-        src = open(os.path.join(ROOT, "main.py"), encoding="utf-8").read()
+        src = Path(ROOT, "main.py").read_text(encoding="utf-8")
         self.assertNotIn("ensure_all_binaries", src)
         self.assertNotIn("import threading", src)
 
@@ -145,7 +146,7 @@ class TestBundledTools(unittest.TestCase):
                                      "type": "zip", "strip_prefix": "platform-tools/"}},
             "files": {self.key: {k: _sha(v) for k, v in self.files.items()}}}}}
         path = os.path.join(self.tmp.name, "manifest.json")
-        json.dump(m, open(path, "w"))
+        Path(path).write_text(json.dumps(m))
         return path
 
     def test_repo_manifest_pins_versions_and_hashes(self):
@@ -160,7 +161,7 @@ class TestBundledTools(unittest.TestCase):
 
     def test_verify_reports_missing_and_mismatched(self):
         manifest = self.make_manifest("0" * 64)
-        open(os.path.join(self.bin, "adb.exe"), "wb").write(b"TAMPERED")
+        Path(self.bin, "adb.exe").write_bytes(b"TAMPERED")
         res = setup_bins.verify_binaries(manifest_path=manifest, bin_dir=self.bin)
         info = res["packages"]["platform-tools"]
         self.assertFalse(res["ok"])
@@ -176,7 +177,7 @@ class TestBundledTools(unittest.TestCase):
 
     def test_verified_archive_is_installed(self):
         path = self.make_zip("pt.zip", {f"platform-tools/{k}": v for k, v in self.files.items()})
-        manifest = self.make_manifest(_sha(open(path, "rb").read()))
+        manifest = self.make_manifest(_sha(Path(path).read_bytes()))
         with patch("setup_bins.stop_adb_server") as stop:
             res = setup_bins.repair_tools(archive_dir=self.arch, manifest_path=manifest, bin_dir=self.bin)
         self.assertTrue(res["platform-tools"]["ok"], res)
@@ -185,7 +186,7 @@ class TestBundledTools(unittest.TestCase):
 
     def test_unsafe_archive_path_is_rejected(self):
         path = self.make_zip("pt.zip", {"platform-tools/../evil.exe": b"x", **{f"platform-tools/{k}": v for k, v in self.files.items()}})
-        manifest = self.make_manifest(_sha(open(path, "rb").read()))
+        manifest = self.make_manifest(_sha(Path(path).read_bytes()))
         res = setup_bins.repair_tools(archive_dir=self.arch, manifest_path=manifest, bin_dir=self.bin)
         self.assertFalse(res["platform-tools"]["ok"])
         self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "evil.exe")))
@@ -201,7 +202,7 @@ class TestBundledTools(unittest.TestCase):
             setup_bins.stop_adb_server()
         args = run.call_args[0][0]
         self.assertEqual(args[1:], ["-P", "5038", "kill-server"])
-        src = open(os.path.join(ROOT, "setup_bins.py"), encoding="utf-8").read()
+        src = Path(ROOT, "setup_bins.py").read_text(encoding="utf-8")
         self.assertNotIn("taskkill", src)
         self.assertNotIn("killall", src)
 
