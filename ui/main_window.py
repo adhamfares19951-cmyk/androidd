@@ -761,6 +761,8 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
                 )
             elif not ready_serials:
                 self.current_serial.set("")
+                # configure(values=) changes the list only; the shown text keeps the old (other language) one
+                self.device_combo.set(options[0])
 
         try:
             if self.winfo_exists():

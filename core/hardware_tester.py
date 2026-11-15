@@ -1079,11 +1079,22 @@ function nextColor() {
             remote_path = "/data/local/tmp/doctor_speaker_tone.wav"
             self.bridge.run_adb(["push", local_wav, remote_path], serial=serial, timeout=10)
             self.bridge.shell(f"chmod 644 {remote_path}", serial=serial, timeout=5)
+            # The customer's media volume, so it can be put back ("volume is 6 in range [0..15]").
+            _, vol_out, _ = self.bridge.shell("cmd media_session volume --stream 3 --get", serial=serial, timeout=5)
+            m = re.search(r"volume is (\d+)", vol_out or "")
+            previous_volume = int(m.group(1)) if m else None
             self.bridge.shell("cmd media_session volume --stream 3 --set 15", serial=serial, timeout=5)
             self.bridge.shell(
                 f"am start -a android.intent.action.VIEW -d file://{remote_path} -t audio/wav",
                 serial=serial, timeout=8
             )
+            # The player keeps reading the file after `am start` returns, so the cleanup runs on the phone once
+            # playback is over: remove the file and restore the volume (only when the old value was read).
+            cleanup = f"rm -f {remote_path}"
+            if previous_volume is not None:
+                cleanup += f"; cmd media_session volume --stream 3 --set {previous_volume}"
+            self.bridge.shell(f"nohup sh -c 'sleep {int(duration_sec) + 5}; {cleanup}' >/dev/null 2>&1 &",
+                              serial=serial, timeout=5)
             return True, M("tone.playing", freq=freq)
         except Exception as e:
             logger.error(f"Error generating or playing test tone: {e}")

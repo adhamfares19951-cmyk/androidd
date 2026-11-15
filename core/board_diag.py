@@ -244,6 +244,7 @@ class FastChargeDiagnostics(ProducesCheckResult):
     """Charger readings. Measured values and reported maximums are kept apart; None = not read."""
     check_id: str = "charging.input"
     charger_type: str = "UNKNOWN"
+    charger_type_source: str = "UNKNOWN"     # the kernel node read, or "dumpsys battery" (Android's power source)
     charge_type: str = "UNKNOWN"
     voltage_mv: Optional[float] = None       # measured USB input voltage
     voltage_v: Optional[float] = None
@@ -1103,6 +1104,7 @@ class MotherboardDiagnostics:
         parsed_type = parse_usb_type(type_read.text) if type_read.ok else None
         if parsed_type:
             result.charger_type = parsed_type
+            result.charger_type_source = type_read.source
             result.evidence.append(type_read.evidence(f"charger_type={result.charger_type}"))
         else:
             result.evidence.append(type_read.evidence("malformed usb type" if type_read.ok else ""))
@@ -1159,7 +1161,18 @@ class MotherboardDiagnostics:
                     m = parse_int(val)
                     if m is not None and m > 0:
                         result.max_charging_voltage_mv = round(m / 1000.0, 1)
-            result.evidence.append(db.evidence())
+            # Kernel type blocked (SELinux): Android's own power source flags still name the source
+            # (USB / AC / Wireless / Dock). A source, not a measurement: the status and the protocol stay as they are.
+            source_note = ""
+            if not parsed_type:
+                powered = [name for flag, name in (("AC powered", "AC"), ("USB powered", "USB"),
+                                                   ("Wireless powered", "Wireless"), ("Dock powered", "Dock"))
+                           if re.search(rf"(?m)^\s*{flag}:\s*true\s*$", db.text)]
+                if powered:
+                    result.charger_type = "+".join(powered)
+                    result.charger_type_source = "dumpsys battery"
+                    source_note = "power source: " + ", ".join(f"{p} powered=true" for p in powered)
+            result.evidence.append(db.evidence(source_note))
         else:
             result.evidence.append(db.evidence())
 
