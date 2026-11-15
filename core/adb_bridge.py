@@ -637,6 +637,7 @@ class ADBBridge:
             data = json.loads(proc.stdout)
             items = data if isinstance(data, list) else [data]
             detected_ports = []
+            present: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
             for it in items:
                 name = str(it.get("FriendlyName") or "").strip()
@@ -695,21 +696,67 @@ class ADBBridge:
                         "diagnosis": M("port.fastboot")
                     })
                 # MTP / Media Device (USB Debugging Disabled)
-                elif cls in ["WPD", "PortableDevice"] or "MTP" in name.upper():
-                    if re.search(r"(?i)(phone|galaxy|android|xiaomi|redmi|oppo|realme|pixel|huawei)", name):
-                        detected_ports.append({
-                            "mode": "MTP / Portable Device (ADB Disabled)",
-                            "chipset": "Universal Android",
-                            "status": status,
-                            "name": name,
-                            "instance_id": iid,
-                            "diagnosis": M("port.mtp_no_adb")
-                        })
+                elif (cls in ["WPD", "PortableDevice"] or "MTP" in name.upper()) and \
+                        re.search(r"(?i)(phone|galaxy|android|xiaomi|redmi|oppo|realme|pixel|huawei)", name):
+                    detected_ports.append({
+                        "mode": "MTP / Portable Device (ADB Disabled)",
+                        "chipset": "Universal Android",
+                        "status": status,
+                        "name": name,
+                        "instance_id": iid,
+                        "diagnosis": M("port.mtp_no_adb")
+                    })
+                else:
+                    self._note_phone_vendor_device(present, iid, name, cls, status)
 
+            # Any other device of a phone/SoC vendor: shown as present, mode not identified. A switched-off
+            # phone on USB (seen: MediaTek 0E8D:20FF with the phone's serial) proves the board is powered and
+            # USB data works; saying "nothing detected" would hide that. The mode is never guessed.
+            claimed = {self._vid_pid(p["instance_id"]) for p in detected_ports}
+            for key, dev in present.items():
+                if key in claimed:
+                    continue
+                detected_ports.append({
+                    "mode": "Phone on USB (mode not identified)",
+                    "chipset": dev["vendor"],
+                    "vendor": dev["vendor"], "vid": key[0], "pid": key[1], "serial": dev["serial"] or "UNKNOWN",
+                    "status": dev["status"],
+                    "name": dev["name"],
+                    "instance_id": dev["instance_id"],
+                    "diagnosis": M("port.phone_present", vendor=dev["vendor"], vid=key[0], pid=key[1],
+                                   serial=dev["serial"] or "UNKNOWN", device_class=dev["class"] or "-"),
+                })
             return detected_ports
         except Exception as e:
             logger.debug(f"Error scanning BootROM USB ports: {e}")
             return []
+
+    # USB vendor ids of phone makers and phone SoC makers (others, e.g. keyboards, are not reported).
+    PHONE_USB_VENDORS = {
+        "0E8D": "MediaTek", "05C6": "Qualcomm", "04E8": "Samsung", "2717": "Xiaomi", "18D1": "Google/Android",
+        "22B8": "Motorola", "12D1": "Huawei", "22D9": "OPPO", "2A70": "OnePlus", "0BB4": "HTC", "1004": "LG",
+        "0FCE": "Sony", "19D2": "ZTE", "2D95": "vivo", "1782": "Unisoc (Spreadtrum)",
+    }
+    _USB_IID_RE = re.compile(r"VID_([0-9A-F]{4})&PID_([0-9A-F]{4})(&MI_[0-9A-F]+)?\\(.+)$")
+
+    @classmethod
+    def _vid_pid(cls, instance_id: str) -> Tuple[str, str]:
+        m = cls._USB_IID_RE.search(str(instance_id).upper())
+        return (m.group(1), m.group(2)) if m else ("", "")
+
+    def _note_phone_vendor_device(self, present: Dict[Tuple[str, str], Dict[str, Any]], iid: str, name: str,
+                                  cls: str, status: str) -> None:
+        """Remember a present device of a phone vendor, one entry per VID:PID (composite interfaces merged;
+        the serial comes from the parent device, interface ids like 6&1DC9924&0&0000 are not serials)."""
+        m = self._USB_IID_RE.search(iid)
+        if not m or m.group(1) not in self.PHONE_USB_VENDORS or status.upper() not in ("OK", ""):
+            return
+        key = (m.group(1), m.group(2))
+        dev = present.setdefault(key, {"vendor": self.PHONE_USB_VENDORS[m.group(1)], "serial": None, "name": name,
+                                       "class": cls, "status": status, "instance_id": iid})
+        if not m.group(3):                     # the parent device: its last part is the serial ...
+            serial = m.group(4) if "&" not in m.group(4) else None   # ... unless Windows made one up (5&25CD7C4&0&5)
+            dev.update(serial=serial, name=name or dev["name"], **{"class": cls or dev["class"]}, instance_id=iid)
 
     def detect_usb_port_cycling(self, interval_seconds: int = 6) -> Dict[str, Any]:
         if sys.platform != "win32":

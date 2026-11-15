@@ -1077,6 +1077,11 @@ class MotherboardDiagnostics:
             diag.summary_diagnosis = M("bootrom.usb_cycling", observed=diag.cycling_details)
             diag.possible_causes = [M("bootrom.cause.cycling_bootloop"), M("bootrom.cause.cycling_usb_lines"),
                                     M("bootrom.cause.cycling_solder")]
+        elif ports and all(p.get("vid") for p in ports):
+            # Only phone-vendor devices in a mode this program does not know: a fact, not a fault hypothesis.
+            p = ports[0]
+            diag.summary_diagnosis = M("bootrom.phone_present", vendor=p.get("vendor"), vid=p.get("vid"),
+                                       pid=p.get("pid"), serial=p.get("serial"))
         elif ports:
             diag.summary_diagnosis = M("bootrom.other_port", name=ports[0].get("name"))
             diag.possible_causes = [M("bootrom.cause.vendor_mode")]
