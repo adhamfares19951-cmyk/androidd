@@ -8,11 +8,11 @@
       "category": "KERNEL_PANIC",
       "severity": "CRITICAL",
       "pattern": "Internal error: Oops|kernel BUG at|Kernel panic - not syncing",
-      "description_en": "Kernel panic crash detected. System halted due to kernel oops or fatal assertion.",
-      "description_ar": "انهيار حرج في كيرنل النظام (Kernel Oops). توقف المعالج لحماية العتاد.",
-      "suspect_components": ["SoC / CPU", "DRAM", "Corrupted Kernel Partition"],
-      "action_en": "Flash stock boot.img/kernel. If panic recurs, diagnose SoC or RAM solder joints.",
-      "action_ar": "تفليش كيرنل وروم رسمي (boot.img). إذا تكرر الانهيار، الفحص يشير لخلل في لحام المعالج أو الرام."
+      "description_en": "The kernel stopped with a panic or an oops. The text right after it in the log usually names the reason.",
+      "description_ar": "توقف كيرنل النظام بانهيار (Kernel panic أو Oops). النص الذي يليه في السجل يذكر السبب عادةً.",
+      "suspect_components": ["Corrupted kernel / boot partition", "Firmware that does not match the device", "Storage that cannot be read (e.g. root file system not mounted)", "RAM or SoC (only if it repeats on clean stock firmware)"],
+      "action_en": "Possible causes, most common first: a corrupted kernel or boot partition, firmware that does not match the device, storage that cannot be read. Read the reason printed after the panic, then flash stock firmware; suspect RAM or the SoC only if the panic repeats on clean stock firmware.",
+      "action_ar": "أسباب محتملة، الأكثر شيوعاً أولاً: قسم كيرنل أو boot تالف، فيرموير غير مطابق للجهاز، ذاكرة تخزين لا تُقرأ. اقرأ السبب المكتوب بعد الانهيار، ثم فلّش الروم الرسمي؛ ولا تشكّ في الرام أو المعالج إلا إذا تكرر الانهيار على روم رسمي نظيف."
     },
     {
       "id": "WATCHDOG_BITE",
@@ -20,7 +20,7 @@
       "severity": "CRITICAL",
       "pattern": "Watchdog bark!|Watchdog bite!|qcom,wdt.*bark|mtk_wdt.*timeout",
       "description_en": "Hardware Watchdog Timer triggered. CPU froze and failed to feed hardware watchdog.",
-      "description_ar": "تدخل رقاقة الحماية (Watchdog Reset) بسبب تعليق كامل في مسارات المعالج.",
+      "description_ar": "تدخل مؤقت الحماية (Watchdog) وأعاد تشغيل النظام لأن المعالج توقف عن الاستجابة.",
       "suspect_components": ["Kernel / firmware bug", "PMIC", "SoC power rail"],
       "action_en": "Possible causes, most likely first: kernel/firmware bug, then power-rail problems. If it repeats on stock firmware, measure the screen-off battery current (wireless ADB, no charger) and check power rails.",
       "action_ar": "أسباب محتملة بالترتيب: خلل في الكيرنل أو الفيرموير، ثم مشاكل في خطوط الطاقة. إذا تكرر على الروم الرسمي، قِس تيار البطارية والشاشة مطفأة (ADB لاسلكي وبدون شاحن) وافحص خطوط الطاقة."
@@ -29,34 +29,34 @@
       "id": "I2C_BUS_TIMEOUT",
       "category": "HARDWARE_BUS",
       "severity": "HIGH",
-      "pattern": "i2c.*error.*-110|i2c_geni.*timeout|i2c_designware.*timeout",
-      "description_en": "I2C peripheral bus communication timeout (-110). A sensor or IC failed to respond on bus.",
-      "description_ar": "فشل وتوقف ناقل العتاد I2C (-110 Timeout). أحد المستشعرات أو الآيسيات لا يستجيب للناقل.",
+      "pattern": "i2c.*error.*-110\\b|i2c_geni.*timeout|i2c_designware.*timeout",
+      "description_en": "An I2C transfer timed out (-110): a chip on the bus did not answer in time.",
+      "description_ar": "انتهت مهلة نقل على ناقل I2C (-110): أحد الآيسيات على الناقل لم يرد في الوقت المحدد.",
       "suspect_components": ["Touch IC", "Fingerprint Sensor", "Audio Codec", "Camera Flex"],
-      "action_en": "Disconnect camera/fingerprint flex cables one by one to find shorted I2C line.",
-      "action_ar": "فصل فلاتات الكاميرات والبصمة والشاشة بالتوالي لعزل الخط الشورت في ناقل I2C."
+      "action_en": "Possible causes: the part is not fitted (a driver probing an alternative part, often harmless at boot), the part is not powered, a flex cable is loose, or the bus is held low by a faulty part or a short. It matters if the related function (touch, camera, fingerprint, sensors) does not work; then disconnect the flex cables one by one.",
+      "action_ar": "أسباب محتملة: القطعة غير مركّبة (تعريف يبحث عن قطعة بديلة، وهذا غالباً غير ضار عند الإقلاع)، أو القطعة لا يصلها فولت، أو فلاتة مفصولة، أو الناقل مشدود للأرضي بسبب قطعة تالفة أو شورت. يهم الأمر إذا كانت الوظيفة المرتبطة (اللمس، الكاميرا، البصمة، الحساسات) لا تعمل؛ عندها افصل الفلاتات واحدة تلو الأخرى."
     },
     {
       "id": "I2C_IO_ERROR",
       "category": "HARDWARE_BUS",
       "severity": "HIGH",
-      "pattern": "i2c.*error.*-5|i2c.*transfer failed|i2c_geni.*NACK",
-      "description_en": "I2C peripheral bus I/O error (-5 EIO / NACK). Target IC address not acknowledged.",
-      "description_ar": "خطأ إدخال/إخراج على ناقل العتاد I2C (-5 EIO). آيسي مستهدف غير متصل أو تالف.",
+      "pattern": "i2c.*error.*-5\\b|i2c.*transfer failed|i2c_geni.*NACK",
+      "description_en": "An I2C transfer failed (-5 EIO / NACK): the chip at that address did not acknowledge.",
+      "description_ar": "فشل نقل على ناقل I2C (-5 EIO أو NACK): الآيسي على هذا العنوان لم يرد بالتأكيد.",
       "suspect_components": ["Power IC", "Sensors Flex Cable", "Charging Board Sub-PBA"],
-      "action_en": "Inspect flex cable pins, FPC connectors, and solder integrity of target sensor IC.",
-      "action_ar": "معاينة أرجل كونكترات الفلاتات والتأكد من وصول الفولت لآيسي الحساس أو البصمة."
+      "action_en": "Possible causes: the part is not fitted (often harmless when a driver probes an alternative part), it is not powered, its flex connector is loose or dirty, or the part is damaged. It matters if the related function does not work; then check the connector pins and the supply voltage of that part.",
+      "action_ar": "أسباب محتملة: القطعة غير مركّبة (غالباً غير ضار حين يبحث التعريف عن قطعة بديلة)، أو لا يصلها فولت، أو كونكتور الفلاتة مفصول أو متسخ، أو القطعة تالفة. يهم الأمر إذا كانت الوظيفة المرتبطة لا تعمل؛ عندها افحص أرجل الكونكتور وفولت تغذية القطعة."
     },
     {
       "id": "STORAGE_IO_ERROR",
       "category": "STORAGE",
       "severity": "CRITICAL",
       "pattern": "mmcblk0.*error.*-110|mmcblk0.*I/O error|ufs.*gear switch failure|ufs.*abort.*host reset",
-      "description_en": "NAND Flash storage controller I/O error. Internal eMMC/UFS memory chip failing.",
-      "description_ar": "خطأ قراءة/كتابة في شريحة التخزين الداخلية (eMMC/UFS). مؤشر على تلف رقاقة الذاكرة.",
+      "description_en": "The storage (eMMC / UFS) reported read/write errors or timeouts.",
+      "description_ar": "أبلغت ذاكرة التخزين (eMMC / UFS) عن أخطاء قراءة/كتابة أو انتهاء مهلة.",
       "suspect_components": ["eMMC / UFS NAND Flash", "Storage VCC / VCCQ Power Rail"],
-      "action_en": "Perform urgent user data backup! Chip is degrading and may enter permanent read-only mode.",
-      "action_ar": "إجراء نسخ احتياطي فوري لبيانات العميل! خلايا الذاكرة تحتضر وقاربت على التلف التام."
+      "action_en": "Possible causes: the storage chip, its power rails (VCC / VCCQ) or clock line, or cracked solder joints under it. Back up the customer's data first while it can still be read; many such lines, or errors on every boot, point more strongly to the storage than a single line does.",
+      "action_ar": "أسباب محتملة: شريحة التخزين، أو خطوط طاقتها (VCC / VCCQ) أو خط الساعة، أو تشقق اللحام تحتها. خذ نسخة احتياطية من بيانات الزبون أولاً ما دامت تُقرأ؛ كثرة هذه الأسطر أو تكرارها في كل إقلاع تشير للتخزين أكثر من سطر واحد."
     },
     {
       "id": "UFS_LINK_STARTUP_FAIL",
@@ -74,11 +74,11 @@
       "category": "THERMAL",
       "severity": "CRITICAL",
       "pattern": "thermal:.*critical temperature|tsens.*critical.*shutdown|ThermalShutdown",
-      "description_en": "Emergency thermal shutdown triggered. Motherboard exceeded safety thermal thresholds (>85°C).",
-      "description_ar": "إطفاء طوارئ بسبب ارتفاع درجات الحرارة متجاوزة الحد الآمن (>85°C).",
-      "suspect_components": ["Thermal Paste / Pad", "Short in RF Power Amp", "Faulty PMIC"],
-      "action_en": "Check for hot spots using thermal imager or alcohol spray. Verify thermal dissipation shielding.",
-      "action_ar": "فحص اللوحة بكاميرا حرارية أو بالروزين لتحديد الآيسي الذي يسخن فور التشغيل."
+      "description_en": "The kernel reported a critical temperature and shut the phone down.",
+      "description_ar": "أبلغ الكيرنل عن حرارة حرجة وأطفأ الجوال.",
+      "suspect_components": ["Heavy load or a hot environment", "Thermal paste / pad", "A part heating from a short (e.g. RF power amplifier, PMIC)", "A faulty temperature sensor"],
+      "action_en": "Possible causes: heavy load or a hot environment, poor heat transfer (paste / pads), a part heating because of a short, or a faulty temperature sensor. Find the hot spot with a thermal camera or rosin while the phone starts.",
+      "action_ar": "أسباب محتملة: حمل ثقيل أو مكان حار، أو ضعف تبديد الحرارة (المعجون / الوسادات)، أو قطعة تسخن بسبب شورت، أو حساس حرارة تالف. حدّد الآيسي الذي يسخن بكاميرا حرارية أو بالروزين أثناء التشغيل."
     },
     {
       "id": "UVLO_BROWNOUT",
@@ -88,19 +88,19 @@
       "description_en": "Under-Voltage Lockout (UVLO). System voltage sagged below hardware operating minimum.",
       "description_ar": "هبوط حاد في جهد التغذية (UVLO). الجهد انحدر لأقل من الحد الأدنى لتشغيل المعالج.",
       "suspect_components": ["Degraded Battery Cell", "Battery Connector Pins", "Main PMIC"],
-      "action_en": "Replace battery or test with bench power supply. Check battery contact resistance.",
-      "action_ar": "استبدال بطارية الهاتف أو تجربة باور سبلاي للتأكد من عدم وجود هبوط مفاجئ في الجهد."
+      "action_en": "Possible causes: a worn battery, poor battery contact, or a short / high load on the board pulling the voltage down. Test with a bench power supply first: if the drops stop, suspect the battery or its contacts; if the current is high, look for a short.",
+      "action_ar": "أسباب محتملة: بطارية ضعيفة، أو تلامس سيئ في كونكتور البطارية، أو شورت / حمل عالٍ على اللوحة يسحب الجهد. جرّب أولاً بباور سبلاي: إذا توقف الهبوط فالشك في البطارية أو تلامسها؛ وإذا كان التيار عالياً فابحث عن شورت."
     },
     {
       "id": "MODEM_RIL_CRASH",
       "category": "BASEBAND",
       "severity": "HIGH",
       "pattern": "qmi_wwan.*crash|rild.*died|ModemSSR|esoc.*modem crash",
-      "description_en": "Baseband modem subsystem crash (RIL death). Cellular RF processor restarting.",
-      "description_ar": "انهيار معالج الشبكة والمودم (Baseband Processor Crash). إعادة تشغيل متكررة للراديو.",
+      "description_en": "The modem (baseband) subsystem or the radio service crashed.",
+      "description_ar": "انهار نظام المودم (البيسباند) أو خدمة الراديو.",
       "suspect_components": ["Baseband RF IC", "Modem Firmware", "EFS / NVRAM Partition"],
-      "action_en": "Check baseband version in specs. Restore EFS/NVRAM partition backup if IMEI is null.",
-      "action_ar": "التأكد من قراءة إصدار البيسباند. استعادة نسخة EFS الاحتياطية في حال فقدان السيريال/IMEI."
+      "action_en": "Possible causes: modem firmware that does not match, a damaged EFS / NVRAM partition (often with a missing IMEI), or the baseband chip. Check the baseband version and the IMEI; restore an EFS backup if the IMEI is missing. Repeated lines in one log show it keeps happening.",
+      "action_ar": "أسباب محتملة: فيرموير مودم غير مطابق، أو قسم EFS / NVRAM تالف (غالباً مع اختفاء الـ IMEI)، أو شريحة البيسباند. تأكد من إصدار البيسباند ومن الـ IMEI؛ واستعد نسخة EFS إذا اختفى الـ IMEI. تكرار الأسطر في السجل الواحد يدل أنه يتكرر."
     }
   ]
 }
