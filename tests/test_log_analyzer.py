@@ -5,6 +5,7 @@ import io
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -210,7 +211,7 @@ class TestBoardTabButton(unittest.TestCase):
 
         tab = Tab()
         with unittest.mock.patch("ui.tabs.board_diag.filedialog.askopenfilename", return_value=chosen_path), \
-                unittest.mock.patch("ui.tabs.board_diag.threading.Thread", RunNow):
+                unittest.mock.patch("ui.tabs.board_diag.threading", SimpleNamespace(Thread=RunNow)):
             BoardDiagTabMixin.run_log_analysis_async(tab)
         return tab
 

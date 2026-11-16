@@ -7,6 +7,9 @@ data/*.db-shm
 reports/*
 !reports/.gitkeep
 
+# Live UART captures (saved boot logs)
+uart_logs/
+
 # Logs
 logs/*
 !logs/.gitkeep

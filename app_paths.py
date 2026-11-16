@@ -43,6 +43,13 @@ def default_reports_dir() -> str:
     return os.path.join(SOURCE_ROOT, "reports")
 
 
+def default_uart_dir() -> str:
+    """Where live UART captures are saved (uart_logs/ from source, Documents\\Android Doctor Pro\\UART Logs built)."""
+    if FROZEN:
+        return os.path.join(documents_dir(), "Android Doctor Pro", "UART Logs")
+    return os.path.join(SOURCE_ROOT, "uart_logs")
+
+
 def safe_name(text: str) -> str:
     """A file/folder name part that is valid on Windows: wireless serials like 192.168.1.5:5555 contain ':'."""
     import re

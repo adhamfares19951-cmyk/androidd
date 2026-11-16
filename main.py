@@ -219,7 +219,56 @@ def build_parser():
     parser.add_argument("--analyze-log", type=str, metavar="FILE", default=None,
                         help="check a saved UART / dmesg / last_kmsg / logcat file against the fault signatures "
                              "(no phone, no root)")
+    parser.add_argument("--uart-list", action="store_true", help="list serial ports (USB-UART adapters)")
+    parser.add_argument("--uart-capture", type=str, metavar="PORT", default=None,
+                        help="capture a phone's boot log from PORT (read only), save it, then analyse it")
+    parser.add_argument("--baud", type=int, default=115200, help="baud rate for --uart-capture (default 115200)")
+    parser.add_argument("--seconds", type=int, default=60, help="how long --uart-capture records (default 60)")
     return parser
+
+
+def run_uart_command(args) -> int:
+    """--uart-list / --uart-capture. Exit: 0 done (whatever was received), 4 the port could not be used."""
+    import time as _time
+    from core import log_analyzer, uart_capture as uc
+    from ui.i18n import t, render, set_current_language
+    from ui.ui_helpers import format_log_analysis
+    lang = args.lang
+    set_current_language(lang)
+    if args.uart_list:
+        ports = uc.list_ports()
+        if not ports:
+            print(t("cli.uart_no_ports", lang))
+            return EXIT_OK
+        print(t("cli.uart_ports_header", lang))
+        for p in ports:
+            print(t("cli.uart_port_line", lang, device=p.device, description=p.description, adapter=p.adapter or "-"))
+        return EXIT_OK
+
+    print(t("cli.uart_wiring", lang))
+    cap = uc.UartCapture(args.uart_capture, baud=args.baud, on_text=lambda s: print(s, end="", flush=True))
+    try:
+        cap.start()
+    except uc.UartError as e:
+        print(render(e.msg, lang))
+        return EXIT_INTERNAL
+    print(t("cli.uart_capturing", lang, port=args.uart_capture, baud=args.baud, seconds=args.seconds, path=cap.out_path))
+    try:
+        end = _time.monotonic() + max(1, args.seconds)
+        while _time.monotonic() < end and cap.running:
+            _time.sleep(0.2)
+    except KeyboardInterrupt:
+        pass
+    result = cap.stop()
+    print()
+    if result.error is not None:
+        print(render(result.error, lang))
+    print(t("cli.uart_saved", lang, bytes=result.bytes_received, seconds=result.seconds, path=result.path))
+    if result.bytes_received == 0:
+        print(t("cli.uart_nothing", lang))
+        return EXIT_OK
+    print("\n".join(format_log_analysis(log_analyzer.analyze_file(result.path), lang)))
+    return EXIT_OK
 
 
 def run_log_analysis(path: str, lang: str) -> int:
@@ -287,6 +336,9 @@ def main() -> int:
 
     if args.analyze_log:
         return run_log_analysis(args.analyze_log, args.lang)
+
+    if args.uart_list or args.uart_capture:
+        return run_uart_command(args)
 
     if args.cli:
         try:

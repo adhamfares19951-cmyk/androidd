@@ -57,6 +57,13 @@ Checks a saved log file (a UART capture of a phone that does not boot, `dmesg`, 
 - The chip maker (Qualcomm, MediaTek, Unisoc, HiSilicon Kirin, Samsung Exynos) is named only when the log's own words point clearly to one maker (at least twice the hits of the next), with the line that did.
 - ANSI colour codes and carriage returns are removed, any encoding is read (undecodable bytes are replaced), and for files over 20 MB only the end is read.
 
+### Live UART Capture (`core/uart_capture.py`)
+Records the boot log of a phone that does not start, through a USB-to-serial adapter on the phone's UART pads, then analyses it like a saved log. GUI: Motherboard tab, "Live UART capture" card (port, baud, Start / Stop and analyse; the analysis appears in the offline log card). CLI: `python main.py --uart-list` and `python main.py --uart-capture COM3 [--baud 115200] [--seconds 60]` (exit `0` done, `4` the port could not be opened).
+- **Read only:** the program never writes to the port. Connect only GND and the adapter's RX to the phone's TX; leave the adapter's TX unconnected. Many phones use **1.8 V** on these pads: a 3.3 V adapter can damage them and may not read them, so use an adapter or level shifter for that voltage (the window shows this warning).
+- Every byte received is saved unchanged (`uart_logs/` from source, `Documents\Android Doctor Pro\UART Logs` in a packaged build); the screen shows the last 3000 lines. A capture stops by itself if the adapter is unplugged (what was received is kept) or at 200 MB.
+- Known adapters are named by their USB id (CH340 / CH341 / CH9102, CP210x, FTDI, PL2303). Default 115200 baud; 921600, 460800 and others can be chosen.
+- Tested without hardware through pyserial's `loop://` port and scripted ports; not yet tried with a real adapter and phone.
+
 ### Model Database (`core/model_db.py`, `data/device_models.json`)
 Manufacturer specifications per model number (`ro.product.model`, dual-SIM suffixes such as `/DS` ignored). The database never produces a reading: it only supplies the battery's design capacity when the kernel does not expose `charge_full_design` (often blocked without root). The measured `charge_full` always comes from the phone; without it the check stays `UNKNOWN`/`NEEDS_ROOT`.
 - The manufacturer's **rated (minimum)** capacity is used when known, otherwise the typical one, so a battery is never judged against more than the manufacturer guarantees. The evidence names the model, the value used and its source URL; the report notes that the design value came from the specification.
@@ -131,7 +138,7 @@ Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
-`requirements.txt` lists `customtkinter`, `darkdetect`, `packaging`, `Pillow`, `arabic-reshaper`, `python-bidi`, `qrcode` (QR codes in the report are optional; the report is written without one if `qrcode` is missing) and `cryptography` (needed only for report signing).
+`requirements.txt` lists `customtkinter`, `darkdetect`, `packaging`, `Pillow`, `qrcode` (QR codes in the report are optional; the report is written without one if `qrcode` is missing), `cryptography` (needed only for report signing) and `pyserial` (live UART capture).
 
 ### Building the Windows Package
 ```bash
@@ -262,6 +269,7 @@ Test modules:
 - `tests/test_dead_phone_scan.py`: A switched-off phone's real USB entry is reported as present with VID/PID/serial and not as BROM, composite interfaces count once, known BROM PIDs stay BROM, non-phone devices are ignored.
 - `tests/test_fault_signatures.py`: Every rule in `data/fault_signatures.json` is complete with a valid pattern, gives possible causes and no definite diagnosis from a log line, matches its own kind of line, and does not match harmless neighbours (`-517` probe deferral, longer error codes).
 - `tests/test_log_analyzer.py`: Offline log analysis of UART-style logs (matches with line numbers, isolated fatal line, chip maker or none when unclear), no known signature is `UNKNOWN`, empty / unreadable / large / non-UTF-8 files, the CLI option and exit codes, and the Motherboard tab button.
+- `tests/test_uart_capture.py`: Adapter names from USB ids, bytes saved exactly over pyserial's `loop://`, nothing ever written to the port, UTF-8 split across reads, port that cannot be opened (no file left), adapter unplugged (data kept), size limit, safe file names, `--uart-list` / `--uart-capture` exit codes, and the Motherboard tab card (live text, analysis, screen line limit).
 - `tests/test_ui_threads.py`: Worker threads reach the window through a queue (an `after()` from a worker before the main loop runs no longer kills it), the batch scan with a slow CustomTkinter start, and window tests that end their event loop reliably (`tests/gui_loop.py`: a `quit()` made inside CustomTkinter's pre-loop `update()` is lost, so it is repeated).
 - `tests/test_small_fixes.py`: Android's power source as charger type when the kernel node is blocked (verdict unchanged), the speaker test removing its file and restoring the old volume (never a guessed one), and the device list text following a language switch.
 - `tests/test_provisioning.py`: FRP and OEM-unlock properties read one property each (`UNKNOWN` when empty, the carrier id never used as the FRP path), setup-flag logic unchanged, `am start` errors with exit code 0 not reported as opened, the Rescue tab handlers (inspect lines, URL needs a phone and an address), and the report's battery badge using the battery check status.
@@ -297,7 +305,7 @@ On an unrooted production Android device, SELinux restricts several paths and to
 
 ## Known Limitations
 
-- **Physical device coverage:** All automated tests (323) use mocked/fake ADB responses (`tests/fakes.py`). Checked on one real phone so far (Redmi Note 9, MT6768, Android 12, not rooted) over USB and wireless ADB: shell v2 exit codes, CLI diagnostics and exit codes `0`/`1`/`4`/`5`, every non-destructive GUI action in Arabic and English, Arabic and English HTML and PDF reports, signing and verification, `scrcpy` mirroring, the packaged `adp-cli.exe`, and the screen-off battery current test (correctly `NEEDS_ROOT` there: `current_now` is blocked). Not yet checked on a real phone: a rooted phone, `scrcpy --otg`, the companion app, and the interactive key, touch and screen-colour tests.
+- **Physical device coverage:** All automated tests (337) use mocked/fake ADB responses (`tests/fakes.py`). Checked on one real phone so far (Redmi Note 9, MT6768, Android 12, not rooted) over USB and wireless ADB: shell v2 exit codes, CLI diagnostics and exit codes `0`/`1`/`4`/`5`, every non-destructive GUI action in Arabic and English, Arabic and English HTML and PDF reports, signing and verification, `scrcpy` mirroring, the packaged `adp-cli.exe`, and the screen-off battery current test (correctly `NEEDS_ROOT` there: `current_now` is blocked). Not yet checked on a real phone: a rooted phone, `scrcpy --otg`, the companion app, and the interactive key, touch and screen-colour tests.
 - **Non-Windows tool manifests:** Download URLs and archive SHA-256 hashes are pinned for all 5 platforms, but pre-listed per-file `scrcpy` SHA-256 entries cover `windows-x86_64` only, and non-Windows archive downloads have not been runtime-tested.
 - **Signing is opt-in:** Reports are signed only when a key is configured (`--sign-key` / `ADP_SIGNING_KEY`); keeping the private key safe is the technician's job.
 

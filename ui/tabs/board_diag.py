@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import time
 import webbrowser
 import threading
@@ -217,6 +218,45 @@ class BoardDiagTabMixin:
             self.logscan_card, 150, L, self._L(self._tr("ui.logscan_hint"))
         )
 
+        # Live UART capture card (read only; the saved file is analysed into the log analysis card above)
+        self.uart_card, _ = make_card(wrap, self._L(self._tr("card_uart")), ACCENT_CYAN, L)
+        # a capture still running survives the tab being rebuilt (language switch)
+        self._uart_capture = getattr(self, "_uart_capture", None)
+        self._uart_port_map = {}
+        uart_row = ctk.CTkFrame(self.uart_card, fg_color="transparent")
+        uart_row.pack(fill="x", padx=14, pady=(0, 6))
+        small = ctk.CTkFont(family=FONT_FAMILY, size=12)
+        ctk.CTkLabel(uart_row, text=self._L(self._tr("ui.uart_port")), font=small,
+                     text_color=TEXT_SECONDARY).pack(side=L["lead"], padx=(0, 6))
+        self.uart_port_combo = ctk.CTkComboBox(uart_row, values=[""], width=230, state="readonly")
+        self.uart_port_combo.pack(side=L["lead"], padx=4)
+        make_button(uart_row, self._L(self._tr("btn_uart_refresh")), self._uart_refresh_ports,
+                    variant="secondary", height=32).pack(side=L["lead"], padx=4)
+        ctk.CTkLabel(uart_row, text=self._L(self._tr("ui.uart_baud")), font=small,
+                     text_color=TEXT_SECONDARY).pack(side=L["lead"], padx=(12, 6))
+        from core.uart_capture import BAUD_RATES, DEFAULT_BAUD
+        self.uart_baud_combo = ctk.CTkComboBox(uart_row, values=[str(b) for b in BAUD_RATES], width=110, state="readonly")
+        self.uart_baud_combo.set(str(DEFAULT_BAUD))
+        self.uart_baud_combo.pack(side=L["lead"], padx=4)
+        uart_btns = ctk.CTkFrame(self.uart_card, fg_color="transparent")
+        uart_btns.pack(fill="x", padx=14, pady=(0, 6))
+        self.btn_uart_start = make_button(uart_btns, self._L(self._tr("btn_uart_start")), self._uart_start,
+                                          variant="success", height=34)
+        self.btn_uart_start.pack(side=L["lead"], padx=(0, 6))
+        self.btn_uart_stop = make_button(uart_btns, self._L(self._tr("btn_uart_stop")), self._uart_stop,
+                                         variant="primary", height=34)
+        self.btn_uart_stop.pack(side=L["lead"], padx=6)
+        capturing = self._uart_capture is not None and self._uart_capture.running
+        self.btn_uart_start.configure(state="disabled" if capturing else "normal")
+        self.btn_uart_stop.configure(state="normal" if capturing else "disabled")
+        # one short line per sentence: Tk's own wrapping of a long mixed Arabic/Latin label scrambles the order
+        sentence_end = r"(?<=[.;" + chr(0x061B) + r"])\s+"      # 0x061B: the Arabic semicolon
+        wiring = "\n".join(p for p in re.split(sentence_end, self._tr("cli.uart_wiring")) if p)
+        ctk.CTkLabel(self.uart_card, text=self._L(wiring), font=small, text_color=ACCENT_AMBER,
+                     justify=L["justify"], anchor=L["anchor"]).pack(fill="x", padx=16, pady=(0, 6))
+        self.uart_text = make_console_box(self.uart_card, 170, L)
+        self._uart_refresh_ports()
+
         # Leakage Test Live Output Card
         self.leakage_card, badge = make_card(
             wrap, self._L(self._tr("card_leakage")), ACCENT_AMBER, L, show_badge=True
@@ -378,6 +418,96 @@ class BoardDiagTabMixin:
                 self._set_pill("logscan", status)
             self.after(0, upd)
 
+        threading.Thread(target=task, daemon=True).start()
+
+    # ---------------------------------------------------------------- live UART capture
+    UART_MAX_SHOWN_LINES = 3000          # on screen only; the file keeps everything
+
+    def _uart_refresh_ports(self):
+        from core.uart_capture import list_ports
+        try:
+            ports = list_ports()
+        except Exception as e:
+            logger.warning(f"Listing serial ports failed: {e}")
+            ports = []
+        self._uart_port_map = {}
+        for p in ports:
+            label = f"{p.device}  {p.adapter or p.description}".strip()
+            self._uart_port_map[label] = p.device
+        labels = list(self._uart_port_map) or [""]
+        self.uart_port_combo.configure(values=labels)
+        self.uart_port_combo.set(labels[0])
+        if not ports:
+            self._set_box(self.uart_text, self._tr("cli.uart_no_ports"))
+
+    def _uart_append(self, text: str):
+        """Raw log text (left to right) at the end of the box, keeping only the last lines on screen."""
+        box = self.uart_text
+        try:
+            box.insert("end", text)
+            lines = int(box.index("end-1c").split(".")[0])
+            if lines > self.UART_MAX_SHOWN_LINES:
+                box.delete("1.0", f"{lines - self.UART_MAX_SHOWN_LINES}.0")
+            box.see("end")
+        except Exception:
+            pass
+
+    def _uart_start(self):
+        from core.uart_capture import UartCapture, UartError
+        if self._uart_capture is not None and self._uart_capture.running:
+            return
+        port = self._uart_port_map.get(self.uart_port_combo.get())
+        if not port:
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.uart_no_port_selected"))
+            return
+        baud = int(self.uart_baud_combo.get())
+        cap = UartCapture(port, baud=baud, on_text=lambda s: self.after(0, lambda s=s: self._uart_append(s)))
+        try:
+            cap.start()
+        except UartError as e:
+            self._set_box(self.uart_text, self._m(e.msg))
+            return
+        self._uart_capture = cap
+        self._set_box(self.uart_text, self._tr("ui.uart_capturing", port=port, baud=baud, path=cap.out_path) + "\n")
+        self.btn_uart_start.configure(state="disabled")
+        self.btn_uart_stop.configure(state="normal")
+        self.after(500, self._uart_watch)
+
+    def _uart_watch(self):
+        """Ends the capture in the window when it stopped by itself (adapter unplugged, size limit)."""
+        cap = self._uart_capture
+        if cap is None:
+            return
+        if cap.running:
+            self.after(500, self._uart_watch)
+        else:
+            self._uart_stop()
+
+    def _uart_stop(self):
+        cap, self._uart_capture = self._uart_capture, None
+        if cap is None:
+            return
+        result = cap.stop()
+        self.btn_uart_start.configure(state="normal")
+        self.btn_uart_stop.configure(state="disabled")
+        if result.error is not None:
+            self._uart_append("\n" + self._m(result.error) + "\n")
+        self._uart_append("\n" + self._tr("cli.uart_saved", bytes=result.bytes_received, seconds=result.seconds,
+                                          path=result.path) + "\n")
+        if result.bytes_received == 0:
+            self._uart_append(self._tr("cli.uart_nothing") + "\n")
+            return
+        lang, path = self.current_lang, result.path
+
+        def task():
+            from core import log_analyzer
+            r = log_analyzer.analyze_file(path)
+            lines = format_log_analysis(r, lang)
+
+            def upd():
+                self._set_box(self.logscan_text, "\n".join(lines))
+                self._set_pill("logscan", r.status)
+            self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
 
     def run_bootrom_scan_async(self):
