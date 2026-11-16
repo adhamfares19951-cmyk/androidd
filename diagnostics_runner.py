@@ -121,6 +121,11 @@ def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[
         emit(t("cli.reported_sensors", lang, count=len(hw.sensors), status=hw.sensors_status))
         emit(t("cli.reported_cameras", lang, count=len(hw.cameras), status=hw.cameras_status))
 
+    from core.display_check import DisplayOriginalityCheck
+    display = stage("display", lambda: DisplayOriginalityCheck(bridge).run(target_serial))   # read only
+    if display is not None:
+        emit(render(display.diagnosis, lang))
+
     companion_checks: List[Any] = []
     if companion:
         def run_companion_stage():
@@ -156,6 +161,7 @@ def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[
             hw_audit=hw.to_dict() if hw is not None else {},
             sec_scan=sec.to_dict() if sec is not None else {},
             extra_checks=[c.to_dict() for c in stage_checks + companion_checks],
+            display_check=display.to_dict() if display is not None else None,
             signing_key_path=signing_key,
             lang=lang,
             output_dir=output_dir,

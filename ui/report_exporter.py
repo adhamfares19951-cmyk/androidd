@@ -94,6 +94,8 @@ class DiagnosticReportExporter:
         panel_info: Optional[Dict[str, Any]] = None,
         root_forensics: Optional[Dict[str, Any]] = None,
         extra_checks: Optional[List[Dict[str, Any]]] = None,
+        display_check: Optional[Dict[str, Any]] = None,
+        log_analysis: Optional[Dict[str, Any]] = None,
         signing_key_path: Optional[str] = None,
         technician_name: str = "",
         ticket_id: str = "",
@@ -412,6 +414,51 @@ class DiagnosticReportExporter:
                 evidence(rforensics.get("evidence")),
             ]), right=badge(rforensics.get("status")))
 
+        # ---------------- screen originality indicators (never counted in the overall result) ----------------
+        display_card = ""
+        if display_check:
+            effect_colors = {"supports": "#238636", "against": "#d29922", "info": "#6e7681"}
+            irows = "".join(
+                f'<tr><td><span class="badge" style="background:{effect_colors.get(i.get("effect"), "#6e7681")}">'
+                f'{tr("display.effect." + str(i.get("effect", "info")))}</span></td><td>{esc(i.get("text"))}</td></tr>'
+                for i in display_check.get("indicators", []))
+            display_card = card(tr("display.originality_indicators"), "".join([
+                f'<div class="note"><strong>{esc(display_check.get("diagnosis"))}</strong></div>',
+                f'<table class="table"><tbody>{irows}</tbody></table>' if irows else "",
+                f'<div class="note">{tr("display.not_proof")}</div>',
+                evidence(display_check.get("evidence")),
+            ]))
+
+        # ---------------- offline log analysis (the file may be from another phone: not counted) ----------------
+        log_card = ""
+        if log_analysis:
+            mrows = "".join(
+                f'<tr><td>{badge(m.get("severity"))}</td><td><code>{html.escape(str(m.get("rule_id")))}</code></td>'
+                f'<td>{ltr(html.escape(str(m.get("count"))))}</td><td>{ltr(html.escape(str(m.get("line_no"))))}</td>'
+                f'<td>{html.escape(str((m.get("description_ar") if lang == "ar" else m.get("description_en")) or m.get("description_en", "")))}'
+                f'<br><span class="src">{ltr(html.escape(str(m.get("line", ""))))}</span></td></tr>'
+                for m in log_analysis.get("matches", []))
+            log_parts = [
+                row("report.log_source", ltr(html.escape(str(log_analysis.get("source", "-"))))),
+                row("report.log_lines", val(log_analysis.get("lines"))),
+                row("report.log_soc", val(log_analysis.get("soc"))),
+            ]
+            if log_analysis.get("fatal_line"):
+                log_parts.append(row("report.log_fatal", ltr(html.escape(
+                    f'{log_analysis.get("fatal_line_no")}: {log_analysis.get("fatal_line")}'))))
+            if mrows:
+                log_parts.append(
+                    f'<table class="table"><thead><tr><th>{tr("report.log_col_severity")}</th><th>{tr("report.log_col_rule")}</th>'
+                    f'<th>{tr("report.log_col_count")}</th><th>{tr("report.log_col_line")}</th><th>{tr("report.log_col_text")}</th>'
+                    f'</tr></thead><tbody>{mrows}</tbody></table>')
+            log_parts += [
+                causes(log_analysis.get("possible_causes")),
+                f'<div class="note">{esc(log_analysis.get("diagnosis"))}</div>',
+                f'<div class="note">{tr("report.log_not_counted")}</div>',
+                evidence(log_analysis.get("evidence")),
+            ]
+            log_card = card(tr("log.offline_analysis"), "".join(log_parts), right=badge(log_analysis.get("status")))
+
         # ---------------- ticket ----------------
         ticket_card = ""
         if ticket_id or customer_name or reported_fault or repair_cost > 0:
@@ -462,6 +509,8 @@ class DiagnosticReportExporter:
 {sec_card}
 {maint_card}
 {root_card}
+{display_card}
+{log_card}
 <div class="footer">
   <div>{tr("report.technician")}: <strong>{html.escape(technician_name or "-")}</strong></div>
   <div>{signature_note} <strong>{html.escape(report_id)}</strong></div>

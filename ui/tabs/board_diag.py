@@ -408,6 +408,7 @@ class BoardDiagTabMixin:
             from core import log_analyzer
             try:
                 result = log_analyzer.analyze_file(path)
+                self.last_log_analysis = result      # goes into the next report
                 lines, status = format_log_analysis(result, lang), result.status
             except OSError as e:
                 lines, status = [self._tr("cli.logscan_unreadable_file", error=str(e))], "UNKNOWN"
@@ -502,6 +503,7 @@ class BoardDiagTabMixin:
         def task():
             from core import log_analyzer
             r = log_analyzer.analyze_file(path)
+            self.last_log_analysis = r           # goes into the next report
             lines = format_log_analysis(r, lang)
 
             def upd():
