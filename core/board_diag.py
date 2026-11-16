@@ -615,7 +615,16 @@ class MotherboardDiagnostics:
                                            + (f" (checked {spec.checked})" if spec.checked else ""),
                                exit_code=None))
 
-        if pmic.charge_full_uah and design_uah:
+        if pmic.charge_full_uah and design_uah and design_src == "charge_full_design" \
+                and pmic.charge_full_uah == pmic.charge_full_design_uah:
+            # Some kernels (seen on a Samsung S23 Ultra) report the design value in charge_full instead of a
+            # learned capacity, while the real health register is blocked: a 100% here is not a measurement.
+            pmic.health_verdict = str(Status.UNKNOWN)
+            ev.append(Evidence(source="charge_full / charge_full_design",
+                               raw_excerpt=f"charge_full {pmic.charge_full_uah} uAh equals charge_full_design exactly: "
+                                           "the kernel repeats the design value, it did not measure the battery; not judged",
+                               exit_code=None))
+        elif pmic.charge_full_uah and design_uah:
             pct = round(pmic.charge_full_uah / design_uah * 100.0, 1)
             if 1.0 <= pct <= 150.0:
                 pmic.true_health_pct = pct

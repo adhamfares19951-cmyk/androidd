@@ -197,7 +197,9 @@ class TestBoardMatrix(_Base):
             p = self.board(b).analyze_pmic("serial")
             return p.health_verdict, p.evidence
         normal = {"battery/charge_full_design": (0, "5000000", "")}
-        self.run_matrix("battery/charge_full", (0, "4500000", ""),
+        # "charge_full'" (with the closing quote of `cat '...'`): plain "charge_full" also matched the
+        # charge_full_design read, so the test compared 4500000 with itself
+        self.run_matrix("battery/charge_full'", (0, "4500000", ""),
                         {"normal": P, "empty": U, "permission": R, "missing": U, "malformed": U}, check,
                         extra_routes=normal)
         b = FakeBridge({"battery/charge_full_design": (0, "5000000", ""), "battery/charge_full": (0, "3000000", "")})

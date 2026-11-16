@@ -128,6 +128,31 @@ class TestBlockedBatteryReadings(_Db):
         self.assertNotIn("[UNKNOWN]", line)
 
 
+class TestSamsungDesignValueIsNotACapacity(_Db):
+    """Samsung S23 Ultra (SM-S918B): charge_full == charge_full_design == 5000000 exactly; the learned health
+    (fg_asoc) is SELinux-blocked. The 100% PASS was the design value repeated, not a measurement."""
+
+    def pmic(self, full, design="5000000"):
+        b = FakeBridge({"battery/charge_full_design": (0, design, ""),
+                        "battery/charge_full": (0, full, ""),
+                        "battery/voltage_now": (0, "4373000", ""),
+                        "battery/battery_cycle": (0, "-1", "")})
+        return MotherboardDiagnostics(b, self.db).analyze_pmic("s")
+
+    def test_full_equal_to_design_is_not_measured(self):
+        p = self.pmic("5000000")
+        self.assertEqual(p.health_verdict, "UNKNOWN")
+        self.assertIsNone(p.true_health_pct)
+        self.assertNotEqual(p.check_status, "FAIL")
+        self.assertTrue(any("equals charge_full_design" in e.raw_excerpt for e in p.evidence))
+
+    def test_a_learned_capacity_is_still_judged(self):
+        p = self.pmic("4100000")
+        self.assertEqual((p.health_verdict, p.true_health_pct), ("PASS", 82.0))
+        p = self.pmic("3500000")
+        self.assertEqual((p.health_verdict, p.true_health_pct), ("FAIL", 70.0))
+
+
 class TestImplausibleThermalReading(_Db):
     def test_minus_26_is_listed_but_not_judged(self):
         rep = MotherboardDiagnostics(FakeBridge({"dumpsys thermalservice": (0, REDMI_THERMAL, "")}), self.db).read_thermal("s")
