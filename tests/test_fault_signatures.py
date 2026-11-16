@@ -34,6 +34,25 @@ class TestRulesAreWellFormed(unittest.TestCase):
             re.compile(r["pattern"])
 
 
+BOARD_AREAS = ("storage", "power", "peripherals", "modem", "soc_ram", "thermal", "firmware")
+
+
+class TestBoardAreas(unittest.TestCase):
+    def test_every_rule_names_its_board_areas(self):
+        for r in load():
+            areas = r.get("board_areas")
+            self.assertTrue(areas, r["id"])
+            self.assertEqual(len(areas), len(set(areas)), r["id"])
+            for a in areas:
+                self.assertIn(a, BOARD_AREAS, f"{r['id']}: {a}")
+
+    def test_software_first_where_it_is_the_common_cause(self):
+        rules = {r["id"]: r for r in load()}
+        self.assertEqual(rules["KERNEL_PANIC_OOPS"]["board_areas"][0], "firmware")
+        self.assertEqual(rules["STORAGE_IO_ERROR"]["board_areas"][0], "storage")
+        self.assertEqual(rules["UVLO_BROWNOUT"]["board_areas"][0], "power")
+
+
 class TestWording(unittest.TestCase):
     def test_actions_give_possible_causes(self):
         for r in load():

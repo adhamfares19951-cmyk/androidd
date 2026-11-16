@@ -64,6 +64,8 @@ def format_log_analysis(r: Any, lang: str) -> List[str]:
         out.append(f"      {la.action(m, lang)}")
     if r.possible_causes:
         out.append(t("cli.logscan_causes", lang, causes=", ".join(r.possible_causes)))
+    if getattr(r, "board_areas", None):
+        out.append(t("cli.logscan_areas", lang, areas=", ".join(t(f"board_area.{a}", lang) for a in r.board_areas)))
     out.append(render(r.diagnosis, lang))
     return out
 

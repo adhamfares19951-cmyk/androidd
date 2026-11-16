@@ -11,7 +11,8 @@ from pathlib import Path
 
 import main as app_main
 from core import log_analyzer as la
-from ui.i18n import render
+from ui.i18n import render, t
+from ui.ui_helpers import format_log_analysis
 
 # A MediaTek boot captured over UART: preloader, LK, kernel, then the storage link fails and the log ends.
 MTK_UART = (
@@ -64,6 +65,17 @@ class TestAnalyzeText(unittest.TestCase):
         self.assertEqual(r.fatal_line_no, 10)
         self.assertIn("Kernel panic", r.fatal_line)
         self.assertEqual(r.fatal_rule_id, "KERNEL_PANIC_OOPS")
+
+    def test_suspected_board_areas_most_severe_first(self):
+        r = la.analyze_text(MTK_UART)
+        storage = next(m for m in r.matches if m.rule_id == "STORAGE_IO_ERROR")
+        self.assertEqual(storage.board_areas[0], "storage")
+        self.assertEqual(r.board_areas[0], "firmware")       # the fatal kernel panic's area comes first
+        self.assertIn("storage", r.board_areas)
+        self.assertIn("peripherals", r.board_areas)          # the I2C timeout
+        self.assertEqual(len(r.board_areas), len(set(r.board_areas)))
+        text = "\n".join(format_log_analysis(r, "ar"))
+        self.assertIn(t("board_area.storage", "ar"), text)
 
     def test_ansi_and_carriage_returns_are_cleaned(self):
         r = la.analyze_text(MTK_UART)

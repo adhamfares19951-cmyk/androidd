@@ -48,6 +48,7 @@ class LogMatch:
     description_ar: str = ""
     action_en: str = ""
     action_ar: str = ""
+    board_areas: List[str] = field(default_factory=list)   # suspected board areas, most likely first
 
 
 @dataclass
@@ -67,6 +68,7 @@ class LogAnalysis(ProducesCheckResult):
     fatal_rule_id: Optional[str] = None
     diagnosis: Any = None
     possible_causes: List[Any] = field(default_factory=list)
+    board_areas: List[str] = field(default_factory=list)   # the fatal line's areas first, then by severity
     evidence: List[Evidence] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -128,7 +130,8 @@ def analyze_text(text: str, source: str = "log", rules: Optional[List[Dict[str, 
                         line_no=no, line=line.strip()[:MAX_LINE_SHOWN], count=1, last_line_no=no,
                         suspect_components=list(rule.get("suspect_components", [])),
                         description_en=rule.get("description_en", ""), description_ar=rule.get("description_ar", ""),
-                        action_en=rule.get("action_en", ""), action_ar=rule.get("action_ar", ""))
+                        action_en=rule.get("action_en", ""), action_ar=rule.get("action_ar", ""),
+                        board_areas=list(rule.get("board_areas", [])))
                 else:
                     m.count += 1
                     m.last_line_no = no
@@ -149,6 +152,12 @@ def analyze_text(text: str, source: str = "log", rules: Optional[List[Dict[str, 
                 if s not in seen:
                     seen.append(s)
         r.possible_causes = seen
+        areas: List[str] = []
+        for m in [worst] + [m for m in r.matches if m is not worst]:
+            for a in m.board_areas:
+                if a not in areas:
+                    areas.append(a)
+        r.board_areas = areas
         for m in r.matches:
             r.evidence.append(Evidence(source=f"{source}, line {m.line_no}",
                                        raw_excerpt=f"line {m.line_no}: {m.line}\n[parsed] {m.rule_id} ({m.severity}), "
