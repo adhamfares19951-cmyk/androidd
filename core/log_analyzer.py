@@ -107,6 +107,7 @@ def analyze_text(text: str, source: str = "log", rules: Optional[List[Dict[str, 
     total = sum(len(l) for l in lines)
     if total == 0:
         r.diagnosis = M("logscan.empty")
+        r.evidence.append(Evidence(source=source, raw_excerpt="(empty: no text in the file)", exit_code=None))
         return r
     r.unreadable_share = round(sum(len(_CONTROL.findall(l)) for l in lines) / total, 3)
 
@@ -153,10 +154,18 @@ def analyze_text(text: str, source: str = "log", rules: Optional[List[Dict[str, 
                                        raw_excerpt=f"line {m.line_no}: {m.line}\n[parsed] {m.rule_id} ({m.severity}), "
                                                    f"{m.count} matching line(s), last at line {m.last_line_no}",
                                        exit_code=None))
-    elif r.unreadable_share > UNREADABLE_SHARE:
-        r.diagnosis = M("logscan.mostly_unreadable", pct=round(r.unreadable_share * 100))
     else:
-        r.diagnosis = M("logscan.no_known_fault", lines=r.lines)
+        # No match: the evidence shows what was read (first lines, size, unreadable share, rules checked)
+        head = [l.strip()[:MAX_LINE_SHOWN] for l in lines if l.strip()][:3]
+        r.evidence.append(Evidence(
+            source=f"{source} (first lines)",
+            raw_excerpt="\n".join(head) + f"\n[parsed] {r.lines} line(s), {round(r.unreadable_share * 100)}% unreadable "
+                                          f"characters, {len(compiled)} fault signature(s) checked, none matched",
+            exit_code=None))
+        if r.unreadable_share > UNREADABLE_SHARE:
+            r.diagnosis = M("logscan.mostly_unreadable", pct=round(r.unreadable_share * 100))
+        else:
+            r.diagnosis = M("logscan.no_known_fault", lines=r.lines)
     if r.soc:
         r.evidence.append(Evidence(source=f"{source} (chip maker words)", raw_excerpt=r.soc_evidence, exit_code=None))
     return r

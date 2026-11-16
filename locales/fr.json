@@ -190,6 +190,7 @@
   "uart.open_failed": "Impossible d'ouvrir {port} : {error}. Vérifiez que l'adaptateur est branché et qu'aucun autre programme (terminal série, autre capture) n'utilise le port.",
   "uart.read_failed": "La capture sur {port} s'est arrêtée : {error}. L'adaptateur a probablement été débranché ; ce qui a été reçu est enregistré.",
   "uart.size_limit": "La capture a atteint {mb} Mo et a été arrêtée pour protéger le disque.",
+  "uart.save_failed": "Impossible de créer le fichier de capture {path} : {error}. Le port a été libéré ; choisissez un dossier accessible en écriture.",
   "cli.uart_ports_header": "Ports série :",
   "cli.uart_port_line": "  {device}  {description}  [{adapter}]",
   "cli.uart_no_ports": "Aucun port série trouvé. Branchez l'adaptateur USB-UART (CH340, CP210x, FTDI ou PL2303) et vérifiez que son pilote est installé.",

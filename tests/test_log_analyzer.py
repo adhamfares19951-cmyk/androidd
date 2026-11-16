@@ -89,6 +89,20 @@ class TestAnalyzeText(unittest.TestCase):
         self.assertIsNone(r.soc)                                 # 2 vs 2 hits: not guessed
         self.assertEqual({c for c, _ in r.soc_candidates}, {"Qualcomm", "MediaTek"})
 
+    def test_results_without_a_match_still_have_evidence(self):
+        # the rule is evidence on every result, also when nothing known was found
+        clean = la.analyze_text(CLEAN, source="clean.log")
+        self.assertTrue(clean.evidence)
+        self.assertIn("Booting Linux", clean.evidence[0].raw_excerpt)          # what the log looked like
+        self.assertIn("2 line(s)", clean.evidence[0].raw_excerpt)
+        garbage = "".join(chr(c) for c in range(1, 32) if c not in (9, 10, 13)) * 50 + "\nok\n"
+        unreadable = la.analyze_text(garbage, source="noise.log")
+        self.assertEqual(unreadable.diagnosis.key, "logscan.mostly_unreadable")
+        self.assertTrue(unreadable.evidence)
+        self.assertIn("unreadable", unreadable.evidence[0].raw_excerpt)
+        empty = la.analyze_text("", source="e.log")
+        self.assertTrue(empty.evidence)
+
     def test_every_match_has_evidence_with_its_line_number(self):
         r = la.analyze_text(MTK_UART, source="uart.txt")
         self.assertTrue(r.evidence)

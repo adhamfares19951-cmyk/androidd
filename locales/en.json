@@ -190,6 +190,7 @@
   "uart.open_failed": "Could not open {port}: {error}. Check that the adapter is plugged in and that no other program (a serial terminal, another capture) is using the port.",
   "uart.read_failed": "The capture on {port} stopped: {error}. The adapter was probably unplugged; what was received so far is saved.",
   "uart.size_limit": "The capture reached {mb} MB and was stopped to protect the disk.",
+  "uart.save_failed": "Could not create the capture file {path}: {error}. The port was released; choose a folder you can write to.",
   "cli.uart_ports_header": "Serial ports:",
   "cli.uart_port_line": "  {device}  {description}  [{adapter}]",
   "cli.uart_no_ports": "No serial port found. Plug in the USB-UART adapter (CH340, CP210x, FTDI or PL2303) and check that its driver is installed.",

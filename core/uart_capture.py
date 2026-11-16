@@ -105,8 +105,15 @@ class UartCapture:
             self._serial = self._open_port()
         except Exception as e:      # serial.SerialException, ValueError (bad baud), OSError
             raise UartError(M("uart.open_failed", port=self.port, error=str(e)))
-        os.makedirs(os.path.dirname(os.path.abspath(self.out_path)), exist_ok=True)
-        self._file = open(self.out_path, "wb")
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(self.out_path)), exist_ok=True)
+            self._file = open(self.out_path, "wb")
+        except OSError as e:        # folder not writable, path blocked: give the port back before failing
+            try:
+                self._serial.close()
+            except Exception:
+                pass
+            raise UartError(M("uart.save_failed", path=self.out_path, error=str(e)))
         self._started_at = time.monotonic()
         self._thread = threading.Thread(target=self._run, name="uart-capture", daemon=True)
         self._thread.start()

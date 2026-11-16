@@ -114,6 +114,17 @@ class TestCapture(unittest.TestCase):
         self.assertIn("Access is denied", render(ctx.exception.msg, "en"))
         self.assertFalse(os.path.exists(self.out))       # no empty file left behind
 
+    def test_port_released_when_the_save_file_cannot_be_created(self):
+        port = ScriptedPort([BOOT])
+        blocked = os.path.join(self.tmp.name, "not_a_dir")
+        Path(blocked).write_text("a file where the folder should be")      # makedirs / open will fail
+        cap = uc.UartCapture("COM9", out_path=os.path.join(blocked, "uart.log"), open_port=lambda: port)
+        with self.assertRaises(uc.UartError) as ctx:
+            cap.start()
+        self.assertEqual(ctx.exception.msg.key, "uart.save_failed")
+        self.assertTrue(port.closed)                       # the COM port is not left held
+        self.assertFalse(cap.running)
+
     def test_adapter_unplugged_keeps_what_was_received(self):
         port = ScriptedPort([BOOT], fail_after=1)
         cap = uc.UartCapture("COM9", out_path=self.out, open_port=lambda: port)

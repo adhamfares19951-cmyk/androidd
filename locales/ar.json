@@ -190,6 +190,7 @@
   "uart.open_failed": "تعذر فتح {port}: {error}. تأكد أن المحوّل موصول وأنه لا يوجد برنامج آخر (طرفية سيريال أو التقاط آخر) يستخدم المنفذ.",
   "uart.read_failed": "توقف الالتقاط على {port}: {error}. غالباً فُصل المحوّل؛ ما وصل حتى الآن محفوظ.",
   "uart.size_limit": "وصل الالتقاط إلى {mb} MB وأُوقف لحماية القرص.",
+  "uart.save_failed": "تعذر إنشاء ملف الالتقاط {path}: {error}. أُطلق المنفذ؛ اختر مجلداً يمكن الكتابة فيه.",
   "cli.uart_ports_header": "منافذ السيريال:",
   "cli.uart_port_line": "  {device}  {description}  [{adapter}]",
   "cli.uart_no_ports": "لا يوجد أي منفذ سيريال. وصّل محوّل USB-UART (CH340 أو CP210x أو FTDI أو PL2303) وتأكد أن تعريفه مثبت.",
