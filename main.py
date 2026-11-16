@@ -219,12 +219,41 @@ def build_parser():
     parser.add_argument("--analyze-log", type=str, metavar="FILE", default=None,
                         help="check a saved UART / dmesg / last_kmsg / logcat file against the fault signatures "
                              "(no phone, no root)")
+    parser.add_argument("--screen-check", action="store_true",
+                        help="screen originality indicators (read only; indicators, never proof)")
     parser.add_argument("--uart-list", action="store_true", help="list serial ports (USB-UART adapters)")
     parser.add_argument("--uart-capture", type=str, metavar="PORT", default=None,
                         help="capture a phone's boot log from PORT (read only), save it, then analyse it")
     parser.add_argument("--baud", type=int, default=115200, help="baud rate for --uart-capture (default 115200)")
     parser.add_argument("--seconds", type=int, default=60, help="how long --uart-capture records (default 60)")
     return parser
+
+
+def run_screen_check(serial: str, lang: str) -> int:
+    """--screen-check. Exit: 0 checked, 1 no device, 2 unauthorized / offline, 4 device list failed."""
+    from core.adb_bridge import ADBBridge
+    from core.display_check import DisplayOriginalityCheck
+    from ui.i18n import t, set_current_language
+    from ui.ui_helpers import format_display_check
+    set_current_language(lang)
+    bridge = ADBBridge()
+    try:
+        devices = bridge.list_devices()
+    except Exception:
+        logger.exception("Listing devices failed")
+        print(t("cli.internal_error", lang, error="list_devices"))
+        return EXIT_INTERNAL
+    target, code = choose_device(devices, serial, lang)
+    if target is None:
+        return code
+    state = target.get("state", "unknown")
+    if state != "device":
+        print(t(f"cli.state.{state}", lang) if state in ("unauthorized", "offline")
+              else t("cli.unsupported_state", lang, state=state))
+        return EXIT_UNAUTHORIZED
+    result = DisplayOriginalityCheck(bridge).run(target["serial"])
+    print("\n".join(format_display_check(result, lang)))
+    return EXIT_OK
 
 
 def run_uart_command(args) -> int:
@@ -339,6 +368,9 @@ def main() -> int:
 
     if args.uart_list or args.uart_capture:
         return run_uart_command(args)
+
+    if args.screen_check:
+        return run_screen_check(args.serial, args.lang)
 
     if args.cli:
         try:

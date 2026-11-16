@@ -21,7 +21,7 @@ from ui.theme import (
     make_console_box,
     pack_button_grid,
 )
-from ui.ui_helpers import _tri_key, _feature_key, _flinger_key, format_evidence_for_display
+from ui.ui_helpers import _tri_key, _feature_key, _flinger_key, format_evidence_for_display, format_display_check
 
 logger = logging.getLogger("MainWindow")
 
@@ -59,6 +59,7 @@ class HardwareTabMixin:
             (self._L(self._tr("btn_lcd_color_test")), self.run_screen_color_test_async, "warning"),
             (self._L(self._tr("btn_touch_matrix")), self.run_touch_matrix_async, "cyan"),
             (self._L(self._tr("btn_companion_diag")), self.run_companion_diag_async, "purple"),
+            (self._L(self._tr("btn_display_check")), self.run_display_check_async, "cyan"),
         ]
         _, h_btns = pack_button_grid(
             wrap, hw_specs, cols=3, is_rtl=L["is_rtl"], pady=(0, 8), height=36
@@ -73,6 +74,7 @@ class HardwareTabMixin:
             self.btn_lcd_color_test,
             self.btn_touch_matrix,
             self.btn_companion_diag,
+            self.btn_display_check,
         ) = h_btns
 
         # Touch Overlay Switch Strip
@@ -99,6 +101,12 @@ class HardwareTabMixin:
         col_b = 0 if L["is_rtl"] else 1
         pad_a = (6, 0) if L["is_rtl"] else (0, 6)
         pad_b = (0, 6) if L["is_rtl"] else (6, 0)
+
+        # Screen originality indicators (read only; indicators, never proof)
+        self.display_check_card, _ = make_card(wrap, self._L(self._tr("card_display_check")), ACCENT_CYAN, L)
+        self.display_check_text = make_console_box(
+            self.display_check_card, 160, L, self._L(self._tr("ui.display_hint"))
+        )
 
         # Content Grid 1: Sensors & Cameras
         hw_grid = ctk.CTkFrame(wrap, fg_color="transparent")
@@ -407,6 +415,31 @@ class HardwareTabMixin:
         if serial:
             enabled = self.pointer_location_var.get()
             self.hardware_tester.set_pointer_location(serial, enabled)
+
+    def run_display_check_async(self):
+        """Screen originality indicators: reads only (panel identity, display modes, under-display fingerprint)."""
+        serial = self.current_serial.get()
+        if not serial:
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
+            return
+        self._ensure_tab("hardware_tester")
+        self._set_box(self.display_check_text, self._tr("ui.display_hint"))
+        lang = self.current_lang
+
+        def task():
+            from core.display_check import DisplayOriginalityCheck
+            result = DisplayOriginalityCheck(self.bridge).run(serial)
+            self.last_display_check = result
+            lines = format_display_check(result, lang)
+            if result.evidence:
+                lines.append(format_evidence_for_display(result.evidence, lang=lang))
+
+            def upd():
+                self._ensure_tab("hardware_tester")
+                self._set_box(self.display_check_text, "\n".join(lines))
+            self.after(0, upd)
+
+        threading.Thread(target=task, daemon=True).start()
 
     def run_storage_benchmark_async(self):
         serial = self.current_serial.get()

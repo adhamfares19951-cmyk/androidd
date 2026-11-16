@@ -106,6 +106,8 @@ class TestKeysUsedInCode(unittest.TestCase):
             "bloat.safety.": sorted({v["safety"] for v in OEM_DEBLOAT_PACKAGES.values()}),
             "cli.stage.": ["profile", "board", "hardware", "security", "companion"],
             "cli.state.": ["unauthorized", "offline"],
+            "display.assess.": ["consistent", "against", "insufficient"],
+            "display.effect.": ["supports", "against", "info"],
             "verifier.": list(verifier_strings),
         }
         unknown = sorted(set(self.dynamic) - set(families))

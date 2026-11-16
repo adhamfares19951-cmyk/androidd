@@ -68,6 +68,16 @@ def format_log_analysis(r: Any, lang: str) -> List[str]:
     return out
 
 
+def format_display_check(r: Any, lang: str) -> List[str]:
+    """Lines shown for the screen originality indicators (core.display_check), in the CLI and the GUI alike."""
+    from ui.i18n import t, render
+    out = [t("cli.display_header", lang, model=r.model or "-"), render(r.diagnosis, lang)]
+    for i in r.indicators:
+        out.append(t("cli.display_indicator", lang, effect=t(f"display.effect.{i.effect}", lang), text=render(i.text, lang)))
+    out.append(t("display.not_proof", lang))
+    return out
+
+
 def format_evidence_for_display(evidence_items: Any, is_ar: bool = True, lang: Any = None) -> str:
     """Renders a list of Evidence objects with source and excerpt formatted separately for UI display."""
     if not evidence_items:
