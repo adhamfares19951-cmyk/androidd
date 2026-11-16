@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import webbrowser
+import queue
 import threading
 import logging
 from typing import Optional, Dict, List, Any
@@ -108,8 +109,14 @@ ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"
 
 
 class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, SecurityTabMixin, OptimizerTabMixin, RescueTabMixin, ReportsTabMixin, ctk.CTk):
+    UI_QUEUE_POLL_MS = 30
+
     def __init__(self, lang: str = "ar"):
+        # Worker threads reach the window only through this queue (see after()).
+        self._ui_thread_id = threading.get_ident()
+        self._ui_queue: "queue.SimpleQueue" = queue.SimpleQueue()
         super().__init__()
+        super().after(self.UI_QUEUE_POLL_MS, self._drain_ui_queue)
 
         self.current_lang = lang
         set_current_language(lang)
@@ -608,6 +615,38 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
 
 
     # =========================================================================
+    # WORKER THREADS -> WINDOW
+    # =========================================================================
+    def after(self, ms, func=None, *args):
+        """after() that is safe from any thread. A Tcl call from a worker thread raises "main thread is not
+        in main loop" when the main thread has not dispatched events for ~1 s (CustomTkinter's first mainloop()
+        runs update() before Tkinter's loop; a slow PC), which killed the worker. Calls from other threads are
+        queued and scheduled by the main thread; they return None (no caller uses the id)."""
+        if threading.get_ident() == self._ui_thread_id:
+            return super().after(ms, func, *args)
+        if func is None:                 # after(ms) alone just waits
+            time.sleep(ms / 1000.0)
+            return None
+        self._ui_queue.put((ms, func, args))
+        return None
+
+    def _drain_ui_queue(self):
+        while True:
+            try:
+                ms, func, args = self._ui_queue.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                super().after(ms, func, *args)
+            except tk.TclError:          # window being destroyed
+                return
+        try:
+            super().after(self.UI_QUEUE_POLL_MS, self._drain_ui_queue)
+        except tk.TclError:
+            pass
+
+
+    # =========================================================================
     # DEVICE MONITORING & ASYNC LOGIC
     # =========================================================================
     def _start_device_monitor(self):
@@ -764,11 +803,8 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
                 # configure(values=) changes the list only; the shown text keeps the old (other language) one
                 self.device_combo.set(options[0])
 
-        try:
-            if self.winfo_exists():
-                self.after(0, update_ui)
-        except (RuntimeError, tk.TclError):
-            pass
+        # No Tcl call from this worker thread (winfo_exists() was one): update_ui checks the window itself.
+        self.after(0, lambda: update_ui() if self.winfo_exists() else None)
 
     def refresh_devices_async(self):
         threading.Thread(target=self.refresh_devices_sync, daemon=True).start()

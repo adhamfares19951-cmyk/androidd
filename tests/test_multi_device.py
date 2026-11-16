@@ -15,6 +15,7 @@ import main as app_main
 from core.adb_bridge import ADBBridge
 from database.db_manager import DatabaseManager
 from tests.fakes import FakeBridge
+from tests.gui_loop import run_until
 
 
 def _bridge():
@@ -174,16 +175,8 @@ class GuiBatchScanTests(unittest.TestCase):
                     app._ensure_tab("reports")
                     app.bridge = fake
                     # Worker threads talk to the window through after(), which needs a running mainloop.
-                    deadline = time.monotonic() + 30
-
-                    def poll():
-                        if app.btn_batch_scan.cget("state") == "normal" or time.monotonic() > deadline:
-                            app.quit()
-                        else:
-                            app.after(50, poll)
                     app.after(0, app._run_batch_scan_async)
-                    app.after(200, poll)
-                    app.mainloop()
+                    run_until(app, lambda: app.btn_batch_scan.cget("state") == "normal", timeout=30)
                     text = app.batch_text.get("1.0", "end")
                 finally:
                     app.destroy()
