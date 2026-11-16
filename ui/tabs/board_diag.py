@@ -6,7 +6,7 @@ import time
 import webbrowser
 import threading
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from ui.theme import (
     BG_CANVAS,
@@ -30,7 +30,7 @@ from ui.theme import (
 from core.board_diag import StressTestSnapshot
 
 logger = logging.getLogger("MainWindow")
-from ui.ui_helpers import _tri_key, bootrom_pill_status, _fmt, format_evidence_for_display
+from ui.ui_helpers import _tri_key, bootrom_pill_status, _fmt, format_evidence_for_display, format_log_analysis
 
 
 class BoardDiagTabMixin:
@@ -71,6 +71,7 @@ class BoardDiagTabMixin:
             (self._L(self._tr("btn_run_blackbox")), self.run_blackbox_forensics_async, "secondary"),
             (self._L(self._tr("btn_run_root_forensics")), self.run_root_forensics_async, "purple"),
             (self._L(self._tr("btn_backup_efs_raw")), self.run_efs_backup_async, "success"),
+            (self._L(self._tr("btn_analyze_log")), self.run_log_analysis_async, "cyan"),
         ]
         _, b_btns = pack_button_grid(
             wrap, board_specs, cols=3, is_rtl=L["is_rtl"], pady=(0, 12), height=38
@@ -90,6 +91,7 @@ class BoardDiagTabMixin:
             self.btn_run_blackbox,
             self.btn_run_root_forensics,
             self.btn_backup_efs_row,
+            self.btn_analyze_log,
         ) = b_btns
 
         # Live Hardware Telemetry Strip (1.5s Polling)
@@ -204,6 +206,15 @@ class BoardDiagTabMixin:
             115,
             L,
             self._L(self._tr("ui.click_dead_phone_bootrom_usb_scanner")),
+        )
+
+        # Offline log analysis card (a saved UART / dmesg / last_kmsg / logcat file; no phone needed)
+        self.logscan_card, badge = make_card(
+            wrap, self._L(self._tr("card_logscan")), ACCENT_CYAN, L, show_badge=True
+        )
+        self.status_pills["logscan"] = badge
+        self.logscan_text = make_console_box(
+            self.logscan_card, 150, L, self._L(self._tr("ui.logscan_hint"))
         )
 
         # Leakage Test Live Output Card
@@ -338,6 +349,34 @@ class BoardDiagTabMixin:
                     self.after(0, update_ui)
             except (RuntimeError, tk.TclError):
                 pass
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def run_log_analysis_async(self):
+        """Pick a saved log file and check it against the fault signatures (no phone, no root)."""
+        path = filedialog.askopenfilename(
+            title=self._tr("btn_analyze_log"),
+            filetypes=[(self._tr("ui.log_files"), "*.log *.txt *.kmsg"), (self._tr("ui.all_files"), "*.*")],
+        )
+        if not path:
+            return
+        self._ensure_tab("board_diag")
+        self._set_box(self.logscan_text, self._tr("ui.logscan_reading", name=os.path.basename(path)))
+        lang = self.current_lang
+
+        def task():
+            from core import log_analyzer
+            try:
+                result = log_analyzer.analyze_file(path)
+                lines, status = format_log_analysis(result, lang), result.status
+            except OSError as e:
+                lines, status = [self._tr("cli.logscan_unreadable_file", error=str(e))], "UNKNOWN"
+
+            def upd():
+                self._ensure_tab("board_diag")
+                self._set_box(self.logscan_text, "\n".join(lines))
+                self._set_pill("logscan", status)
+            self.after(0, upd)
 
         threading.Thread(target=task, daemon=True).start()
 

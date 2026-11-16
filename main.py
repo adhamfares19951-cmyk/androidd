@@ -216,7 +216,25 @@ def build_parser():
                         help="verify the text (or link) of a signed report QR code with --public-key")
     parser.add_argument("--export-verifier", type=str, metavar="DIR", default=None,
                         help="write DIR/adp_verify.html, an offline QR verification page for --public-key")
+    parser.add_argument("--analyze-log", type=str, metavar="FILE", default=None,
+                        help="check a saved UART / dmesg / last_kmsg / logcat file against the fault signatures "
+                             "(no phone, no root)")
     return parser
+
+
+def run_log_analysis(path: str, lang: str) -> int:
+    """--analyze-log FILE. Exit: 0 analyzed (whatever it found), 4 file could not be read."""
+    from core import log_analyzer as la
+    from ui.i18n import t, set_current_language
+    from ui.ui_helpers import format_log_analysis
+    set_current_language(lang)
+    try:
+        r = la.analyze_file(path)
+    except OSError as e:
+        print(t("cli.logscan_unreadable_file", lang, error=str(e)))
+        return EXIT_INTERNAL
+    print("\n".join(format_log_analysis(r, lang)))
+    return EXIT_OK
 
 
 def run_signing_command(args) -> int:
@@ -266,6 +284,9 @@ def main() -> int:
 
     if args.gen_signing_key or args.verify_report or args.verify_qr is not None or args.export_verifier:
         return run_signing_command(args)
+
+    if args.analyze_log:
+        return run_log_analysis(args.analyze_log, args.lang)
 
     if args.cli:
         try:

@@ -15,6 +15,18 @@ from database.db_manager import DatabaseManager
 
 logger = logging.getLogger("BoardDiag")
 
+
+def load_fault_signature_rules() -> List[Dict[str, Any]]:
+    """Rules of data/fault_signatures.json; an empty list (logged) when the file is missing or unreadable."""
+    sig_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "fault_signatures.json")
+    if os.path.exists(sig_file):
+        try:
+            with open(sig_file, "r", encoding="utf-8") as f:
+                return json.load(f).get("rules", [])
+        except Exception as e:
+            logger.warning(f"Error loading fault_signatures.json: {e}")
+    return []
+
 BATTERY_SYSFS_DIRS = [
     "/sys/class/power_supply/battery",
     "/sys/class/power_supply/bms",
@@ -1464,19 +1476,8 @@ class MotherboardDiagnostics:
         return report
 
     def load_fault_signatures(self) -> List[Dict[str, Any]]:
-        """
-        Dynamically loads external fault signatures from data/fault_signatures.json
-        """
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        sig_file = os.path.join(base_dir, "data", "fault_signatures.json")
-        if os.path.exists(sig_file):
-            try:
-                with open(sig_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    return data.get("rules", [])
-            except Exception as e:
-                logger.warning(f"Error loading fault_signatures.json: {e}")
-        return []
+        """Fault signatures from data/fault_signatures.json (shared with the offline log analyzer)."""
+        return load_fault_signature_rules()
 
     def check_root_access(self, serial: str) -> Tuple[bool, str]:
         """

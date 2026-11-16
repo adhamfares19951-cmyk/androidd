@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "updated_at": "2026-11-09",
+  "updated_at": "2026-11-16",
   "description": "Android Doctor Pro - Hardware & Kernel Fault Signatures Database",
   "rules": [
     {
@@ -57,6 +57,17 @@
       "suspect_components": ["eMMC / UFS NAND Flash", "Storage VCC / VCCQ Power Rail"],
       "action_en": "Perform urgent user data backup! Chip is degrading and may enter permanent read-only mode.",
       "action_ar": "إجراء نسخ احتياطي فوري لبيانات العميل! خلايا الذاكرة تحتضر وقاربت على التلف التام."
+    },
+    {
+      "id": "UFS_LINK_STARTUP_FAIL",
+      "category": "STORAGE",
+      "severity": "CRITICAL",
+      "pattern": "ufshcd.*link startup fail|ufs.*link startup error|ufshcd.*ufs_init fail|ufshcd.*Host controller enable failed",
+      "description_en": "The UFS storage link did not come up at boot (ufshcd link startup failure): the phone cannot read its storage.",
+      "description_ar": "لم يعمل اتصال ذاكرة التخزين UFS عند الإقلاع (فشل بدء الرابط في ufshcd): الجوال لا يستطيع قراءة ذاكرته.",
+      "suspect_components": ["UFS storage chip", "UFS power rails (VCC / VCCQ)", "Solder joints under the UFS chip or SoC", "SoC UFS host controller"],
+      "action_en": "Possible causes, not a diagnosis: the storage chip or its power rails, cracked solder joints under the UFS chip or SoC, or damaged firmware on the chip. Measure the storage power rails before replacing parts.",
+      "action_ar": "أسباب محتملة وليست تشخيصاً: شريحة التخزين أو خطوط طاقتها، أو تشقق لحام تحت شريحة UFS أو المعالج، أو تلف الفيرموير على الشريحة. قِس خطوط طاقة التخزين قبل تبديل أي قطعة."
     },
     {
       "id": "THERMAL_SHUTDOWN",

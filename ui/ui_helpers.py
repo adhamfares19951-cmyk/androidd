@@ -43,6 +43,31 @@ def value_or_status(value: Any, unit: str = "", status: Any = None) -> str:
     return f"{value}{unit}" if unit == "%" else f"{value} {unit}".strip()
 
 
+def format_log_analysis(r: Any, lang: str) -> List[str]:
+    """Lines shown for an offline log analysis (core.log_analyzer.LogAnalysis), in the CLI and the GUI alike."""
+    from core import log_analyzer as la
+    from ui.i18n import t, render
+    out = [t("cli.logscan_header", lang, source=r.source)]
+    truncated = t("cli.logscan_truncated", lang, mb=la.MAX_BYTES // (1024 * 1024)) if r.truncated else ""
+    out.append(t("cli.logscan_summary", lang, lines=r.lines, status=r.status, truncated=truncated))
+    if r.soc:
+        out.append(t("cli.logscan_soc", lang, soc=r.soc, evidence=r.soc_evidence))
+    elif r.soc_candidates:
+        out.append(t("cli.logscan_soc_unclear", lang,
+                     candidates=", ".join(f"{name} ({n})" for name, n in r.soc_candidates)))
+    if r.fatal_line is not None:
+        out.append(t("cli.logscan_fatal", lang, line=r.fatal_line_no, text=r.fatal_line))
+    for m in r.matches:
+        out.append(t("cli.logscan_match", lang, severity=m.severity, rule=m.rule_id, count=m.count,
+                     line=m.line_no, text=m.line))
+        out.append(f"      {la.description(m, lang)}")
+        out.append(f"      {la.action(m, lang)}")
+    if r.possible_causes:
+        out.append(t("cli.logscan_causes", lang, causes=", ".join(r.possible_causes)))
+    out.append(render(r.diagnosis, lang))
+    return out
+
+
 def format_evidence_for_display(evidence_items: Any, is_ar: bool = True, lang: Any = None) -> str:
     """Renders a list of Evidence objects with source and excerpt formatted separately for UI display."""
     if not evidence_items:

@@ -54,7 +54,7 @@ class TestMainWindowSmoke(unittest.TestCase):
             "reports",
         )
         expected_pills = {
-            "pmic", "fast_charge", "nand", "stress", "bootrom", "leakage",
+            "pmic", "fast_charge", "nand", "stress", "bootrom", "leakage", "logscan",
             "thermal", "panic", "blackbox", "root_forensics",
             "sensors", "cameras", "fp", "keys", "sim", "backlight",
             "wifi", "bt", "chips", "storage", "audio_codec", "panel_info",
