@@ -528,6 +528,8 @@
   "companion.install_user_restricted": "The phone refused to install the companion app ({output}). On Xiaomi / Redmi / POCO turn on \"Install via USB\" in Developer options (it may ask for a Mi account and a SIM card); on other phones accept the install prompt on the screen. Then run the test again.",
   "companion.using_installed": "The phone did not accept the install ({reason}), so the companion app already on the phone (version {version}) was used.",
   "companion.using_installed_other_version": "The phone did not accept the install ({reason}), so the companion app already on the phone was used: version {version} (code {code}), not the one shipped with this program (code {expected}). Results come from that copy; tests it does not have are missing.",
+  "companion.install_other_key": "The companion app on the phone was built with another key (installed from another PC), so it was not replaced ({output}). It is never uninstalled automatically. To install this program's version, uninstall the companion app on the phone, then run the test again.",
+  "companion.using_installed_other_key": "The companion app on the phone was built with another key (installed from another PC), so it was not replaced and that copy (version {version}) was used ({reason}). To install this program's version, uninstall the companion app on the phone, then run the test again.",
   "companion.permission_denied": "Not tested: the phone did not give the companion app the {permission} permission. Tap Allow when the app asks, or enable it in the app's settings.",
   "colortest.started": "Colour test opened on the phone. Tap the screen to switch colours.",
   "colortest.failed": "Could not open the colour test: {error}",

@@ -1,7 +1,7 @@
 """
 Companion app on the phone (companion/): measures what ADB cannot read without root.
 
-Flow: install the APK (`adb install -r -g`; reinstall if signed with another key) -> grant camera and
+Flow: install the APK (`adb install -r -g`; a copy signed with another key is used, never uninstalled) -> grant camera and
 microphone -> `am start` the test screen with a unique run id -> read this run's lines
 (`ADP|{json}`, tag AndroidDoctorCompanion) from logcat until "done" or the timeout.
 
@@ -89,7 +89,7 @@ def _install_failure_line(text: str) -> str:
 
 def install(bridge, serial: str) -> tuple:
     """
-    (ok, output). Reinstalls when the phone has a companion signed with a different key.
+    (ok, output). A companion signed with a different key is left in place and used, never uninstalled.
     `-g` grants the permissions at install time. MIUI refuses that flag (and `pm grant`) unless
     "USB debugging (Security settings)" is on, so the install is repeated without it and the app
     asks for camera and microphone itself.
@@ -105,9 +105,9 @@ def install(bridge, serial: str) -> tuple:
         code, out, err = bridge.run_adb(args, serial=serial, timeout=120)
         text = f"{out}\n{err}".strip()
     if "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in text or "signatures do not match" in text.lower():
-        bridge.shell(f"pm uninstall {PACKAGE}", serial=serial, timeout=30)
-        code, out, err = bridge.run_adb(args, serial=serial, timeout=120)
-        text = f"{out}\n{err}".strip()
+        # Signed with another key (installed from another PC). Never uninstalled here: a phone that then refuses
+        # the install (Xiaomi with "Install via USB" off) would be left with no companion app at all.
+        return False, M("companion.install_other_key", output=_install_failure_line(text))
     if code == 0 and "Success" in text:
         return True, text
     if "INSTALL_FAILED_USER_RESTRICTED" in text:
@@ -142,7 +142,12 @@ def run_companion(bridge, serial: str, tests: str = "all", timeout: float = 120.
             return run
         args = getattr(out, "args", None) or {}
         reason = args.get("output") or args.get("path") or str(out)
-        key = "companion.using_installed" if code == APP_VERSION_CODE else "companion.using_installed_other_version"
+        if getattr(out, "key", "") == "companion.install_other_key":
+            key = "companion.using_installed_other_key"
+        elif code == APP_VERSION_CODE:
+            key = "companion.using_installed"
+        else:
+            key = "companion.using_installed_other_version"
         run.notice = M(key, version=name or str(code), code=code, expected=APP_VERSION_CODE, reason=reason)
         run.app_note = f"installed app {name or code}, not updated"
     for perm in ("android.permission.CAMERA", "android.permission.RECORD_AUDIO"):

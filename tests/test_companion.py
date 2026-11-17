@@ -125,12 +125,24 @@ class FlowTests(unittest.TestCase):
         ids = [c.check_id for c in comp.judge(run)]
         self.assertEqual(ids, ["companion.audio_loop", "companion.run"])
 
-    def test_other_signing_key_triggers_reinstall(self):
-        phone = FakePhone(['ADP|{"type":"done","run":"RUN"}'],
-                          install_replies=[(1, "", "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]"), (0, "Success", "")])
+    def test_other_signing_key_is_never_uninstalled(self):
+        # It used to be uninstalled and reinstalled; a phone that then refused the install (Xiaomi with
+        # "Install via USB" off) was left with no companion app at all. Now the copy on the phone is used.
+        mismatch = (1, "", "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Package com.androiddoctor.companion "
+                           "signatures do not match previously installed version; ignoring!]")
+        phone = FakePhone(['ADP|{"type":"done","run":"RUN"}'], install_replies=[mismatch, (0, "Success", "")],
+                          package_dump=self.INSTALLED)
         run = comp.run_companion(phone, "S1", sleep=lambda s: None)
+        self.assertFalse(any(c[0] == "shell" and "pm uninstall" in c[1] for c in phone.calls))
+        self.assertEqual(len([c for c in phone.calls if c[0] == "adb"]), 1)     # no second install either
         self.assertTrue(run.ok)
-        self.assertIn(("shell", "pm uninstall com.androiddoctor.companion"), phone.calls)
+        self.assertEqual(run.notice.key, "companion.using_installed_other_key")
+        self.assertIn("signatures do not match", run.notice.args["reason"])
+
+    def test_other_signing_key_without_a_readable_copy_says_how_to_fix_it(self):
+        mismatch = (1, "", "Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]")
+        run = comp.run_companion(FakePhone([], install_replies=[mismatch]), "S1", sleep=lambda s: None)
+        self.assertEqual(run.error.key, "companion.install_other_key")
 
     def test_missing_apk_and_failed_install(self):
         with patch.object(comp, "apk_path", return_value=os.path.join(self.tmp.name, "missing.apk")):
