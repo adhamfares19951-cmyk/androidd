@@ -451,6 +451,9 @@ class DiagnosticReportExporter:
                     f'<table class="table"><thead><tr><th>{tr("report.log_col_severity")}</th><th>{tr("report.log_col_rule")}</th>'
                     f'<th>{tr("report.log_col_count")}</th><th>{tr("report.log_col_line")}</th><th>{tr("report.log_col_text")}</th>'
                     f'</tr></thead><tbody>{mrows}</tbody></table>')
+            areas = log_analysis.get("board_areas") or []
+            if areas:
+                log_parts.append(f'<div class="note">{html.escape(t("cli.logscan_areas", lang, areas=", ".join(t(f"board_area.{a}", lang) for a in areas)))}</div>')
             log_parts += [
                 causes(log_analysis.get("possible_causes")),
                 f'<div class="note">{esc(log_analysis.get("diagnosis"))}</div>',

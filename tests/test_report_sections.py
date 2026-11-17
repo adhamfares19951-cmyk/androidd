@@ -80,6 +80,13 @@ class TestLogSection(unittest.TestCase):
     def test_arabic_descriptions(self):
         html = report(lang="ar", log_analysis=self.result)
         self.assertIn("لم يعمل اتصال ذاكرة التخزين UFS", html)       # the rule's Arabic description
+        self.assertIn(escape(t("board_area.storage", "ar")), html)  # suspected board area, in Arabic
+
+    def test_board_areas_most_likely_first(self):
+        html = report(log_analysis=self.result)
+        self.assertEqual(self.result["board_areas"][0], "firmware")        # the panic line is the fatal one
+        line = t("cli.logscan_areas", "en", areas=", ".join(t(f"board_area.{a}", "en") for a in self.result["board_areas"]))
+        self.assertIn(escape(line), html)                                   # escaped once, in this order
 
 
 class TestGuiReportPassesTheResults(unittest.TestCase):
