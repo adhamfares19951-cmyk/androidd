@@ -347,6 +347,16 @@ def run_signing_command(args) -> int:
 
 
 def main() -> int:
+    """Runs one command or the GUI; our private adb server is stopped at the end if this run started using it."""
+    from core import adb_bridge
+    adb_bridge.begin_run()
+    try:
+        return _main()
+    finally:
+        adb_bridge.stop_private_server_if_used()
+
+
+def _main() -> int:
     configure_console_encoding()
     configure_logging()
     args = build_parser().parse_args()

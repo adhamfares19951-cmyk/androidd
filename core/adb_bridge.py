@@ -105,6 +105,26 @@ def _strip_su_rc_marker(res: Tuple[Optional[int], str, str]) -> Tuple[Optional[i
     return code, out, err
 
 
+# Set when this run of the program creates the bridge: only then is our private server stopped at the end.
+_used_this_run = False
+
+
+def begin_run() -> None:
+    global _used_this_run
+    _used_this_run = False
+
+
+def stop_private_server_if_used() -> None:
+    """Stop our adb server (private port only, never another tool's 5037) if this run used the bridge.
+    A server left running keeps the phone's USB connection, and another adb has to fight it for the phone."""
+    global _used_this_run
+    if not _used_this_run:
+        return
+    _used_this_run = False
+    from setup_bins import stop_adb_server
+    stop_adb_server()                     # logs and returns False on failure: the exit code is not changed
+
+
 class ADBBridge:
     _instance = None
     _lock = threading.Lock()
@@ -117,6 +137,8 @@ class ADBBridge:
             return cls._instance
 
     def __init__(self):
+        global _used_this_run
+        _used_this_run = True
         if getattr(self, "_initialized", False):
             return
         self.adb_path = get_adb_path()
