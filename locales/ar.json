@@ -1223,6 +1223,7 @@
   "board_area.soc_ram": "المعالج والرام",
   "board_area.thermal": "التبريد والحرارة",
   "board_area.firmware": "البرمجيات والفيرموير",
+  "board_area.display": "الشاشة: اللوحة وفلاتتها وواجهة DSI",
   "cli.logscan_unreadable_file": "تعذرت قراءة ملف السجل: {error}",
   "cli.reported_sensors": "المستشعرات المسجلة: {count} [{status}]",
   "cli.reported_cameras": "الكاميرات المسجلة: {count} [{status}]",

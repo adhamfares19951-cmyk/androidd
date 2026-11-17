@@ -1223,6 +1223,7 @@
   "board_area.soc_ram": "Processor and RAM",
   "board_area.thermal": "Cooling and temperature",
   "board_area.firmware": "Software and firmware",
+  "board_area.display": "Display: screen, its flex and the DSI interface",
   "cli.logscan_unreadable_file": "Could not read the log file: {error}",
   "cli.reported_sensors": "Reported sensors: {count} [{status}]",
   "cli.reported_cameras": "Reported cameras: {count} [{status}]",

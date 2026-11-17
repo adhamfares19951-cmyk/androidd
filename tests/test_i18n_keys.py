@@ -108,7 +108,7 @@ class TestKeysUsedInCode(unittest.TestCase):
             "cli.state.": ["unauthorized", "offline"],
             "display.assess.": ["consistent", "against", "insufficient"],
             "display.effect.": ["supports", "against", "info"],
-            "board_area.": ["storage", "power", "peripherals", "modem", "soc_ram", "thermal", "firmware"],
+            "board_area.": ["storage", "power", "peripherals", "modem", "soc_ram", "thermal", "firmware", "display"],
             "verifier.": list(verifier_strings),
         }
         unknown = sorted(set(self.dynamic) - set(families))

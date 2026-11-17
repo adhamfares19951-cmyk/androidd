@@ -34,7 +34,7 @@ class TestRulesAreWellFormed(unittest.TestCase):
             re.compile(r["pattern"])
 
 
-BOARD_AREAS = ("storage", "power", "peripherals", "modem", "soc_ram", "thermal", "firmware")
+BOARD_AREAS = ("storage", "power", "peripherals", "modem", "soc_ram", "thermal", "firmware", "display")
 
 
 class TestBoardAreas(unittest.TestCase):
@@ -144,6 +144,61 @@ class TestMoreKernelSignatures(unittest.TestCase):
         ]
         for line in harmless:
             self.assertEqual(matching(line), [], line)
+
+
+class TestEveryChipMaker(unittest.TestCase):
+    """Lines in the wording of each chip maker's own drivers (MediaTek, Samsung Exynos, Unisoc, HiSilicon Kirin,
+    Qualcomm) and of Android itself, so a log from any phone is recognised, not only from Qualcomm phones."""
+
+    def test_chip_maker_lines_match_their_rule(self):
+        cases = {
+            # MediaTek
+            "MTK_MSDC_ERROR": "[ 2.1] [msdc]msdc0 -> CMD<17> Arg<0x00001000> resp_CRC <-84>",
+            "MTK_MODEM_EXCEPTION": "[ 20.0] [ccci1/mcd]md1: MD exception happened, type 0x3",
+            "I2C_BUS_TIMEOUT": "[ 3.0] i2c i2c-3: addr: 0x38, transfer timeout",               # i2c-mt65xx
+            "I2C_IO_ERROR": "[ 3.1] i2c i2c-6: addr: 0x5d, transfer ACK error",                  # i2c-mt65xx
+            # Samsung Exynos / Unisoc
+            "BASEBAND_CP_CRASH": "[ 30.0] cpif: modem_ctrl: CP Crash! (reason: watchdog)",
+            # HiSilicon Kirin
+            "KIRIN_RDR_SYSERR": "[ 40.0] rdr_syserr_process_for_ap: modid 0x81fffdfe, arg1 0x0",
+            # Qualcomm power-on / power-off reasons (qpnp-power-on)
+            "SMPL_POWER_LOSS": "[ 0.5] qcom,qpnp-power-on: PMIC@SID0 Power-on reason: Triggered from SMPL (Sudden Momentary Power Loss)",
+            "UVLO_BROWNOUT": "[ 0.5] qcom,qpnp-power-on: PMIC@SID0: Power-off reason: Triggered from UVLO (Under Voltage Lock Out)",
+            "THERMAL_SHUTDOWN": "[ 0.5] qcom,qpnp-power-on: PMIC@SID0: Power-off reason: Triggered from OTST3 (Overtemp)",
+            # any chip: kernel and Android
+            "ARM_SERROR": "[ 6.0] Internal error: synchronous external abort: 96000210 [#1] PREEMPT SMP",
+            "STORAGE_IO_ERROR": "[ 3.3] mmcblk0: error -84 transferring data, sector 4096, nr 8, cmd response 0x900",
+            "SDHCI_HW_TIMEOUT": "[ 3.4] mmc0: Timeout waiting for hardware interrupt.",
+            "BAD_PAGE_STATE": "[ 9.0] BUG: Bad page state in process kswapd0  pfn:8f3a1",
+            "CRITICAL_SERVICE_CRASH": "[ 25.0] init: Critical process 'zygote' exited 4 times in 4 minutes; rebooting into bootloader",
+            "FIRST_STAGE_MOUNT_FAIL": "[ 1.2] init: Failed to mount required partitions early ...",
+            "BATTERY_NOT_DETECTED": "[ 2.5] qcom,fg: battery not detected, using default profile",
+            "PMIC_OVERCURRENT": "[ 4.4] regulator: ldo15: over current detected, disabling",
+            "DISPLAY_DSI_ERROR": "[ 5.0] dsi_panel: [dsi_panel_tx_cmd_set] cmd tx failed, rc=-110",
+        }
+        for rule_id, line in cases.items():
+            self.assertIn(rule_id, matching(line), line)
+
+    def test_normal_lines_of_those_drivers_match_nothing(self):
+        harmless = [
+            "[ 0.5] qcom,qpnp-power-on: PMIC@SID0 Power-on reason: Triggered from PON1 (Secondary PMIC) and 'warm' boot",
+            "[ 0.5] qcom,qpnp-power-on: PMIC@SID0: Power-off reason: Triggered from PS_HOLD (PS_HOLD/MSM controlled shutdown)",
+            "[ 0.6] qcom,qpnp-power-on: smpl enabled",
+            "[ 2.0] [msdc]msdc0: set mclk to 200000000Hz",
+            "[ 2.0] [msdc]msdc_set_timeout: data timeout ns 100000000",
+            "[ 9.0] [ccci1/fsm]md1 boot ready",
+            "[ 9.1] cpif: cp_crash_cnt=0",
+            "01-01 10:00:00.000 1 1 I init: Service 'vendor.qti.hardware.perf' (pid 712) exited with status 0",
+            "[ 2.6] healthd: battery present=1 health=Good",
+            "[ 4.5] regulator: ldo15: over current protection enabled",
+            "[ 5.1] dsi_panel: dsi_panel_init: Panel initialized",
+            "[ 6.0] audit: type=1400 avc: denied { read } for comm=\"init\" scontext=u:r:init:s0",
+        ]
+        for line in harmless:
+            self.assertEqual(matching(line), [], line)
+
+    def test_more_than_thirty_rules(self):
+        self.assertGreater(len(load()), 30)
 
 
 if __name__ == "__main__":

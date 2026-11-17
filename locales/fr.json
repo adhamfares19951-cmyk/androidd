@@ -1223,6 +1223,7 @@
   "board_area.soc_ram": "Processeur et RAM",
   "board_area.thermal": "Refroidissement et température",
   "board_area.firmware": "Logiciel et firmware",
+  "board_area.display": "Affichage : écran, sa nappe et l'interface DSI",
   "cli.logscan_unreadable_file": "Impossible de lire le fichier journal : {error}",
   "cli.reported_sensors": "Capteurs déclarés : {count} [{status}]",
   "cli.reported_cameras": "Appareils photo déclarés : {count} [{status}]",
