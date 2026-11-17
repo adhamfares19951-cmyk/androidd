@@ -325,6 +325,45 @@ class TestStressLoopsAlwaysEnd(_Db):
         self.assertTrue(any("2 stress loop" in e.raw_excerpt for e in rep.evidence))
 
 
+class TestStressTemperatureWithoutRoot(_Db):
+    """thermal_zone0 is blocked without root on many phones; the stress test then had no temperature at all,
+    although `dumpsys thermalservice` gives the CPU temperature without root."""
+
+    def run_stress(self, routes):
+        b = FakeBridge(dict(routes, **{"[a]dp_stress_loop": (0, "0", "")}))
+        with patch("core.board_diag.time.sleep"):
+            return b, MotherboardDiagnostics(b, self.db).run_cpu_pmic_stress_test("s", duration_sec=4)
+
+    def test_blocked_zone_falls_back_to_the_cpu_sensor(self):
+        b, rep = self.run_stress({"thermal_zone0/temp": PERMISSION, "dumpsys thermalservice": (0, REDMI_THERMAL, "")})
+        self.assertEqual(rep.temp_source, "dumpsys thermalservice (CPU)")
+        self.assertEqual(rep.initial_temp_c, 47.7)
+        self.assertEqual(rep.max_temp_c, 47.7)
+        self.assertEqual([s.temp_c for s in rep.samples], [47.7, 47.7])
+        self.assertTrue(any("thermalservice" in e.source and "47.7" in e.raw_excerpt for e in rep.evidence))
+
+    def test_without_a_cpu_sensor_skin_is_used_and_implausible_values_are_not(self):
+        text = ("Current temperatures from HAL:\n"
+                "\tTemperature{mValue=-26.0, mType=5, mName=POWER_AMPLIFIER, mStatus=0}\n"
+                "\tTemperature{mValue=36.0, mType=2, mName=BATTERY, mStatus=0}\n"
+                "\tTemperature{mValue=41.0, mType=3, mName=SKIN, mStatus=0}\n")
+        _, rep = self.run_stress({"thermal_zone0/temp": PERMISSION, "dumpsys thermalservice": (0, text, "")})
+        self.assertEqual(rep.temp_source, "dumpsys thermalservice (SKIN)")
+        self.assertEqual(rep.initial_temp_c, 41.0)
+
+    def test_readable_zone_is_kept_and_thermalservice_not_asked(self):
+        b, rep = self.run_stress({"thermal_zone0/temp": (0, "45000", "")})
+        self.assertEqual(rep.temp_source, "/sys/class/thermal/thermal_zone0/temp")
+        self.assertEqual(rep.initial_temp_c, 45.0)
+        self.assertFalse(any("thermalservice" in c for c in b.commands))
+
+    def test_nothing_readable_is_unknown_not_a_path(self):
+        _, rep = self.run_stress({"thermal_zone0/temp": PERMISSION})
+        self.assertEqual(rep.temp_source, "UNKNOWN")
+        self.assertIsNone(rep.initial_temp_c)
+        self.assertIsNone(rep.max_temp_c)
+
+
 class TestDeepScanDialogShowsWhyNotRead(unittest.TestCase):
     """The deep-scan dialog said "Battery capacity vs design: UNKNOWN%" on the phone (blocked: NEEDS_ROOT)."""
 

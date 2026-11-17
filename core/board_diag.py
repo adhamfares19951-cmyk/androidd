@@ -1374,6 +1374,33 @@ class MotherboardDiagnostics:
             return res.evidence(f"{left} stress loop(s) still running after kill; each ends at its deadline")
         return res.evidence("stress loops left running: " + ("0" if left == 0 else "unknown"))
 
+    # dumpsys thermalservice HAL types, in the order the stress test prefers them
+    _STRESS_HAL_TYPES = ((0, "CPU"), (3, "SKIN"), (2, "BATTERY"))
+
+    def _thermalservice_temp(self, serial: str, only_type: Optional[int] = None
+                             ) -> Tuple[Optional[float], Optional[int], str, Evidence]:
+        """The hottest plausible sensor of the first HAL type present (CPU, then skin, then battery), without
+        root. Returns (°C or None, HAL type, type name, evidence)."""
+        res = run_read(self.bridge, "dumpsys thermalservice", serial=serial, timeout=6)
+        if not res.ok:
+            return None, None, "", res.evidence()
+        text = res.text
+        if "Current temperatures from HAL" in text:          # not the cached copy printed above it
+            text = text.split("Current temperatures from HAL", 1)[1]
+        by_type: Dict[int, List[float]] = {}
+        for m in re.finditer(r"Temperature\{mValue=(-?[\d.]+),\s*mType=(-?\d+)", text):
+            try:
+                val = float(m.group(1))
+            except ValueError:
+                continue
+            if self.PLAUSIBLE_MIN_C <= val <= 150.0:          # e.g. a -26 °C power-amplifier reading is not used
+                by_type.setdefault(int(m.group(2)), []).append(val)
+        for hal_type, name in self._STRESS_HAL_TYPES:
+            if (only_type is None or hal_type == only_type) and by_type.get(hal_type):
+                t = round(max(by_type[hal_type]), 1)
+                return t, hal_type, name, res.evidence(f"{name} (HAL type {hal_type}) = {t} °C")
+        return None, None, "", res.evidence("no plausible CPU, skin or battery temperature")
+
     def run_cpu_pmic_stress_test(
         self,
         serial: str,
@@ -1398,17 +1425,37 @@ class MotherboardDiagnostics:
             mv = round(raw / 1000.0, 1)
             return mv if 2500.0 <= mv <= 5000.0 else None
 
-        def read_temp() -> Optional[float]:
-            res = read_node(self.bridge, ["/sys/class/thermal/thermal_zone0/temp"], serial=serial, timeout=3)
+        def read_zone0() -> Optional[float]:
+            res = read_node(self.bridge, [ZONE0], serial=serial, timeout=3)
             raw = parse_int(res.text) if res.ok else None
             if raw is None:
                 return None
             t = round(raw / 1000.0, 1) if abs(raw) > 1000 else float(raw)
             return t if -40.0 <= t <= 150.0 else None
 
+        ZONE0 = "/sys/class/thermal/thermal_zone0/temp"
         report.initial_voltage_mv = read_voltage()
-        report.initial_temp_c = read_temp()
-        report.temp_source = "/sys/class/thermal/thermal_zone0/temp"
+        # One sensor for the whole test, so the rise compares like with like: thermal_zone0, or (blocked
+        # without root on many phones) the CPU / skin / battery temperature from dumpsys thermalservice.
+        hal_type: Optional[int] = None
+        report.initial_temp_c = read_zone0()
+        if report.initial_temp_c is not None:
+            report.temp_source = ZONE0
+        else:
+            t, hal_type, label, ev = self._thermalservice_temp(serial)
+            report.evidence.append(ev)
+            if t is not None:
+                report.initial_temp_c = t
+                report.temp_source = f"dumpsys thermalservice ({label})"
+            else:
+                report.temp_source = str(Status.UNKNOWN)
+
+        def read_temp() -> Optional[float]:
+            if report.temp_source == ZONE0:
+                return read_zone0()
+            if hal_type is not None:
+                return self._thermalservice_temp(serial, only_type=hal_type)[0]
+            return None
 
         limit = duration_sec + 5
         # $0 = STRESS_MARKER names the loops in `ps`; $1 = the deadline (epoch seconds) each loop checks.
@@ -1464,7 +1511,7 @@ class MotherboardDiagnostics:
                 report.temp_rise_c = round(report.max_temp_c - report.initial_temp_c, 1)
 
         report.evidence.append(Evidence(
-            source="stress samples (scaling_cur_freq, battery voltage_now, thermal_zone0)",
+            source=f"stress samples (scaling_cur_freq, battery voltage_now, {report.temp_source})",
             raw_excerpt=f"{len(report.samples)} samples; freq readings={len(freqs_all)}, voltage readings={len(voltages)}, temp readings={len(temps)}",
             exit_code=None))
 
