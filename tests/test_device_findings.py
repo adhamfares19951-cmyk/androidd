@@ -408,6 +408,20 @@ class TestCameraSectionsAfterDeviceList(unittest.TestCase):
         cams = HardwareTester(FakeBridge({"dumpsys media.camera": (0, text, "")})).audit_cameras("s")
         self.assertEqual({c.camera_id: c.facing for c in cams}, {"0": "Back", "1": "Front", "21": "Back"})
 
+    def test_flash_value_on_the_line_after_its_tag(self):
+        # dumpsys media.camera prints the tag, then its value on its own line: "[1 ]"
+        text = "\n".join([
+            "== Camera HAL device device@3.6/internal/0 (v3.6) static information: ==", "    Facing: Back",
+            "      android.flash.info.available (50000): byte[1]", "        [1 ]",
+            "== Camera HAL device device@3.6/internal/1 (v3.6) static information: ==", "    Facing: Front",
+            "      android.flash.info.available (50000): byte[1]", "        [0 ]",
+            "== Camera HAL device device@3.6/internal/2 (v3.6) static information: ==", "    Facing: Back",
+            "      android.flash.info.available (50000): byte[1]",
+            "      android.flash.info.chargeDuration (50001): int64[1]", "        [0 ]",   # another tag's value
+        ])
+        cams = HardwareTester(FakeBridge({"dumpsys media.camera": (0, text, "")})).audit_cameras("s")
+        self.assertEqual({c.camera_id: c.flash_available for c in cams}, {"0": True, "1": False, "2": None})
+
 
 class TestArabicReportKeepsNumbersLtr(_Db):
     def test_values_are_isolated_ltr(self):

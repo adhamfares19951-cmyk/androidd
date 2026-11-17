@@ -429,8 +429,15 @@ class HardwareTester:
 
         current: Optional[CameraInfo] = None
         by_id: Dict[str, CameraInfo] = {}
+        flash_pending = False      # the flash tag had no value: it is on the next line ("[1 ]"), if that line is one
         for line in res.text.splitlines():
             s = line.strip()
+            if flash_pending and s:
+                flash_pending = False
+                v = re.fullmatch(r"\[\s*(0|1|true|false)\s*\]", s, re.IGNORECASE)
+                if v and current is not None:
+                    current.flash_available = v.group(1).lower() in ("1", "true")
+                    continue
             id_match = (re.search(r"Camera ID:\s*([0-9a-zA-Z_]+)", s)
                         or re.search(r"== Camera HAL device \S*/(\d+)\b", s)
                         or re.search(r"^Device\s+(\d+)\s+(?:is|static)", s))
@@ -442,6 +449,7 @@ class HardwareTester:
                     by_id[cam_id] = CameraInfo(camera_id=cam_id)
                     cameras.append(by_id[cam_id])
                 current = by_id[cam_id]
+                flash_pending = False
                 continue
             if current is None:
                 continue
@@ -460,6 +468,8 @@ class HardwareTester:
                 value = _flash_value(s)
                 if value is not None:
                     current.flash_available = value
+                else:
+                    flash_pending = True
 
         if not cameras:
             n = re.search(r"Number of camera devices:\s*(\d+)", res.text)
