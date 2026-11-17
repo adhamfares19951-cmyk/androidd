@@ -559,11 +559,13 @@ class HardwareTabMixin:
                 run = companion.run_companion(self.bridge, serial)
                 spec = default_db().lookup(self.bridge.get_prop("ro.product.model", serial=serial) or "")
                 checks = companion.judge(run, spec)
+                notice = run.notice
             except Exception as e:
                 logger.error(f"Companion run failed: {e}")
                 checks = [CheckResult(check_id="companion.run", detail=str(e))]
+                notice = None
             self.last_companion_checks = checks  # added to the diagnostic report
-            lines = []
+            lines = [self._m(notice)] if notice is not None else []   # the app already on the phone was used
             for c in checks:
                 lines.append(f"[{c.status}] {self._tr(c.check_id)}")
                 if c.detail is not None:

@@ -132,6 +132,8 @@ def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[
             from core import companion as comp
             from core.model_db import default_db
             run = comp.run_companion(bridge, target_serial)
+            if run.notice is not None:
+                emit(render(run.notice, lang))       # the app already on the phone was used
             spec = default_db().lookup(bridge.get_prop("ro.product.model", serial=target_serial) or "")
             return comp.judge(run, spec)
         companion_checks = stage("companion", run_companion_stage) or []

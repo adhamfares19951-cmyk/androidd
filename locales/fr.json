@@ -526,6 +526,8 @@
   "companion.apk_missing": "APK compagnon introuvable : {path}.",
   "companion.install_failed": "L'installation de l'APK a échoué : {output}",
   "companion.install_user_restricted": "Le téléphone a refusé d'installer l'application compagnon ({output}). Sur Xiaomi / Redmi / POCO, activez « Installer via USB » dans les options pour les développeurs (un compte Mi et une carte SIM peuvent être demandés) ; sur les autres téléphones, acceptez la demande d'installation à l'écran. Puis relancez le test.",
+  "companion.using_installed": "Le téléphone n'a pas accepté l'installation ({reason}) ; l'application compagnon déjà installée (version {version}) a été utilisée.",
+  "companion.using_installed_other_version": "Le téléphone n'a pas accepté l'installation ({reason}) ; l'application compagnon déjà installée a été utilisée : version {version} (code {code}), pas celle fournie avec ce programme (code {expected}). Les résultats viennent de cette copie ; les tests qu'elle n'a pas manquent.",
   "companion.permission_denied": "Non testé : le téléphone n'a pas accordé l'autorisation {permission} à l'application compagnon. Appuyez sur Autoriser quand l'application la demande, ou activez-la dans ses paramètres.",
   "colortest.started": "Test des couleurs ouvert sur le téléphone. Touchez l'écran pour changer de couleur.",
   "colortest.failed": "Impossible d'ouvrir le test des couleurs : {error}",

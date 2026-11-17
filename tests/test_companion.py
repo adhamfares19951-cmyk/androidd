@@ -63,8 +63,9 @@ class ProtocolTests(unittest.TestCase):
 
 
 class FakePhone:
-    def __init__(self, logs, install_replies=None, apk=True):
+    def __init__(self, logs, install_replies=None, apk=True, package_dump=""):
         self.logs = list(logs)
+        self.package_dump = package_dump      # `dumpsys package com.androiddoctor.companion` (installed app)
         self.install_replies = list(install_replies or [(0, "Success", "")])
         self.calls = []
 
@@ -77,6 +78,8 @@ class FakePhone:
         if command.startswith("am start"):
             self.run_id = re.search(r"--es run_id (\w+)", command).group(1)
             return 0, "Status: ok", ""
+        if command.startswith("dumpsys package"):
+            return 0, self.package_dump, ""
         if command.startswith("logcat"):
             text = self.logs.pop(0) if self.logs else ""
             return 0, text.replace("RUN", self.run_id), ""
@@ -137,6 +140,52 @@ class FlowTests(unittest.TestCase):
         run = comp.run_companion(FakePhone([], install_replies=[(1, "", "Failure [INSTALL_FAILED_INSUFFICIENT_STORAGE]")]),
                                  "S1", sleep=lambda s: None)
         self.assertEqual(run.error.key, "companion.install_failed")
+
+    RESTRICTED = (1, "", "adb: failed to install x.apk: Failure [INSTALL_FAILED_USER_RESTRICTED: Install canceled by user]")
+    INSTALLED = "\n".join(["Packages:", "  Package [com.androiddoctor.companion] (abc):",
+                           "    versionCode=1 minSdk=24 targetSdk=34", "    versionName=1.0", ""])
+
+    def test_refused_install_continues_with_the_installed_app_and_says_so(self):
+        # Xiaomi: "Install via USB" off, but the app was installed by hand (file manager)
+        phone = FakePhone(["\n".join(['ADP|{"type":"result","test":"audio","run":"RUN","snr_db":31.2}',
+                                      'ADP|{"type":"done","run":"RUN"}'])],
+                          install_replies=[self.RESTRICTED, self.RESTRICTED], package_dump=self.INSTALLED)
+        run = comp.run_companion(phone, "S1", sleep=lambda s: None)
+        self.assertTrue(run.ok)
+        self.assertIsNone(run.error)
+        self.assertEqual(run.notice.key, "companion.using_installed")
+        self.assertEqual(run.notice.args["version"], "1.0")
+        self.assertIn("INSTALL_FAILED_USER_RESTRICTED", run.notice.args["reason"])
+        checks = comp.judge(run, SPEC)
+        self.assertEqual([c.status for c in checks], [Status.PASS])
+        self.assertIn("installed app 1.0", checks[0].evidence[0].source)       # every result says which app made it
+
+    def test_installed_app_of_another_version_is_used_and_flagged(self):
+        other = self.INSTALLED.replace("versionCode=1 ", "versionCode=7 ").replace("versionName=1.0", "versionName=0.9")
+        phone = FakePhone(['ADP|{"type":"done","run":"RUN"}'], install_replies=[self.RESTRICTED, self.RESTRICTED],
+                          package_dump=other)
+        run = comp.run_companion(phone, "S1", sleep=lambda s: None)
+        self.assertTrue(run.ok)
+        self.assertEqual(run.notice.key, "companion.using_installed_other_version")
+
+    def test_refused_install_without_the_app_still_fails(self):
+        phone = FakePhone([], install_replies=[self.RESTRICTED, self.RESTRICTED], package_dump="Unable to find package")
+        run = comp.run_companion(phone, "S1", sleep=lambda s: None)
+        self.assertEqual(run.error.key, "companion.install_user_restricted")
+        self.assertFalse(any(c[0] == "shell" and c[1].startswith("am start") for c in phone.calls))
+
+    def test_missing_apk_uses_an_installed_app(self):
+        with patch.object(comp, "apk_path", return_value=os.path.join(self.tmp.name, "missing.apk")):
+            run = comp.run_companion(FakePhone(['ADP|{"type":"done","run":"RUN"}'], package_dump=self.INSTALLED),
+                                     "S1", sleep=lambda s: None)
+        self.assertTrue(run.ok)
+        self.assertEqual(run.notice.key, "companion.using_installed")
+
+    def test_app_version_matches_the_build_script(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "companion", "build.py"), encoding="utf-8") as f:
+            code = int(re.search(r"^VERSION_CODE = (\d+)", f.read(), re.M).group(1))
+        self.assertEqual(comp.APP_VERSION_CODE, code)
 
 
 class BatteryTests(unittest.TestCase):

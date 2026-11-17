@@ -30,6 +30,7 @@ PACKAGE = "com.androiddoctor.companion"
 ACTIVITY = f"{PACKAGE}/.DiagActivity"
 LOG_TAG = "AndroidDoctorCompanion"
 LINE_PREFIX = "ADP|"
+APP_VERSION_CODE = 1                 # companion/build.py VERSION_CODE of the APK shipped with this program
 
 # Thresholds (documented in the module docstring and README)
 MIN_LEVEL_FOR_CAPACITY = 50          # % charge needed for a capacity estimate
@@ -55,6 +56,8 @@ class CompanionRun:
     results: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     raw_lines: Dict[str, str] = field(default_factory=dict)
     install_output: str = ""
+    notice: Any = None                     # Msg: the app already on the phone was used (install refused)
+    app_note: str = ""                     # added to every result's evidence source
 
 
 def parse_lines(text: str, run_id: str) -> List[Dict[str, Any]]:
@@ -113,14 +116,35 @@ def install(bridge, serial: str) -> tuple:
     return False, M("companion.install_failed", output=_install_failure_line(text))
 
 
+def installed_version(bridge, serial: str) -> tuple:
+    """(versionCode, versionName) of the companion app already on the phone, or (None, "") if it is not."""
+    _, out, _ = bridge.shell(f"dumpsys package {PACKAGE}", serial=serial, timeout=15)
+    text = out or ""
+    if f"Package [{PACKAGE}]" not in text:
+        return None, ""
+    code = re.search(r"versionCode=(\d+)", text)
+    name = re.search(r"versionName=(\S+)", text)
+    if not code:
+        return None, ""
+    return int(code.group(1)), (name.group(1) if name else "")
+
+
 def run_companion(bridge, serial: str, tests: str = "all", timeout: float = 120.0,
                   poll_seconds: float = 2.0, sleep=time.sleep) -> CompanionRun:
     run = CompanionRun(run_id=uuid.uuid4().hex[:16])
     ok, out = install(bridge, serial)
     run.install_output = out if isinstance(out, str) else ""
     if not ok:
-        run.error = out
-        return run
+        # Xiaomi with "Install via USB" off (or no APK in this build): an app installed by hand still works.
+        code, name = installed_version(bridge, serial)
+        if code is None:
+            run.error = out
+            return run
+        args = getattr(out, "args", None) or {}
+        reason = args.get("output") or args.get("path") or str(out)
+        key = "companion.using_installed" if code == APP_VERSION_CODE else "companion.using_installed_other_version"
+        run.notice = M(key, version=name or str(code), code=code, expected=APP_VERSION_CODE, reason=reason)
+        run.app_note = f"installed app {name or code}, not updated"
     for perm in ("android.permission.CAMERA", "android.permission.RECORD_AUDIO"):
         bridge.shell(f"pm grant {PACKAGE} {perm}", serial=serial, timeout=15)
     code, out, err = bridge.shell(f"am start -W -n {ACTIVITY} --es run_id {run.run_id} --es tests {tests}",
@@ -152,7 +176,8 @@ def run_companion(bridge, serial: str, tests: str = "all", timeout: float = 120.
 # ---------------------------------------------------------------------------------------- judging
 def _ev(run: CompanionRun, test: str, note: str = "") -> List[Evidence]:
     raw = run.raw_lines.get(test, "")
-    return [Evidence(source=f"companion app: {test}" + (f" ({note})" if note else ""), raw_excerpt=raw, exit_code=None)]
+    notes = ", ".join(n for n in (note, run.app_note) if n)
+    return [Evidence(source=f"companion app: {test}" + (f" ({notes})" if notes else ""), raw_excerpt=raw, exit_code=None)]
 
 
 def judge_battery(run: CompanionRun, spec=None) -> CheckResult:
