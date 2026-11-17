@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "updated_at": "2026-11-16",
+  "updated_at": "2026-11-17",
   "description": "Android Doctor Pro - Hardware & Kernel Fault Signatures Database",
   "rules": [
     {
@@ -12,6 +12,7 @@
       "description_en": "The kernel stopped with a panic or an oops. The text right after it in the log usually names the reason.",
       "description_ar": "توقف كيرنل النظام بانهيار (Kernel panic أو Oops). النص الذي يليه في السجل يذكر السبب عادةً.",
       "suspect_components": ["Corrupted kernel / boot partition", "Firmware that does not match the device", "Storage that cannot be read (e.g. root file system not mounted)", "RAM or SoC (only if it repeats on clean stock firmware)"],
+      "suspect_components_ar": ["قسم كيرنل أو boot تالف", "فيرموير غير مطابق للجهاز", "ذاكرة تخزين لا تُقرأ (مثلاً لم يُركَّب نظام الملفات الجذري)", "الرام أو المعالج (فقط إذا تكرر على روم رسمي نظيف)"],
       "action_en": "Possible causes, most common first: a corrupted kernel or boot partition, firmware that does not match the device, storage that cannot be read. Read the reason printed after the panic, then flash stock firmware; suspect RAM or the SoC only if the panic repeats on clean stock firmware.",
       "action_ar": "أسباب محتملة، الأكثر شيوعاً أولاً: قسم كيرنل أو boot تالف، فيرموير غير مطابق للجهاز، ذاكرة تخزين لا تُقرأ. اقرأ السبب المكتوب بعد الانهيار، ثم فلّش الروم الرسمي؛ ولا تشكّ في الرام أو المعالج إلا إذا تكرر الانهيار على روم رسمي نظيف."
     },
@@ -24,6 +25,7 @@
       "description_en": "Hardware Watchdog Timer triggered. CPU froze and failed to feed hardware watchdog.",
       "description_ar": "تدخل مؤقت الحماية (Watchdog) وأعاد تشغيل النظام لأن المعالج توقف عن الاستجابة.",
       "suspect_components": ["Kernel / firmware bug", "PMIC", "SoC power rail"],
+      "suspect_components_ar": ["خلل في الكيرنل أو الفيرموير", "آيسي الطاقة PMIC", "خط طاقة المعالج"],
       "action_en": "Possible causes, most likely first: kernel/firmware bug, then power-rail problems. If it repeats on stock firmware, measure the screen-off battery current (wireless ADB, no charger) and check power rails.",
       "action_ar": "أسباب محتملة بالترتيب: خلل في الكيرنل أو الفيرموير، ثم مشاكل في خطوط الطاقة. إذا تكرر على الروم الرسمي، قِس تيار البطارية والشاشة مطفأة (ADB لاسلكي وبدون شاحن) وافحص خطوط الطاقة."
     },
@@ -36,6 +38,7 @@
       "description_en": "An I2C transfer timed out (-110): a chip on the bus did not answer in time.",
       "description_ar": "انتهت مهلة نقل على ناقل I2C (-110): أحد الآيسيات على الناقل لم يرد في الوقت المحدد.",
       "suspect_components": ["Touch IC", "Fingerprint Sensor", "Audio Codec", "Camera Flex"],
+      "suspect_components_ar": ["آيسي اللمس", "حساس البصمة", "آيسي الصوت (Audio Codec)", "فلاتة الكاميرا"],
       "action_en": "Possible causes: the part is not fitted (a driver probing an alternative part, often harmless at boot), the part is not powered, a flex cable is loose, or the bus is held low by a faulty part or a short. It matters if the related function (touch, camera, fingerprint, sensors) does not work; then disconnect the flex cables one by one.",
       "action_ar": "أسباب محتملة: القطعة غير مركّبة (تعريف يبحث عن قطعة بديلة، وهذا غالباً غير ضار عند الإقلاع)، أو القطعة لا يصلها فولت، أو فلاتة مفصولة، أو الناقل مشدود للأرضي بسبب قطعة تالفة أو شورت. يهم الأمر إذا كانت الوظيفة المرتبطة (اللمس، الكاميرا، البصمة، الحساسات) لا تعمل؛ عندها افصل الفلاتات واحدة تلو الأخرى."
     },
@@ -48,6 +51,7 @@
       "description_en": "An I2C transfer failed (-5 EIO / NACK): the chip at that address did not acknowledge.",
       "description_ar": "فشل نقل على ناقل I2C (-5 EIO أو NACK): الآيسي على هذا العنوان لم يرد بالتأكيد.",
       "suspect_components": ["Power IC", "Sensors Flex Cable", "Charging Board Sub-PBA"],
+      "suspect_components_ar": ["آيسي الطاقة", "فلاتة الحساسات", "بورد الشحن الفرعية"],
       "action_en": "Possible causes: the part is not fitted (often harmless when a driver probes an alternative part), it is not powered, its flex connector is loose or dirty, or the part is damaged. It matters if the related function does not work; then check the connector pins and the supply voltage of that part.",
       "action_ar": "أسباب محتملة: القطعة غير مركّبة (غالباً غير ضار حين يبحث التعريف عن قطعة بديلة)، أو لا يصلها فولت، أو كونكتور الفلاتة مفصول أو متسخ، أو القطعة تالفة. يهم الأمر إذا كانت الوظيفة المرتبطة لا تعمل؛ عندها افحص أرجل الكونكتور وفولت تغذية القطعة."
     },
@@ -60,6 +64,7 @@
       "description_en": "The storage (eMMC / UFS) reported read/write errors or timeouts.",
       "description_ar": "أبلغت ذاكرة التخزين (eMMC / UFS) عن أخطاء قراءة/كتابة أو انتهاء مهلة.",
       "suspect_components": ["eMMC / UFS NAND Flash", "Storage VCC / VCCQ Power Rail"],
+      "suspect_components_ar": ["ذاكرة التخزين eMMC / UFS", "خط طاقة التخزين VCC / VCCQ"],
       "action_en": "Possible causes: the storage chip, its power rails (VCC / VCCQ) or clock line, or cracked solder joints under it. Back up the customer's data first while it can still be read; many such lines, or errors on every boot, point more strongly to the storage than a single line does.",
       "action_ar": "أسباب محتملة: شريحة التخزين، أو خطوط طاقتها (VCC / VCCQ) أو خط الساعة، أو تشقق اللحام تحتها. خذ نسخة احتياطية من بيانات الزبون أولاً ما دامت تُقرأ؛ كثرة هذه الأسطر أو تكرارها في كل إقلاع تشير للتخزين أكثر من سطر واحد."
     },
@@ -72,6 +77,7 @@
       "description_en": "The UFS storage link did not come up at boot (ufshcd link startup failure): the phone cannot read its storage.",
       "description_ar": "لم يعمل اتصال ذاكرة التخزين UFS عند الإقلاع (فشل بدء الرابط في ufshcd): الجوال لا يستطيع قراءة ذاكرته.",
       "suspect_components": ["UFS storage chip", "UFS power rails (VCC / VCCQ)", "Solder joints under the UFS chip or SoC", "SoC UFS host controller"],
+      "suspect_components_ar": ["شريحة تخزين UFS", "خطوط طاقة UFS (VCC / VCCQ)", "لحام تحت شريحة UFS أو المعالج", "متحكم UFS داخل المعالج"],
       "action_en": "Possible causes, not a diagnosis: the storage chip or its power rails, cracked solder joints under the UFS chip or SoC, or damaged firmware on the chip. Measure the storage power rails before replacing parts.",
       "action_ar": "أسباب محتملة وليست تشخيصاً: شريحة التخزين أو خطوط طاقتها، أو تشقق لحام تحت شريحة UFS أو المعالج، أو تلف الفيرموير على الشريحة. قِس خطوط طاقة التخزين قبل تبديل أي قطعة."
     },
@@ -84,6 +90,7 @@
       "description_en": "The kernel reported a critical temperature and shut the phone down.",
       "description_ar": "أبلغ الكيرنل عن حرارة حرجة وأطفأ الجوال.",
       "suspect_components": ["Heavy load or a hot environment", "Thermal paste / pad", "A part heating from a short (e.g. RF power amplifier, PMIC)", "A faulty temperature sensor"],
+      "suspect_components_ar": ["حمل عالٍ أو جو حار", "المعجون أو اللصقة الحرارية", "قطعة تسخن بسبب شورت (مثل مكبر إشارة RF أو PMIC)", "حساس حرارة تالف"],
       "action_en": "Possible causes: heavy load or a hot environment, poor heat transfer (paste / pads), a part heating because of a short, or a faulty temperature sensor. Find the hot spot with a thermal camera or rosin while the phone starts.",
       "action_ar": "أسباب محتملة: حمل ثقيل أو مكان حار، أو ضعف تبديد الحرارة (المعجون / الوسادات)، أو قطعة تسخن بسبب شورت، أو حساس حرارة تالف. حدّد الآيسي الذي يسخن بكاميرا حرارية أو بالروزين أثناء التشغيل."
     },
@@ -96,6 +103,7 @@
       "description_en": "Under-Voltage Lockout (UVLO). System voltage sagged below hardware operating minimum.",
       "description_ar": "هبوط حاد في جهد التغذية (UVLO). الجهد انحدر لأقل من الحد الأدنى لتشغيل المعالج.",
       "suspect_components": ["Degraded Battery Cell", "Battery Connector Pins", "Main PMIC"],
+      "suspect_components_ar": ["خلية بطارية ضعيفة", "أطراف سوكيت البطارية", "آيسي الطاقة الرئيسي PMIC"],
       "action_en": "Possible causes: a worn battery, poor battery contact, or a short / high load on the board pulling the voltage down. Test with a bench power supply first: if the drops stop, suspect the battery or its contacts; if the current is high, look for a short.",
       "action_ar": "أسباب محتملة: بطارية ضعيفة، أو تلامس سيئ في كونكتور البطارية، أو شورت / حمل عالٍ على اللوحة يسحب الجهد. جرّب أولاً بباور سبلاي: إذا توقف الهبوط فالشك في البطارية أو تلامسها؛ وإذا كان التيار عالياً فابحث عن شورت."
     },
@@ -104,12 +112,182 @@
       "category": "BASEBAND",
       "severity": "HIGH",
       "board_areas": ["modem", "firmware"],
-      "pattern": "qmi_wwan.*crash|rild.*died|ModemSSR|esoc.*modem crash",
+      "pattern": "qmi_wwan.*crash|rild.*died|ModemSSR|esoc.*modem crash|Restart sequence requested for modem\\b",
       "description_en": "The modem (baseband) subsystem or the radio service crashed.",
       "description_ar": "انهار نظام المودم (البيسباند) أو خدمة الراديو.",
       "suspect_components": ["Baseband RF IC", "Modem Firmware", "EFS / NVRAM Partition"],
+      "suspect_components_ar": ["آيسي البيسباند RF", "فيرموير المودم", "قسم EFS / NVRAM"],
       "action_en": "Possible causes: modem firmware that does not match, a damaged EFS / NVRAM partition (often with a missing IMEI), or the baseband chip. Check the baseband version and the IMEI; restore an EFS backup if the IMEI is missing. Repeated lines in one log show it keeps happening.",
       "action_ar": "أسباب محتملة: فيرموير مودم غير مطابق، أو قسم EFS / NVRAM تالف (غالباً مع اختفاء الـ IMEI)، أو شريحة البيسباند. تأكد من إصدار البيسباند ومن الـ IMEI؛ واستعد نسخة EFS إذا اختفى الـ IMEI. تكرار الأسطر في السجل الواحد يدل أنه يتكرر."
+    },
+    {
+      "id": "KERNEL_NULL_DEREF",
+      "category": "KERNEL_PANIC",
+      "severity": "CRITICAL",
+      "board_areas": ["firmware", "soc_ram"],
+      "pattern": "Unable to handle kernel (NULL pointer dereference|paging request)",
+      "description_en": "The kernel read or wrote a memory address it must not use (a NULL pointer or a bad page). The function named a few lines below usually shows which driver did it.",
+      "description_ar": "حاول الكيرنل قراءة أو كتابة عنوان ذاكرة غير مسموح (مؤشر فارغ NULL أو صفحة غير صالحة). اسم الدالة بعد بضعة أسطر يدل عادةً على التعريف المسؤول.",
+      "suspect_components": ["Driver or kernel bug (often after a custom ROM or kernel)", "Firmware that does not match the device", "RAM (only if it repeats in different places on stock firmware)"],
+      "suspect_components_ar": ["خلل في تعريف أو في الكيرنل (غالباً بعد روم أو كيرنل معدّل)", "فيرموير غير مطابق للجهاز", "الرام (فقط إذا تكرر في أماكن مختلفة على الروم الرسمي)"],
+      "action_en": "Possible causes, most common first: a driver or kernel bug, firmware that does not match the device. Read the function name in the call trace (it names the driver); flash stock firmware. Suspect RAM only if the address and the function change from one crash to the next on stock firmware.",
+      "action_ar": "أسباب محتملة، الأكثر شيوعاً أولاً: خلل في تعريف أو في الكيرنل، فيرموير غير مطابق للجهاز. اقرأ اسم الدالة في الـ call trace (يذكر التعريف)؛ وفلّش الروم الرسمي. لا تشكّ في الرام إلا إذا تغيّر العنوان والدالة من انهيار لآخر على الروم الرسمي."
+    },
+    {
+      "id": "ARM_SERROR",
+      "category": "KERNEL_PANIC",
+      "severity": "CRITICAL",
+      "board_areas": ["soc_ram", "power", "firmware"],
+      "pattern": "SError Interrupt on CPU|Asynchronous SError|Bad mode in Error handler",
+      "description_en": "The processor reported an asynchronous system error (SError): a memory or bus access failed inside the chip.",
+      "description_ar": "أبلغ المعالج عن خطأ نظام غير متزامن (SError): فشل وصول إلى الذاكرة أو إلى ناقل داخل الشريحة.",
+      "suspect_components": ["Unstable power to the SoC or RAM", "RAM or SoC solder joints", "A driver touching hardware that is powered off"],
+      "suspect_components_ar": ["فولت غير مستقر للمعالج أو الرام", "لحام الرام أو المعالج", "تعريف يصل إلى قطعة مطفأة"],
+      "action_en": "Possible causes: unstable power to the SoC or RAM, weak solder joints under the RAM or SoC (often after a drop or heat), or a driver touching a part that is powered off. Check it on stock firmware; if it repeats, check the SoC and RAM power rails and look for drop or liquid damage.",
+      "action_ar": "أسباب محتملة: فولت غير مستقر للمعالج أو الرام، أو لحام ضعيف تحت الرام أو المعالج (غالباً بعد سقوط أو حرارة)، أو تعريف يصل إلى قطعة مطفأة. جرّب على الروم الرسمي؛ وإذا تكرر افحص خطوط طاقة المعالج والرام وابحث عن آثار سقوط أو سوائل."
+    },
+    {
+      "id": "SOFT_LOCKUP",
+      "category": "WATCHDOG",
+      "severity": "HIGH",
+      "board_areas": ["firmware", "soc_ram"],
+      "pattern": "BUG: soft lockup - CPU#\\d+ stuck|hard LOCKUP|Watchdog detected hard LOCKUP",
+      "description_en": "A processor core stayed busy in the kernel for too long without letting anything else run (soft or hard lockup).",
+      "description_ar": "بقيت إحدى أنوية المعالج مشغولة داخل الكيرنل مدة طويلة دون أن تسمح لغيرها بالعمل (soft أو hard lockup).",
+      "suspect_components": ["Driver or kernel bug", "A part that stopped answering its driver (storage, modem, sensor)", "SoC power or heat (only if it repeats on stock firmware)"],
+      "suspect_components_ar": ["خلل في تعريف أو في الكيرنل", "قطعة توقفت عن الرد على تعريفها (التخزين، المودم، حساس)", "طاقة أو حرارة المعالج (فقط إذا تكرر على الروم الرسمي)"],
+      "action_en": "Possible causes: a driver or kernel bug, or a part that stopped answering its driver. The task named in brackets and the call trace show which; flash stock firmware, and if it repeats, check the part that driver belongs to.",
+      "action_ar": "أسباب محتملة: خلل في تعريف أو في الكيرنل، أو قطعة توقفت عن الرد على تعريفها. اسم المهمة بين القوسين والـ call trace يدلّان عليها؛ فلّش الروم الرسمي، وإذا تكرر افحص القطعة التي يتبع لها ذلك التعريف."
+    },
+    {
+      "id": "RCU_STALL",
+      "category": "WATCHDOG",
+      "severity": "HIGH",
+      "board_areas": ["firmware", "soc_ram"],
+      "pattern": "rcu_(preempt|sched) detected stalls|rcu: INFO: .*detected stalls|self-detected stall on CPU",
+      "description_en": "The kernel noticed that a processor core did not pass a regular check-in point for a long time (RCU stall).",
+      "description_ar": "لاحظ الكيرنل أن إحدى أنوية المعالج لم تمر بنقطة التحقق الدورية مدة طويلة (RCU stall).",
+      "suspect_components": ["Driver or kernel bug", "A part that stopped answering its driver", "SoC power (only if it repeats on stock firmware)"],
+      "suspect_components_ar": ["خلل في تعريف أو في الكيرنل", "قطعة توقفت عن الرد على تعريفها", "طاقة المعالج (فقط إذا تكرر على الروم الرسمي)"],
+      "action_en": "Possible causes, most common first: a driver or kernel bug, a part that stopped answering its driver. Read the call trace below it; flash stock firmware. Check the SoC power rails only if it repeats on stock firmware.",
+      "action_ar": "أسباب محتملة، الأكثر شيوعاً أولاً: خلل في تعريف أو في الكيرنل، قطعة توقفت عن الرد على تعريفها. اقرأ الـ call trace تحته؛ وفلّش الروم الرسمي. لا تفحص خطوط طاقة المعالج إلا إذا تكرر على الروم الرسمي."
+    },
+    {
+      "id": "HUNG_TASK",
+      "category": "WATCHDOG",
+      "severity": "MEDIUM",
+      "board_areas": ["storage", "firmware"],
+      "pattern": "INFO: task .* blocked for more than \\d+ seconds",
+      "description_en": "A kernel task waited for more than two minutes, most often for storage or another part to answer.",
+      "description_ar": "انتظرت مهمة في الكيرنل أكثر من دقيقتين، غالباً لرد من ذاكرة التخزين أو من قطعة أخرى.",
+      "suspect_components": ["Slow or failing-to-answer storage (eMMC / UFS)", "Driver or kernel bug"],
+      "suspect_components_ar": ["ذاكرة تخزين بطيئة أو لا ترد (eMMC / UFS)", "خلل في تعريف أو في الكيرنل"],
+      "action_en": "Possible causes: storage that answers slowly or not at all, or a driver bug. If the blocked task is a storage or file-system task (e.g. jbd2, f2fs, kworker on mmc/ufs) and storage errors are in the same log, check the storage; otherwise flash stock firmware.",
+      "action_ar": "أسباب محتملة: ذاكرة تخزين ترد ببطء أو لا ترد، أو خلل في تعريف. إذا كانت المهمة المعلّقة خاصة بالتخزين أو نظام الملفات (مثل jbd2 أو f2fs أو kworker على mmc/ufs) ووُجدت أخطاء تخزين في نفس السجل، افحص التخزين؛ وإلا فلّش الروم الرسمي."
+    },
+    {
+      "id": "OOM_KILL",
+      "category": "MEMORY",
+      "severity": "MEDIUM",
+      "board_areas": ["firmware", "soc_ram"],
+      "pattern": "Out of memory: Kill(ed)? process|oom-kill:.*task=",
+      "description_en": "The kernel ran out of memory and stopped a process. Android's normal lmkd / lowmemorykiller kills are not counted here.",
+      "description_ar": "نفدت الذاكرة عند الكيرنل فأوقف عملية. عمليات الإيقاف العادية في أندرويد (lmkd / lowmemorykiller) لا تُحسب هنا.",
+      "suspect_components": ["An app or service using too much memory (memory leak)", "Firmware or kernel memory settings", "Less RAM than the firmware expects (wrong firmware or a changed RAM chip)"],
+      "suspect_components_ar": ["تطبيق أو خدمة تستهلك ذاكرة كبيرة (تسرّب ذاكرة)", "إعدادات الذاكرة في الفيرموير أو الكيرنل", "رام أقل مما يتوقعه الفيرموير (فيرموير خاطئ أو شريحة رام مستبدلة)"],
+      "action_en": "Possible causes: an app or service leaking memory (the killed process is named in the line), firmware memory settings, or less RAM than the firmware expects. Compare the RAM size the phone reports with its model; remove the named app or flash stock firmware.",
+      "action_ar": "أسباب محتملة: تطبيق أو خدمة فيها تسرّب ذاكرة (اسم العملية المُوقفة في السطر)، أو إعدادات الذاكرة في الفيرموير، أو رام أقل مما يتوقعه الفيرموير. قارن حجم الرام الذي يظهره الجهاز مع موديله؛ واحذف التطبيق المذكور أو فلّش الروم الرسمي."
+    },
+    {
+      "id": "EXT4_FS_ERROR",
+      "category": "STORAGE",
+      "severity": "HIGH",
+      "board_areas": ["storage", "firmware"],
+      "pattern": "EXT4-fs error|EXT4-fs \\(.*\\): Remounting filesystem read-only|EXT4-fs \\(.*\\): ext4_check_descriptors",
+      "description_en": "The ext4 file system found damaged data on a partition, and may have switched it to read-only.",
+      "description_ar": "وجد نظام الملفات ext4 بيانات تالفة على أحد الأقسام، وقد يكون حوّله إلى قراءة فقط.",
+      "suspect_components": ["File system damaged by a sudden power loss or a bad flash", "Storage chip (eMMC / UFS)", "Storage power rail"],
+      "suspect_components_ar": ["نظام ملفات تالف بسبب انقطاع مفاجئ للطاقة أو تفليش خاطئ", "شريحة التخزين (eMMC / UFS)", "خط طاقة التخزين"],
+      "action_en": "Possible causes, most common first: a file system damaged by a sudden power loss or a bad flash, then the storage chip. The device name in the line shows the partition; a factory reset or a clean flash fixes the first. If the errors come back on a clean flash, or the log also has storage I/O errors, suspect the storage chip.",
+      "action_ar": "أسباب محتملة، الأكثر شيوعاً أولاً: نظام ملفات تالف بسبب انقطاع مفاجئ للطاقة أو تفليش خاطئ، ثم شريحة التخزين. اسم الجهاز في السطر يدل على القسم؛ ضبط المصنع أو تفليش نظيف يحل الحالة الأولى. إذا عادت الأخطاء بعد تفليش نظيف، أو كان في السجل أخطاء قراءة/كتابة للتخزين، اشتبه في شريحة التخزين."
+    },
+    {
+      "id": "F2FS_FS_ERROR",
+      "category": "STORAGE",
+      "severity": "HIGH",
+      "board_areas": ["storage", "firmware"],
+      "pattern": "F2FS-fs \\(.*\\): .*(inconsistent|Need to run fsck|Failed to read|Invalid)",
+      "description_en": "The f2fs file system (often the data partition) found inconsistent data and asks for a check (fsck).",
+      "description_ar": "وجد نظام الملفات f2fs (غالباً قسم البيانات) بيانات غير متسقة ويطلب فحصاً (fsck).",
+      "suspect_components": ["File system damaged by a sudden power loss or a bad flash", "Storage chip (eMMC / UFS)"],
+      "suspect_components_ar": ["نظام ملفات تالف بسبب انقطاع مفاجئ للطاقة أو تفليش خاطئ", "شريحة التخزين (eMMC / UFS)"],
+      "action_en": "Possible causes, most common first: a file system damaged by a sudden power loss or a bad flash, then the storage chip. Android usually repairs it on the next boot; if it repeats after a factory reset or a clean flash, suspect the storage chip.",
+      "action_ar": "أسباب محتملة، الأكثر شيوعاً أولاً: نظام ملفات تالف بسبب انقطاع مفاجئ للطاقة أو تفليش خاطئ، ثم شريحة التخزين. أندرويد يصلحه عادةً في الإقلاع التالي؛ وإذا تكرر بعد ضبط المصنع أو تفليش نظيف، اشتبه في شريحة التخزين."
+    },
+    {
+      "id": "DM_VERITY_CORRUPTION",
+      "category": "STORAGE",
+      "severity": "HIGH",
+      "board_areas": ["firmware", "storage"],
+      "pattern": "device-mapper: verity.*(is corrupted|corruption|failed to verify)|dm-verity device corrupted",
+      "description_en": "Verified boot (dm-verity) found a system block whose content does not match its signature.",
+      "description_ar": "وجد الإقلاع المتحقَّق (dm-verity) كتلة في النظام لا يطابق محتواها التوقيع.",
+      "suspect_components": ["Modified or partly flashed system partition", "Firmware from another model or region", "Storage chip (only if it repeats after a clean flash)"],
+      "suspect_components_ar": ["قسم نظام معدّل أو مفلّش بشكل ناقص", "فيرموير من موديل أو منطقة أخرى", "شريحة التخزين (فقط إذا تكرر بعد تفليش نظيف)"],
+      "action_en": "Possible causes, most common first: a modified or partly flashed system partition, firmware from another model or region. Flash the complete stock firmware for this exact model; suspect the storage chip only if it repeats after a clean flash.",
+      "action_ar": "أسباب محتملة، الأكثر شيوعاً أولاً: قسم نظام معدّل أو مفلّش بشكل ناقص، فيرموير من موديل أو منطقة أخرى. فلّش الروم الرسمي كاملاً لنفس الموديل بالضبط؛ ولا تشكّ في شريحة التخزين إلا إذا تكرر بعد تفليش نظيف."
+    },
+    {
+      "id": "EMMC_INIT_FAIL",
+      "category": "STORAGE",
+      "severity": "CRITICAL",
+      "board_areas": ["storage", "power"],
+      "pattern": "mmc\\d+: error -\\d+ whilst initialising MMC card|mmc\\d+: Card stuck in (wrong|programming) state",
+      "description_en": "The built-in eMMC storage did not start (an SD card is reported differently and is not counted here).",
+      "description_ar": "لم تبدأ ذاكرة التخزين الداخلية eMMC بالعمل (كرت SD يُذكر بشكل مختلف ولا يُحسب هنا).",
+      "suspect_components": ["eMMC storage chip", "eMMC power rails (VCC / VCCQ)", "Solder joints under the eMMC"],
+      "suspect_components_ar": ["شريحة تخزين eMMC", "خطوط طاقة eMMC (VCC / VCCQ)", "لحام تحت شريحة eMMC"],
+      "action_en": "Possible causes: the eMMC chip, its power rails, or the solder joints under it (often after a drop or liquid). Measure the VCC and VCCQ rails at the eMMC; if both are present, the chip or its solder is the likely cause.",
+      "action_ar": "أسباب محتملة: شريحة eMMC، أو خطوط طاقتها، أو اللحام تحتها (غالباً بعد سقوط أو سوائل). قِس خطي VCC وVCCQ عند شريحة eMMC؛ وإذا كانا موجودين فالشريحة أو لحامها هو السبب المحتمل."
+    },
+    {
+      "id": "CHARGER_OVERVOLTAGE",
+      "category": "POWER",
+      "severity": "HIGH",
+      "board_areas": ["power"],
+      "pattern": "usbin[-_]ov\\b|vbus.*over[- ]?voltage|charger.*over[- ]?voltage|\\bOVP\\b.*(detected|triggered|fault)",
+      "description_en": "The charging circuit reported too high an input voltage on USB (over-voltage protection).",
+      "description_ar": "أبلغت دائرة الشحن عن فولت دخل مرتفع على منفذ USB (حماية من الفولت الزائد OVP).",
+      "suspect_components": ["Charger or cable", "Charging port (liquid or dirt)", "Over-voltage protection IC (OVP)", "Charging IC"],
+      "suspect_components_ar": ["الشاحن أو الكابل", "منفذ الشحن (سوائل أو أوساخ)", "آيسي الحماية من الفولت الزائد (OVP)", "آيسي الشحن"],
+      "action_en": "Possible causes, most common first: the charger or cable, a charging port with liquid or dirt, then the OVP or charging IC. Try a known-good original charger and cable and clean the port; if it repeats, check the OVP IC and the charging IC.",
+      "action_ar": "أسباب محتملة، الأكثر شيوعاً أولاً: الشاحن أو الكابل، منفذ شحن فيه سوائل أو أوساخ، ثم آيسي OVP أو آيسي الشحن. جرّب شاحناً وكابلاً أصليين سليمين ونظّف المنفذ؛ وإذا تكرر افحص آيسي OVP وآيسي الشحن."
+    },
+    {
+      "id": "SUBSYSTEM_CRASH",
+      "category": "FIRMWARE",
+      "severity": "HIGH",
+      "board_areas": ["firmware", "peripherals"],
+      "pattern": "Restart sequence requested for (adsp|cdsp|slpi|wcnss|wlan|venus|npu|a6xx_zap)\\b|subsys-restart:.*(adsp|cdsp|slpi).*crashed",
+      "description_en": "A helper processor inside the chip crashed and was restarted: adsp (audio), cdsp (computing), slpi (sensors), wlan / wcnss (Wi-Fi), venus (video).",
+      "description_ar": "انهار معالج مساعد داخل الشريحة وأُعيد تشغيله: adsp (الصوت)، cdsp (الحسابات)، slpi (الحساسات)، wlan / wcnss (الواي فاي)، venus (الفيديو).",
+      "suspect_components": ["Firmware that does not match the device", "The part the helper processor serves (audio, sensors, Wi-Fi)"],
+      "suspect_components_ar": ["فيرموير غير مطابق للجهاز", "القطعة التي يخدمها المعالج المساعد (الصوت، الحساسات، الواي فاي)"],
+      "action_en": "Possible causes, most common first: firmware that does not match the device, then the part that helper processor serves. Flash the complete stock firmware; if the same subsystem keeps crashing, test the function it serves (audio, sensors or Wi-Fi).",
+      "action_ar": "أسباب محتملة، الأكثر شيوعاً أولاً: فيرموير غير مطابق للجهاز، ثم القطعة التي يخدمها المعالج المساعد. فلّش الروم الرسمي كاملاً؛ وإذا استمر انهيار نفس المعالج المساعد، افحص الوظيفة التي يخدمها (الصوت أو الحساسات أو الواي فاي)."
+    },
+    {
+      "id": "GPU_FAULT",
+      "category": "FIRMWARE",
+      "severity": "MEDIUM",
+      "board_areas": ["firmware", "soc_ram"],
+      "pattern": "kgsl.*(GPU hang|gpu fault|PAGE FAULT)|mali.*(GPU fault|job fault|GPU hang)",
+      "description_en": "The graphics processor (GPU) hung or reported a fault while drawing.",
+      "description_ar": "توقف معالج الرسوميات (GPU) أو أبلغ عن خطأ أثناء الرسم.",
+      "suspect_components": ["An app or game using the GPU wrongly", "GPU driver or firmware", "SoC heat or power (only if it repeats on stock firmware)"],
+      "suspect_components_ar": ["تطبيق أو لعبة تستخدم الرسوميات بشكل خاطئ", "تعريف أو فيرموير الرسوميات", "حرارة أو طاقة المعالج (فقط إذا تكرر على الروم الرسمي)"],
+      "action_en": "Possible causes, most common first: an app or game using the GPU wrongly, the GPU driver or firmware. Note which app was open; flash stock firmware. Suspect heat or power to the SoC only if it repeats with different apps on stock firmware.",
+      "action_ar": "أسباب محتملة، الأكثر شيوعاً أولاً: تطبيق أو لعبة تستخدم الرسوميات بشكل خاطئ، تعريف أو فيرموير الرسوميات. لاحظ أي تطبيق كان مفتوحاً؛ وفلّش الروم الرسمي. لا تشكّ في حرارة أو طاقة المعالج إلا إذا تكرر مع تطبيقات مختلفة على الروم الرسمي."
     }
   ]
 }

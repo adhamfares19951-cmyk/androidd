@@ -44,6 +44,7 @@ class LogMatch:
     count: int                        # matching lines in the file
     last_line_no: int
     suspect_components: List[str] = field(default_factory=list)
+    suspect_components_ar: List[str] = field(default_factory=list)   # same parts, same order, in Arabic
     description_en: str = ""
     description_ar: str = ""
     action_en: str = ""
@@ -68,6 +69,7 @@ class LogAnalysis(ProducesCheckResult):
     fatal_rule_id: Optional[str] = None
     diagnosis: Any = None
     possible_causes: List[Any] = field(default_factory=list)
+    possible_causes_ar: List[str] = field(default_factory=list)      # the same causes, same order, in Arabic
     board_areas: List[str] = field(default_factory=list)   # the fatal line's areas first, then by severity
     evidence: List[Evidence] = field(default_factory=list)
 
@@ -129,6 +131,7 @@ def analyze_text(text: str, source: str = "log", rules: Optional[List[Dict[str, 
                         rule_id=rule["id"], category=rule.get("category", ""), severity=rule.get("severity", ""),
                         line_no=no, line=line.strip()[:MAX_LINE_SHOWN], count=1, last_line_no=no,
                         suspect_components=list(rule.get("suspect_components", [])),
+                        suspect_components_ar=list(rule.get("suspect_components_ar", [])),
                         description_en=rule.get("description_en", ""), description_ar=rule.get("description_ar", ""),
                         action_en=rule.get("action_en", ""), action_ar=rule.get("action_ar", ""),
                         board_areas=list(rule.get("board_areas", [])))
@@ -146,12 +149,16 @@ def analyze_text(text: str, source: str = "log", rules: Optional[List[Dict[str, 
         r.fatal_line = lines[worst.last_line_no - 1].strip()[:MAX_LINE_SHOWN]
         r.status = str(Status.FAIL)
         r.diagnosis = M("logscan.found", count=len(r.matches), line=r.fatal_line_no, rule=r.fatal_rule_id)
-        seen = []
+        seen: List[str] = []
+        seen_ar: List[str] = []
         for m in r.matches:
-            for s in m.suspect_components:
+            names_ar = m.suspect_components_ar if len(m.suspect_components_ar) == len(m.suspect_components) else []
+            for i, s in enumerate(m.suspect_components):
                 if s not in seen:
                     seen.append(s)
+                    seen_ar.append(names_ar[i] if names_ar else s)    # English only when a rule has no Arabic
         r.possible_causes = seen
+        r.possible_causes_ar = seen_ar
         areas: List[str] = []
         for m in [worst] + [m for m in r.matches if m is not worst]:
             for a in m.board_areas:

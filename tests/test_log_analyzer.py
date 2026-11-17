@@ -3,6 +3,7 @@ No phone and no root needed. A matched fault line is FAIL (with possible causes)
 never PASS: a log without the faults we know is not proof that the phone is healthy."""
 import io
 import os
+import re
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -76,6 +77,18 @@ class TestAnalyzeText(unittest.TestCase):
         self.assertEqual(len(r.board_areas), len(set(r.board_areas)))
         text = "\n".join(format_log_analysis(r, "ar"))
         self.assertIn(t("board_area.storage", "ar"), text)
+
+    def test_arabic_output_names_parts_in_arabic(self):
+        r = la.analyze_text(MTK_UART)
+        self.assertEqual(len(r.possible_causes_ar), len(r.possible_causes))
+        arabic_letter = re.compile("[" + chr(0x0600) + "-" + chr(0x06FF) + "]")
+        for name in r.possible_causes_ar:
+            self.assertRegex(name, arabic_letter)        # chip names may stay in brackets, e.g. (Audio Codec)
+        ar = format_log_analysis(r, "ar")
+        self.assertIn(t("cli.logscan_causes", "ar", causes=", ".join(r.possible_causes_ar)), ar)
+        self.assertNotIn("Storage VCC / VCCQ Power Rail", "\n".join(ar))
+        en = "\n".join(format_log_analysis(r, "en"))
+        self.assertIn(r.possible_causes[0], en)
 
     def test_ansi_and_carriage_returns_are_cleaned(self):
         r = la.analyze_text(MTK_UART)

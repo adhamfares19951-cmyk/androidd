@@ -81,6 +81,8 @@ class TestLogSection(unittest.TestCase):
         html = report(lang="ar", log_analysis=self.result)
         self.assertIn("لم يعمل اتصال ذاكرة التخزين UFS", html)       # the rule's Arabic description
         self.assertIn(escape(t("board_area.storage", "ar")), html)  # suspected board area, in Arabic
+        self.assertIn(escape(self.result["possible_causes_ar"][0]), html)   # parts named in Arabic
+        self.assertNotIn(escape(self.result["possible_causes"][0]), html)
 
     def test_board_areas_most_likely_first(self):
         html = report(log_analysis=self.result)

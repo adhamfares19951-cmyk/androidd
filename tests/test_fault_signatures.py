@@ -53,6 +53,20 @@ class TestBoardAreas(unittest.TestCase):
         self.assertEqual(rules["UVLO_BROWNOUT"]["board_areas"][0], "power")
 
 
+ARABIC = re.compile("[" + chr(0x0600) + "-" + chr(0x06FF) + "]")      # the Arabic letters block
+
+
+class TestArabicPartNames(unittest.TestCase):
+    def test_every_part_has_an_arabic_name(self):
+        # the Arabic report must not show English part names
+        for r in load():
+            ar = r.get("suspect_components_ar")
+            self.assertTrue(ar, r["id"])
+            self.assertEqual(len(ar), len(r["suspect_components"]), r["id"])
+            for name in ar:
+                self.assertRegex(name, ARABIC, f"{r['id']}: {name}")
+
+
 class TestWording(unittest.TestCase):
     def test_actions_give_possible_causes(self):
         for r in load():
@@ -89,6 +103,47 @@ class TestPatterns(unittest.TestCase):
         }
         for rule_id, line in cases.items():
             self.assertIn(rule_id, matching(line), line)
+
+
+class TestMoreKernelSignatures(unittest.TestCase):
+    def test_at_least_twenty_rules(self):
+        self.assertGreaterEqual(len(load()), 20)
+
+    def test_new_rules_match_their_own_lines(self):
+        cases = {
+            "KERNEL_NULL_DEREF": "[ 6.1] Unable to handle kernel NULL pointer dereference at virtual address 0000000000000008",
+            "ARM_SERROR": "[ 6.2] SError Interrupt on CPU3, code 0xbe000011 -- SError",
+            "SOFT_LOCKUP": "[ 30.0] watchdog: BUG: soft lockup - CPU#2 stuck for 22s! [kworker/2:1:77]",
+            "RCU_STALL": "[ 40.0] rcu: INFO: rcu_preempt detected stalls on CPUs/tasks:",
+            "HUNG_TASK": "[ 240.0] INFO: task kworker/0:1:123 blocked for more than 120 seconds.",
+            "OOM_KILL": "[ 90.0] Out of memory: Killed process 4321 (com.example) total-vm:123kB",
+            "EXT4_FS_ERROR": "[ 5.5] EXT4-fs error (device mmcblk0p40): ext4_lookup:1601: inode #2: comm init: deleted inode referenced",
+            "F2FS_FS_ERROR": "[ 5.6] F2FS-fs (dm-8): Found inconsistent data, Need to run fsck",
+            "DM_VERITY_CORRUPTION": "[ 5.7] device-mapper: verity: 253:2: data block 1234 is corrupted",
+            "EMMC_INIT_FAIL": "[ 1.9] mmc0: error -110 whilst initialising MMC card",
+            "CHARGER_OVERVOLTAGE": "[ 12.0] smb5: usbin-ov irq triggered, vbus over voltage",
+            "SUBSYSTEM_CRASH": "[ 15.0] subsys-restart: subsystem_restart_dev(): Restart sequence requested for adsp, restart_level = SYSTEM.",
+            "GPU_FAULT": "[ 50.1] kgsl kgsl-3d0: |adreno_hang_int_callback| GPU hang detected",
+            "MODEM_RIL_CRASH": "[ 15.1] subsys-restart: subsystem_restart_dev(): Restart sequence requested for modem, restart_level = RELATED.",
+        }
+        for rule_id, line in cases.items():
+            self.assertIn(rule_id, matching(line), line)
+
+    def test_common_harmless_lines_match_nothing(self):
+        harmless = [
+            "[ 3.0] EXT4-fs (mmcblk0p40): mounted filesystem with ordered data mode. Opts: barrier=1",
+            "[ 3.1] F2FS-fs (dm-8): Mounted with checkpoint version = 1b3d",
+            '[ 3.2] device-mapper: verity: sha256 using implementation "sha256-ce"',
+            "[ 60.0] lowmemorykiller: Kill 'com.example' (1234), adj 900",
+            "01-01 10:00:00.000  600  600 I lmkd: Kill 'com.example' (1234), uid 10100, oom_score_adj 900",
+            "[ 2.0] mmc1: error -110 whilst initialising SD card",          # a bad or missing SD card, not the eMMC
+            "[ 8.0] healthd: battery l=80 v=4100 t=30.0 h=2 st=2 chg=u",
+            "[ 9.0] smb5: OVP threshold set to 14V",
+            "[ 4.0] kgsl kgsl-3d0: Initialized kgsl-3d0: mmu=on",
+            "[ 7.0] rcu: Hierarchical SRCU implementation.",
+        ]
+        for line in harmless:
+            self.assertEqual(matching(line), [], line)
 
 
 if __name__ == "__main__":

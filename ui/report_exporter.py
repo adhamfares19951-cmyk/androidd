@@ -455,7 +455,7 @@ class DiagnosticReportExporter:
             if areas:
                 log_parts.append(f'<div class="note">{html.escape(t("cli.logscan_areas", lang, areas=", ".join(t(f"board_area.{a}", lang) for a in areas)))}</div>')
             log_parts += [
-                causes(log_analysis.get("possible_causes")),
+                causes((lang == "ar" and log_analysis.get("possible_causes_ar")) or log_analysis.get("possible_causes")),
                 f'<div class="note">{esc(log_analysis.get("diagnosis"))}</div>',
                 f'<div class="note">{tr("report.log_not_counted")}</div>',
                 evidence(log_analysis.get("evidence")),
