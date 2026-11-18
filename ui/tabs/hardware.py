@@ -21,7 +21,7 @@ from ui.theme import (
     make_console_box,
     pack_button_grid,
 )
-from ui.ui_helpers import _tri_key, _feature_key, _flinger_key, format_evidence_for_display, format_display_check
+from ui.ui_helpers import _tri_key, _feature_key, _flinger_key, format_evidence_for_display, format_display_check, format_parts_check
 
 logger = logging.getLogger("MainWindow")
 
@@ -432,11 +432,22 @@ class HardwareTabMixin:
 
         def task():
             from core.display_check import DisplayOriginalityCheck
+            from core.parts_check import PartsCheck
             result = DisplayOriginalityCheck(self.bridge).run(serial)
             self.last_display_check = result
             lines = format_display_check(result, lang)
             if result.evidence:
                 lines.append(format_evidence_for_display(result.evidence, lang=lang))
+            try:
+                parts = PartsCheck(self.bridge).run(serial)
+            except Exception as e:      # the screen result must still be shown
+                logger.error(f"Parts check failed: {e}")
+                parts = None
+            self.last_parts_check = parts
+            if parts is not None:
+                lines += [""] + format_parts_check(parts, lang)
+                if parts.evidence:
+                    lines.append(format_evidence_for_display(parts.evidence, lang=lang))
 
             def upd():
                 self._ensure_tab("hardware_tester")
@@ -561,7 +572,8 @@ class HardwareTabMixin:
             from core.model_db import default_db
             try:
                 run = companion.run_companion(self.bridge, serial)
-                spec = default_db().lookup(self.bridge.get_prop("ro.product.model", serial=serial) or "")
+                spec = default_db().lookup(self.bridge.get_prop("ro.product.model", serial=serial) or "",
+                                          self.bridge.get_prop("ro.product.device", serial=serial) or "")
                 checks = companion.judge(run, spec)
                 notice = run.notice
             except Exception as e:
@@ -593,10 +605,11 @@ class HardwareTabMixin:
     def _show_companion_result(self, run, how_key):
         """Judges a run that came without ADB (Wi-Fi or file) and shows it; the checks go into the next report."""
         from core import companion
-        from core.companion_lan import device_label, reported_model
+        from core.companion_lan import device_label, reported_device, reported_model
         from core.model_db import default_db
         try:
-            spec = default_db().lookup(reported_model(run)) if reported_model(run) else None
+            spec = (default_db().lookup(reported_model(run), reported_device(run))
+                    if (reported_model(run) or reported_device(run)) else None)
             checks = companion.judge(run, spec)
         except Exception as e:
             logger.error(f"Companion result could not be judged: {e}")

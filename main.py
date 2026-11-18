@@ -220,7 +220,7 @@ def build_parser():
                         help="check a saved UART / dmesg / last_kmsg / logcat file against the fault signatures "
                              "(no phone, no root)")
     parser.add_argument("--screen-check", action="store_true",
-                        help="screen originality indicators (read only; indicators, never proof)")
+                        help="screen and parts originality indicators (read only; indicators, never proof)")
     parser.add_argument("--uart-list", action="store_true", help="list serial ports (USB-UART adapters)")
     parser.add_argument("--uart-capture", type=str, metavar="PORT", default=None,
                         help="capture a phone's boot log from PORT (read only), save it, then analyse it")
@@ -240,7 +240,8 @@ def run_screen_check(serial: str, lang: str) -> int:
     from core.adb_bridge import ADBBridge
     from core.display_check import DisplayOriginalityCheck
     from ui.i18n import t, set_current_language
-    from ui.ui_helpers import format_display_check
+    from ui.ui_helpers import format_display_check, format_parts_check
+    from core.parts_check import PartsCheck
     set_current_language(lang)
     bridge = ADBBridge()
     try:
@@ -259,6 +260,8 @@ def run_screen_check(serial: str, lang: str) -> int:
         return EXIT_UNAUTHORIZED
     result = DisplayOriginalityCheck(bridge).run(target["serial"])
     print("\n".join(format_display_check(result, lang)))
+    print()
+    print("\n".join(format_parts_check(PartsCheck(bridge).run(target["serial"]), lang)))
     return EXIT_OK
 
 
@@ -310,10 +313,10 @@ def run_uart_command(args) -> int:
 
 def _print_companion(run, lang: str) -> None:
     from core import companion
-    from core.companion_lan import device_label, reported_model
+    from core.companion_lan import device_label, reported_device, reported_model
     from core.model_db import default_db
     from ui.i18n import t, render
-    spec = default_db().lookup(reported_model(run)) if reported_model(run) else None
+    spec = default_db().lookup(reported_model(run), reported_device(run)) if (reported_model(run) or reported_device(run)) else None
     print(t("cli.companion_phone", lang, device=device_label(run) or "-"))
     for c in companion.judge(run, spec):
         print(f"[{c.status}] {t(c.check_id, lang)}")

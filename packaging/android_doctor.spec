@@ -17,6 +17,7 @@ datas = [
     (os.path.join(ROOT, "data", "fault_signatures.json"), "data"),
     (os.path.join(ROOT, "data", "thermal_thresholds.json"), "data"),
     (os.path.join(ROOT, "data", "device_models.json"), "data"),
+    (os.path.join(ROOT, "data", "parts_db.json"), "data"),
     (os.path.join(ROOT, "README.md"), "."),
 ]
 datas += collect_data_files("customtkinter")

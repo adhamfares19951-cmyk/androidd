@@ -7,7 +7,9 @@ battery's design capacity) that a real reading from the phone is compared with. 
 - values must be plausible (battery 500..30000 mAh); anything else is rejected, never guessed;
 - the technician's file (%LOCALAPPDATA%\\AndroidDoctorPro\\device_models.json) is read after the
   bundled file, so it can add models or correct an entry;
-- rejected entries are logged and listed in ModelDatabase.errors.
+- rejected entries are logged and listed in ModelDatabase.errors;
+- a model in neither file falls back (default_db() only) to the typical battery capacity of the LineageOS
+  device wiki (data/parts_db.json), found by model number or codename; its source is that wiki page.
 """
 
 import json
@@ -57,8 +59,9 @@ def _mah(value) -> Optional[int]:
 
 
 class ModelDatabase:
-    def __init__(self, paths: Optional[List[str]] = None):
+    def __init__(self, paths: Optional[List[str]] = None, parts_fallback: bool = False):
         self.paths = paths if paths is not None else [BUNDLED_PATH, os.path.join(user_data_dir(), USER_FILE_NAME)]
+        self.parts_fallback = parts_fallback
         self.models: Dict[str, ModelInfo] = {}
         self.errors: List[str] = []
         for path in self.paths:
@@ -107,8 +110,20 @@ class ModelDatabase:
                                          checked=str(entry.get("checked", "")), typical_mah=typical,
                                          rated_mah=rated, origin=path)
 
-    def lookup(self, model: str) -> Optional[ModelInfo]:
-        return self.models.get(normalize_model(model))
+    def lookup(self, model: str, device: str = "", manufacturer: str = "") -> Optional[ModelInfo]:
+        """The curated entry for the model number; else (parts_fallback) the LineageOS wiki's typical capacity,
+        by model number or codename (ro.product.device). None when neither knows the phone."""
+        found = self.models.get(normalize_model(model))
+        if found is not None or not self.parts_fallback:
+            return found
+        from core.parts_db import default_parts_db
+        e = default_parts_db().lookup(model, device, manufacturer)
+        mah = _mah(e.battery_mah) if e is not None else None
+        if e is None or mah is None or not e.source_wiki.startswith("https://"):
+            return None
+        built = str((default_parts_db().meta or {}).get("built") or "")
+        return ModelInfo(model=normalize_model(model) or e.codename, name=e.display_name, source=e.source_wiki,
+                         checked=built, typical_mah=mah, origin="LineageOS wiki (data/parts_db.json)")
 
 
 _default: Optional[ModelDatabase] = None
@@ -117,5 +132,5 @@ _default: Optional[ModelDatabase] = None
 def default_db() -> ModelDatabase:
     global _default
     if _default is None:
-        _default = ModelDatabase()
+        _default = ModelDatabase(parts_fallback=True)
     return _default

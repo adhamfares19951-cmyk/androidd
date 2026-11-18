@@ -139,6 +139,11 @@ def reported_model(run: CompanionRun) -> str:
     return str((run.start or {}).get("model") or "")
 
 
+def reported_device(run: CompanionRun) -> str:
+    """Build.DEVICE (the codename) from the app's start line, '' if missing (app version 1 did not send it)."""
+    return str((run.start or {}).get("device") or "")
+
+
 class CompanionWifiSession:
     """One Wi-Fi session: one token, one run id, results accepted once. Start, show url(), wait()."""
 

@@ -95,6 +95,7 @@ class DiagnosticReportExporter:
         root_forensics: Optional[Dict[str, Any]] = None,
         extra_checks: Optional[List[Dict[str, Any]]] = None,
         display_check: Optional[Dict[str, Any]] = None,
+        parts_check: Optional[Dict[str, Any]] = None,
         log_analysis: Optional[Dict[str, Any]] = None,
         signing_key_path: Optional[str] = None,
         technician_name: str = "",
@@ -429,6 +430,21 @@ class DiagnosticReportExporter:
                 evidence(display_check.get("evidence")),
             ]))
 
+        # ---------------- parts originality indicators (never counted in the overall result) ----------------
+        parts_card = ""
+        if parts_check:
+            effect_colors = {"supports": "#238636", "against": "#d29922", "info": "#6e7681"}
+            prows = "".join(
+                f'<tr><td><span class="badge" style="background:{effect_colors.get(i.get("effect"), "#6e7681")}">'
+                f'{tr("display.effect." + str(i.get("effect", "info")))}</span></td><td>{esc(i.get("text"))}</td></tr>'
+                for i in parts_check.get("indicators", []))
+            parts_card = card(tr("parts.originality_indicators"), "".join([
+                f'<div class="note"><strong>{esc(parts_check.get("diagnosis"))}</strong></div>',
+                f'<table class="table"><tbody>{prows}</tbody></table>' if prows else "",
+                f'<div class="note">{tr("parts.not_proof")}</div>',
+                evidence(parts_check.get("evidence")),
+            ]))
+
         # ---------------- offline log analysis (the file may be from another phone: not counted) ----------------
         log_card = ""
         if log_analysis:
@@ -513,6 +529,7 @@ class DiagnosticReportExporter:
 {maint_card}
 {root_card}
 {display_card}
+{parts_card}
 {log_card}
 <div class="footer">
   <div>{tr("report.technician")}: <strong>{html.escape(technician_name or "-")}</strong></div>

@@ -482,12 +482,13 @@ class MotherboardDiagnostics:
         """Manufacturer spec for this phone's model number, or None (unknown model or unreadable DB)."""
         try:
             model = self.bridge.get_prop("ro.product.model", serial=serial) or ""
-            if not model:
+            device = self.bridge.get_prop("ro.product.device", serial=serial) or ""
+            if not model and not device:
                 return None
             if self._model_db is None:
                 from core.model_db import default_db
                 self._model_db = default_db()
-            return self._model_db.lookup(model)
+            return self._model_db.lookup(model, device)
         except Exception as e:
             logger.warning(f"Model database lookup failed: {e}")
             return None

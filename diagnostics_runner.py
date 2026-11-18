@@ -125,6 +125,10 @@ def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[
     display = stage("display", lambda: DisplayOriginalityCheck(bridge).run(target_serial))   # read only
     if display is not None:
         emit(render(display.diagnosis, lang))
+    from core.parts_check import PartsCheck
+    parts = stage("parts", lambda: PartsCheck(bridge).run(target_serial))                    # read only
+    if parts is not None:
+        emit(render(parts.diagnosis, lang))
 
     companion_checks: List[Any] = []
     if companion:
@@ -134,7 +138,8 @@ def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[
             run = comp.run_companion(bridge, target_serial)
             if run.notice is not None:
                 emit(render(run.notice, lang))       # the app already on the phone was used
-            spec = default_db().lookup(bridge.get_prop("ro.product.model", serial=target_serial) or "")
+            spec = default_db().lookup(bridge.get_prop("ro.product.model", serial=target_serial) or "",
+                                      bridge.get_prop("ro.product.device", serial=target_serial) or "")
             return comp.judge(run, spec)
         companion_checks = stage("companion", run_companion_stage) or []
 
@@ -164,6 +169,7 @@ def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[
             sec_scan=sec.to_dict() if sec is not None else {},
             extra_checks=[c.to_dict() for c in stage_checks + companion_checks],
             display_check=display.to_dict() if display is not None else None,
+            parts_check=parts.to_dict() if parts is not None else None,
             signing_key_path=signing_key,
             lang=lang,
             output_dir=output_dir,

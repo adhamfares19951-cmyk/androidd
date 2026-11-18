@@ -74,6 +74,14 @@ Manufacturer specifications per model number (`ro.product.model`, dual-SIM suffi
 ```json
 {"schema": 1, "models": {"SM-A525F": {"name": "Samsung Galaxy A52", "battery": {"typical_mah": 4500, "rated_mah": 4370}, "source": "https://...", "checked": "2026-11-11"}}}
 ```
+- A model in neither file falls back to the **typical** capacity from the LineageOS device wiki (`data/parts_db.json`, 739 models), found by model number, or by codename (`ro.product.device`) together with the manufacturer. Its source is that wiki page, and the result says the value is typical.
+
+### Parts Reference (`core/parts_db.py`, `data/parts_db.json`, `tools/build_parts_db.py`)
+What 776 phone models are built with, from LineageOS public data: the device wiki (name, model numbers, SoC, battery, screen, cameras, how to enter download / recovery mode; MIT) and each model's firmware file list (`proprietary-files.txt` of its device tree and the common trees it uses). Those file lists name the camera sensors the factory firmware ships tuning files for, often with the module maker (`ov13b10_ofilm`, `com.qti.sensormodule.semco_imx586`, Samsung `setfile_2l4` = S5K2L4), and the fingerprint and NFC drivers.
+- A model usually lists two or three sensors per camera: makers buy the same camera from several module suppliers. Sensors found only in a common tree are kept apart (`platform_camera_sensors`) as weaker evidence. An empty list means *not known*, never *absent*.
+- A phone is found by model number first, then by codename. The phone reports its factory codename (`merlin` for the Redmi Note 9) while LineageOS may use another (`merlinx`): the factory codename is read from the file list's own header (`# ... from merlin-user 12 ...`) and kept only when it is clearly the same phone. A codename match must also match the manufacturer (`merlin` is also a Motorola phone), and an ambiguous codename gives no entry, never a guess.
+- Refresh: `python tools/build_parts_db.py --cache .parts_cache --out data/parts_db.json` (needs network, about a minute; `--offline` reuses the cache). The name rules live in `core/part_names.py`, shared with the phone check.
+
 
 ### Hardware Subsystem Checks & Interactive Tools (`core/hardware_tester.py`, `core/touch_matrix.py`)
 - **Reported sensors & cameras**: Parses `dumpsys sensorservice` and `dumpsys media.camera` for reported sensors and camera modules; absent fields stay `None`. Missing common sensors are listed for reference rather than treated as an automatic fault.
@@ -87,6 +95,12 @@ Read only (`cat`, `getprop`, `dumpsys`, `logcat`). Software cannot prove that a 
 - Against (possible causes): panel serial numbers all zero; an under-display fingerprint driver that keeps crashing (a damaged sensor or flex does this too).
 - Info only: native resolution, refresh rates, HDR types, the panel's manufacture date, a panel maker that original phones also use (mid-range Samsung models ship with BOE / CSOT panels), panel files that are not readable.
 - An original Samsung service-pack screen fitted later cannot be told apart from the factory one.
+
+### Parts Originality Indicators (`core/parts_check.py`)
+Same rules as the screen check (status `UNKNOWN`, indicators with evidence, not counted in the overall result). Runs with the screen check: GUI "Screen & Parts Originality Check", CLI `--screen-check`, and the full diagnosis.
+- Reads the camera sensors the phone reports: MediaTek `/proc/driver/camera_info` (the sensors the camera driver detected at boot), Samsung `/sys/class/camera/{rear,front}/*_camtype`, and camera system properties. The log is not used, because camera drivers log every sensor they probe, including absent ones. Also reads the fingerprint maker from system properties.
+- **Supports**: a sensor or fingerprint maker the model's factory firmware is built for. **Against**: one it is not built for (possible causes: a replaced part, or a production variant missing from the reference). **Info**: a sensor known only from sibling models, a fingerprint reference from a shared tree, no reference for the model, nothing readable.
+- A high-quality copy that reports the original part's name cannot be told apart.
 
 ### Companion App (`companion/`, `core/companion.py`)
 A small Android app that measures on the phone what ADB cannot read without root. The desktop program installs it (`adb install -r -g`), starts its test screen with a unique run id and reads that run's raw readings from logcat (`ADP|{json}`, tag `AndroidDoctorCompanion`). The app never decides PASS/FAIL and stores no images or recordings; `core/companion.py` judges the readings, with the raw line as evidence:
@@ -328,7 +342,7 @@ On an unrooted production Android device, SELinux restricts several paths and to
 
 ## Known Limitations
 
-- **Physical device coverage:** All automated tests (399) use mocked/fake ADB responses (`tests/fakes.py`). Checked on one real phone so far (Redmi Note 9, MT6768, Android 12, not rooted) over USB and wireless ADB: shell v2 exit codes, CLI diagnostics and exit codes `0`/`1`/`4`/`5`, every non-destructive GUI action in Arabic and English, Arabic and English HTML and PDF reports, signing and verification, `scrcpy` mirroring, the packaged `adp-cli.exe`, and the screen-off battery current test (correctly `NEEDS_ROOT` there: `current_now` is blocked). Not yet checked on a real phone: a rooted phone, `scrcpy --otg`, the companion app (over ADB, Wi-Fi or a saved file; the Wi-Fi exchange is tested with the app's own Java send code against the server), and the interactive key, touch and screen-colour tests.
+- **Physical device coverage:** All automated tests (424) use mocked/fake ADB responses (`tests/fakes.py`). Checked on one real phone so far (Redmi Note 9, MT6768, Android 12, not rooted) over USB and wireless ADB: shell v2 exit codes, CLI diagnostics and exit codes `0`/`1`/`4`/`5`, every non-destructive GUI action in Arabic and English, Arabic and English HTML and PDF reports, signing and verification, `scrcpy` mirroring, the packaged `adp-cli.exe`, and the screen-off battery current test (correctly `NEEDS_ROOT` there: `current_now` is blocked). Not yet checked on a real phone: a rooted phone, `scrcpy --otg`, the parts check's camera readings (`/proc/driver/camera_info`, Samsung camera nodes), the companion app (over ADB, Wi-Fi or a saved file; the Wi-Fi exchange is tested with the app's own Java send code against the server), and the interactive key, touch and screen-colour tests.
 - **Non-Windows tool manifests:** Download URLs and archive SHA-256 hashes are pinned for all 5 platforms, but pre-listed per-file `scrcpy` SHA-256 entries cover `windows-x86_64` only, and non-Windows archive downloads have not been runtime-tested.
 - **Signing is opt-in:** Reports are signed only when a key is configured (`--sign-key` / `ADP_SIGNING_KEY`); keeping the private key safe is the technician's job.
 

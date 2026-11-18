@@ -198,6 +198,7 @@ class ReportsTabMixin:
             leakage = getattr(self, "last_leakage", None)
             leakage_dict = leakage.to_dict() if leakage is not None else {}
             display = getattr(self, "last_display_check", None)
+            parts = getattr(self, "last_parts_check", None)
             log_result = getattr(self, "last_log_analysis", None)
 
             try:
@@ -217,6 +218,7 @@ class ReportsTabMixin:
                     leakage_result=leakage_dict,
                     extra_checks=[c.to_dict() for c in getattr(self, "last_companion_checks", [])],
                     display_check=display.to_dict() if display is not None else None,
+                    parts_check=parts.to_dict() if parts is not None else None,
                     log_analysis=log_result.to_dict() if log_result is not None else None,
                     signing_key_path=key_path,
                     technician_name=tech,

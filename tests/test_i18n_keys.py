@@ -112,6 +112,8 @@ class TestKeysUsedInCode(unittest.TestCase):
             "board_area.": ["storage", "power", "peripherals", "modem", "soc_ram", "thermal", "firmware", "display"],
             "verifier.": list(verifier_strings),
             "companion_page.": list(_PAGE_KEYS),
+            "parts.assess.": ["consistent", "against", "insufficient"],
+            "parts.matched_by.": ["model", "codename"],
         }
         unknown = sorted(set(self.dynamic) - set(families))
         self.assertEqual(unknown, [], "dynamic key prefix without an enumerated test family")
