@@ -16,16 +16,29 @@ from database.db_manager import DatabaseManager
 logger = logging.getLogger("BoardDiag")
 
 
+FAULT_SIGNATURE_FILES = ("fault_signatures.json", "fault_signatures_kernel.json")
+
+
 def load_fault_signature_rules() -> List[Dict[str, Any]]:
-    """Rules of data/fault_signatures.json; an empty list (logged) when the file is missing or unreadable."""
-    sig_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "fault_signatures.json")
-    if os.path.exists(sig_file):
+    """Rules of data/fault_signatures.json, then data/fault_signatures_kernel.json (rules taken from real
+    kernel driver messages). A missing or unreadable file is logged and skipped; a rule whose id is already
+    loaded is skipped too (the first file wins)."""
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+    rules: List[Dict[str, Any]] = []
+    seen = set()
+    for name in FAULT_SIGNATURE_FILES:
+        sig_file = os.path.join(data_dir, name)
+        if not os.path.exists(sig_file):
+            continue
         try:
             with open(sig_file, "r", encoding="utf-8") as f:
-                return json.load(f).get("rules", [])
+                for r in json.load(f).get("rules", []):
+                    if r.get("id") not in seen:
+                        seen.add(r.get("id"))
+                        rules.append(r)
         except Exception as e:
-            logger.warning(f"Error loading fault_signatures.json: {e}")
-    return []
+            logger.warning(f"Error loading {name}: {e}")
+    return rules
 
 BATTERY_SYSFS_DIRS = [
     "/sys/class/power_supply/battery",

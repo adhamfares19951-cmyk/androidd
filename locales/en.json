@@ -1400,5 +1400,7 @@
   "parts.assess.insufficient": "Not enough readings to assess the parts ({supports} supporting indicator(s)).",
   "parts.not_proof": "Software cannot prove that a part is original; these are indicators only. Reference: LineageOS device wiki and firmware file lists. A high-quality copy that reports the original part's name cannot be told apart.",
   "cli.parts_header": "=== Parts originality indicators: {model} ===",
-  "cli.stage.parts": "Parts originality indicators"
+  "cli.stage.parts": "Parts originality indicators",
+  "board_area.charging": "Charging port and charger IC",
+  "board_area.display": "Display: the panel, its flex and the DSI link"
 }

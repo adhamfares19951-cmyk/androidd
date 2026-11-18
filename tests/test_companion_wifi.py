@@ -121,7 +121,15 @@ class WifiSessionTests(unittest.TestCase):
         self.assertFalse(self.s.received.is_set())
 
     def test_body_size_is_limited(self):
-        self.assertEqual(self.post("x" * (lan.MAX_BODY + 1)), 413)
+        # the length is refused from the header, before any of the body is read
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", self.s.port, timeout=5)
+        c.putrequest("POST", f"/result?token={self.s.token}")
+        c.putheader("Content-Length", str(lan.MAX_BODY + 1))
+        c.endheaders()
+        self.assertEqual(c.getresponse().status, 413)
+        c.close()
+        self.assertFalse(self.s.received.is_set())
 
     def test_unknown_paths(self):
         with self.assertRaises(urllib.error.HTTPError) as cm:

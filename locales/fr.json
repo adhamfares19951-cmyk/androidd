@@ -1400,5 +1400,7 @@
   "parts.assess.insufficient": "Pas assez de mesures pour évaluer les pièces ({supports} indicateur(s) favorable(s)).",
   "parts.not_proof": "Aucun logiciel ne peut prouver qu'une pièce est d'origine ; ce sont des indicateurs. Référence : wiki des appareils LineageOS et listes de fichiers du firmware. Une copie de qualité qui annonce le nom de la pièce d'origine ne peut pas être distinguée.",
   "cli.parts_header": "=== Indicateurs d'origine des pièces : {model} ===",
-  "cli.stage.parts": "Indicateurs d'origine des pièces"
+  "cli.stage.parts": "Indicateurs d'origine des pièces",
+  "board_area.charging": "Connecteur de charge et circuit de charge",
+  "board_area.display": "Écran : la dalle, sa nappe et la liaison DSI"
 }

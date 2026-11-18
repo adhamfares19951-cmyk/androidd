@@ -42,3 +42,4 @@ skills-lock.json
 # Companion APK build output (rebuilt by companion/build.py)
 /companion/build/
 .parts_cache/
+.kernel_cache/

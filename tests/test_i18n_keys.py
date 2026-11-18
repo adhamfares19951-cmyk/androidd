@@ -109,7 +109,7 @@ class TestKeysUsedInCode(unittest.TestCase):
             "cli.state.": ["unauthorized", "offline"],
             "display.assess.": ["consistent", "against", "insufficient"],
             "display.effect.": ["supports", "against", "info"],
-            "board_area.": ["storage", "power", "peripherals", "modem", "soc_ram", "thermal", "firmware", "display"],
+            "board_area.": ["storage", "power", "peripherals", "modem", "soc_ram", "thermal", "firmware", "charging", "display"],
             "verifier.": list(verifier_strings),
             "companion_page.": list(_PAGE_KEYS),
             "parts.assess.": ["consistent", "against", "insufficient"],

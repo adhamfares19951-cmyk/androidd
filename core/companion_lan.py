@@ -311,7 +311,8 @@ def _make_handler(session: CompanionWifiSession):
             except ValueError:
                 length = -1
             if length <= 0 or length > MAX_BODY:
-                return self._send(413, b"bad length")
+                self.close_connection = True   # the unread body must not be taken as the next request
+                return self._send(413, b"bad length", extra={"Connection": "close"})
             body = self.rfile.read(length).decode("utf-8", errors="replace")
             if session._accept(body, self.client_address[0]):
                 return self._send(200, b"ok")
