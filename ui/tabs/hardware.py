@@ -2,7 +2,7 @@
 
 import logging
 import threading
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from core.result import CheckResult
 from ui.theme import (
@@ -60,6 +60,8 @@ class HardwareTabMixin:
             (self._L(self._tr("btn_touch_matrix")), self.run_touch_matrix_async, "cyan"),
             (self._L(self._tr("btn_companion_diag")), self.run_companion_diag_async, "purple"),
             (self._L(self._tr("btn_display_check")), self.run_display_check_async, "cyan"),
+            (self._L(self._tr("btn_companion_wifi")), self.run_companion_wifi_async, "purple"),
+            (self._L(self._tr("btn_companion_import")), self.import_companion_file, "secondary"),
         ]
         _, h_btns = pack_button_grid(
             wrap, hw_specs, cols=3, is_rtl=L["is_rtl"], pady=(0, 8), height=36
@@ -75,6 +77,8 @@ class HardwareTabMixin:
             self.btn_touch_matrix,
             self.btn_companion_diag,
             self.btn_display_check,
+            self.btn_companion_wifi,
+            self.btn_companion_import,
         ) = h_btns
 
         # Touch Overlay Switch Strip
@@ -566,13 +570,7 @@ class HardwareTabMixin:
                 notice = None
             self.last_companion_checks = checks  # added to the diagnostic report
             lines = [self._m(notice)] if notice is not None else []   # the app already on the phone was used
-            for c in checks:
-                lines.append(f"[{c.status}] {self._tr(c.check_id)}")
-                if c.detail is not None:
-                    lines.append(f"    {self._m(c.detail)}")
-                for cause in c.possible_causes:
-                    lines.append(f"    - {self._tr('common.possible_cause')}: {self._m(cause)}")
-            diag_txt = "\n".join(lines)
+            diag_txt = "\n".join(lines + self._companion_check_lines(checks))
 
             def upd():
                 self._ensure_tab("hardware_tester")
@@ -580,3 +578,109 @@ class HardwareTabMixin:
                 self.btn_companion_diag.configure(state="normal")
             self.after(0, upd)
         threading.Thread(target=task, daemon=True).start()
+
+    # ------------------------------------------------------------- companion app without USB debugging
+    def _companion_check_lines(self, checks):
+        lines = []
+        for c in checks:
+            lines.append(f"[{c.status}] {self._tr(c.check_id)}")
+            if c.detail is not None:
+                lines.append(f"    {self._m(c.detail)}")
+            for cause in c.possible_causes:
+                lines.append(f"    - {self._tr('common.possible_cause')}: {self._m(cause)}")
+        return lines
+
+    def _show_companion_result(self, run, how_key):
+        """Judges a run that came without ADB (Wi-Fi or file) and shows it; the checks go into the next report."""
+        from core import companion
+        from core.companion_lan import device_label, reported_model
+        from core.model_db import default_db
+        try:
+            spec = default_db().lookup(reported_model(run)) if reported_model(run) else None
+            checks = companion.judge(run, spec)
+        except Exception as e:
+            logger.error(f"Companion result could not be judged: {e}")
+            checks = [CheckResult(check_id="companion.run", detail=str(e))]
+        self.last_companion_checks = checks
+        head = [self._tr(how_key, device=device_label(run) or self._tr("ui.companion_unknown_phone"))]
+        txt = "\n".join(head + self._companion_check_lines(checks))
+        self._ensure_tab("hardware_tester")
+        self._set_box(self.sensors_text, txt)
+
+    def import_companion_file(self):
+        path = filedialog.askopenfilename(
+            title=self._tr("btn_companion_import"),
+            filetypes=[(self._tr("ui.companion_result_files"), "ADP_*.txt *.txt"), ("*", "*.*")],
+        )
+        if not path:
+            return
+        from core.companion_lan import load_result_file
+        self._show_companion_result(load_result_file(path), "ui.companion_from_file")
+
+    def run_companion_wifi_async(self):
+        """QR code -> the phone opens the PC's page, installs/opens the app, taps Start -> results over Wi-Fi."""
+        from core.companion_lan import CompanionWifiSession, qr_png
+        session = CompanionWifiSession(lang=self.current_lang)
+        try:
+            session.start()
+        except Exception as e:
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.companion_wifi_failed", error=str(e)))
+            return
+        self.btn_companion_wifi.configure(state="disabled")
+        url = session.url()
+        state = {"closed": False}
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(self._tr("btn_companion_wifi"))
+        dialog.geometry("520x680")
+        ctk.CTkLabel(dialog, text=self._tr("ui.companion_wifi_scan"), wraplength=470, justify="center",
+                     font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT_PRIMARY).pack(padx=20, pady=(16, 8))
+        img = qr_png(url, box_size=7)
+        if img is not None:
+            qr_image = ctk.CTkImage(light_image=img, dark_image=img, size=(300, 300))
+            ctk.CTkLabel(dialog, image=qr_image, text="").pack(pady=6)
+            dialog._qr_image = qr_image  # keep a reference while the window is open
+        entry = ctk.CTkEntry(dialog, width=460, justify="center")
+        entry.insert(0, url)
+        entry.configure(state="readonly")
+        entry.pack(padx=20, pady=6)
+        ctk.CTkLabel(dialog, text=self._tr("ui.companion_wifi_steps"), wraplength=470, justify="left",
+                     text_color=TEXT_PRIMARY).pack(padx=20, pady=6)
+        status = ctk.CTkLabel(dialog, text=self._tr("ui.companion_wifi_waiting"), wraplength=470,
+                              text_color=ACCENT_AMBER)
+        status.pack(padx=20, pady=10)
+
+        def close():
+            if state["closed"]:
+                return
+            state["closed"] = True
+            session.stop()
+            self.btn_companion_wifi.configure(state="normal")
+            try:
+                dialog.destroy()
+            except Exception:
+                pass
+
+        ctk.CTkButton(dialog, text=self._tr("ui.companion_wifi_stop"), command=close).pack(pady=(4, 16))
+        dialog.protocol("WM_DELETE_WINDOW", close)
+
+        def on_event(kind, info):
+            keys = {"page": "ui.companion_wifi_page_opened", "apk": "ui.companion_wifi_apk_downloaded",
+                    "rejected": "ui.companion_wifi_rejected"}
+            if kind in keys:
+                text = self._tr(keys[kind], peer=info.get("peer", ""))
+                self.after(0, lambda: (not state["closed"]) and status.configure(text=text))
+        session.on_event = on_event
+
+        def wait_task():
+            while not state["closed"] and not session.received.wait(1.0):
+                pass
+            if state["closed"] and not session.received.is_set():
+                return
+            run = session.run
+
+            def done():
+                close()
+                self._show_companion_result(run, "ui.companion_from_wifi")
+            self.after(0, done)
+        threading.Thread(target=wait_task, daemon=True).start()

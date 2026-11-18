@@ -2,6 +2,7 @@ package com.androiddoctor.companion;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -24,28 +25,44 @@ import android.media.AudioTrack;
 import android.media.Image;
 import android.media.ImageReader;
 import android.media.MediaRecorder;
+import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.util.Size;
 import android.view.WindowManager;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -57,6 +74,12 @@ import java.util.concurrent.atomic.AtomicReference;
  * The desktop program judges the readings; this app never decides PASS or FAIL.
  * Intent extras: run_id (letters, digits, '-', '_'), tests ("all" or a comma list of
  * battery,sensors,vibration,audio,cameras).
+ *
+ * Without USB debugging the app is opened by the technician: from its icon, or from the page the
+ * desktop program serves on the Wi-Fi network (adpcompanion://run?host=&port=&token=&run=&tests=).
+ * It then waits for a tap on Start, runs the same tests, saves the same lines in
+ * Download/AndroidDoctor and, when opened from that page, sends them to the computer (HTTP POST to a
+ * private-network address only).
  */
 public class DiagActivity extends Activity {
     static final String TAG = "AndroidDoctorCompanion";
@@ -64,6 +87,14 @@ public class DiagActivity extends Activity {
 
     private String runId = "none";
     private TextView view;
+    private Button startButton;
+    /** Started by the desktop program over ADB (run_id extra): no Start button, results in logcat only. */
+    private boolean adbRun = false;
+    /** Opened from the desktop program's Wi-Fi page: where the results go. Null = saved file only. */
+    private String host = null;
+    private int port = 0;
+    private String token = null;
+    private final StringBuilder lines = new StringBuilder();
 
     @Override
     protected void onCreate(Bundle state) {
@@ -72,14 +103,34 @@ public class DiagActivity extends Activity {
         view = new TextView(this);
         view.setTextSize(16);
         view.setPadding(40, 80, 40, 40);
-        setContentView(view);
+        startButton = new Button(this);
+        startButton.setText("Start / ابدأ");
+        startButton.setTextSize(18);
+        startButton.setVisibility(android.view.View.GONE);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.addView(view);
+        box.addView(startButton);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(box);
+        setContentView(scroll);
 
-        String id = getIntent().getStringExtra("run_id");
+        Intent intent = getIntent();
+        Uri link = intent.getData();
+        String requested = intent.getStringExtra("tests");
+        String id = intent.getStringExtra("run_id");
         if (id != null && id.matches("[A-Za-z0-9_-]{1,64}")) {
             runId = id;
+            adbRun = true;
+        } else {
+            if (link != null && "adpcompanion".equals(link.getScheme())) {
+                readLink(link);
+                String t = link.getQueryParameter("tests");
+                if (t != null) requested = t;
+            }
+            if (runId.equals("none")) runId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
         }
         final Set<String> tests = new HashSet<>();
-        String requested = getIntent().getStringExtra("tests");
         if (requested == null || requested.trim().isEmpty() || requested.trim().equals("all")) {
             tests.addAll(ALL);
         } else {
@@ -88,6 +139,58 @@ public class DiagActivity extends Activity {
             }
         }
         pending = tests;
+        if (adbRun) {
+            askPermissionsThenStart();
+        } else {
+            // Opened by a person (icon or the Wi-Fi page): nothing runs until they tap Start.
+            show("Android Doctor Pro\n\n"
+                    + (host != null ? "Results will be sent to the computer " + host + "\n"
+                            + "سيتم إرسال النتائج إلى الكمبيوتر " + host + "\n\n"
+                    : "Results will be saved in Download/AndroidDoctor\n"
+                            + "سيتم حفظ النتائج في مجلد Download/AndroidDoctor\n\n")
+                    + "Put the phone on a table, then tap Start.\n"
+                    + "ضع الجوال على طاولة ثم اضغط ابدأ.\n\n");
+            startButton.setVisibility(android.view.View.VISIBLE);
+            startButton.setOnClickListener(v -> {
+                startButton.setEnabled(false);
+                startButton.setVisibility(android.view.View.GONE);
+                askPermissionsThenStart();
+            });
+        }
+    }
+
+    /** host must be a private IPv4 address (10/8, 172.16/12, 192.168/16): results never leave the shop network. */
+    private void readLink(Uri link) {
+        String r = link.getQueryParameter("run");
+        if (r != null && r.matches("[A-Za-z0-9_-]{1,64}")) runId = r;
+        String h = link.getQueryParameter("host");
+        String p = link.getQueryParameter("port");
+        String k = link.getQueryParameter("token");
+        int pn = 0;
+        try {
+            pn = p == null ? 0 : Integer.parseInt(p);
+        } catch (NumberFormatException ignored) {
+        }
+        if (isPrivateIpv4(h) && pn >= 1024 && pn <= 65535 && k != null && k.matches("[A-Za-z0-9_-]{8,64}")) {
+            host = h;
+            port = pn;
+            token = k;
+        }
+    }
+
+    static boolean isPrivateIpv4(String h) {
+        if (h == null || !h.matches("\\d{1,3}(\\.\\d{1,3}){3}")) return false;
+        String[] p = h.split("\\.");
+        int[] o = new int[4];
+        for (int i = 0; i < 4; i++) {
+            o[i] = Integer.parseInt(p[i]);
+            if (o[i] > 255) return false;
+        }
+        return o[0] == 10 || (o[0] == 172 && o[1] >= 16 && o[1] <= 31) || (o[0] == 192 && o[1] == 168);
+    }
+
+    private void askPermissionsThenStart() {
+        final Set<String> tests = pending;
         // `adb install -g` / `pm grant` are refused on some phones (MIUI without "USB debugging
         // (Security settings)"): ask for what the requested tests need, then start. A refusal is
         // reported per test as permission_denied, never as a hardware fault.
@@ -129,7 +232,11 @@ public class DiagActivity extends Activity {
             o.put("run", runId);
         } catch (JSONException ignored) {
         }
-        Log.i(TAG, "ADP|" + o.toString());
+        String line = "ADP|" + o.toString();
+        Log.i(TAG, line);
+        synchronized (lines) {
+            lines.append(line).append('\n');
+        }
     }
 
     private static JSONObject obj(Object... kv) {
@@ -163,7 +270,9 @@ public class DiagActivity extends Activity {
 
     private void runAll(Set<String> tests) {
         emit(obj("type", "start", "sdk", Build.VERSION.SDK_INT, "model", Build.MODEL,
-                "manufacturer", Build.MANUFACTURER, "version", 1));
+                "manufacturer", Build.MANUFACTURER, "brand", Build.BRAND, "device", Build.DEVICE,
+                "version", 2, "channel", adbRun ? "adb" : (host != null ? "wifi" : "file"),
+                "time", System.currentTimeMillis()));
         for (String t : ALL) {
             if (!tests.contains(t)) continue;
             switch (t) {
@@ -176,8 +285,92 @@ public class DiagActivity extends Activity {
             }
         }
         emit(obj("type", "done"));
-        show("\nFinished. Results were sent to the computer.\n");
-        view.postDelayed(this::finish, 2500);
+        if (adbRun) {
+            show("\nFinished. Results were sent to the computer.\n");
+            view.postDelayed(this::finish, 2500);
+            return;
+        }
+        String text;
+        synchronized (lines) {
+            text = lines.toString();
+        }
+        String saved = saveFile(text);
+        show(saved != null ? "\nSaved / تم الحفظ: " + saved + "\n" : "\nCould not save the file / تعذر حفظ الملف\n");
+        if (host != null) {
+            String sent = send(text);
+            show(sent == null ? "\nSent to the computer / تم الإرسال إلى الكمبيوتر\n"
+                    : "\nNot sent / لم يتم الإرسال: " + sent
+                    + "\nImport the saved file on the computer / استورد الملف المحفوظ على الكمبيوتر\n");
+        }
+        show("\nYou can close the app / يمكنك إغلاق التطبيق\n");
+    }
+
+    /** Download/AndroidDoctor/ADP_<model>_<time>.txt (Android 10+), else the app's own folder. Path or null. */
+    private String saveFile(String text) {
+        String name = "ADP_" + Build.MODEL.replaceAll("[^A-Za-z0-9_-]", "_") + "_"
+                + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ".txt";
+        byte[] data = text.getBytes(StandardCharsets.UTF_8);
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                ContentValues v = new ContentValues();
+                v.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+                v.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
+                v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/AndroidDoctor");
+                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                if (uri == null) return null;
+                try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                    if (out == null) return null;
+                    out.write(data);
+                }
+                return Environment.DIRECTORY_DOWNLOADS + "/AndroidDoctor/" + name;
+            }
+            File dir = getExternalFilesDir(null);
+            if (dir == null) return null;
+            File f = new File(dir, name);
+            try (FileOutputStream out = new FileOutputStream(f)) {
+                out.write(data);
+            }
+            return f.getAbsolutePath();
+        } catch (Exception e) {
+            Log.w(TAG, "save failed: " + e);
+            return null;
+        }
+    }
+
+    /** POSTs the lines to the computer, 3 tries. Null when the computer answered 200, else the reason. */
+    private String send(String text) {
+        String reason = "";
+        for (int attempt = 0; attempt < 3; attempt++) {
+            HttpURLConnection c = null;
+            try {
+                URL url = new URL("http://" + host + ":" + port + "/result?token=" + token);
+                c = (HttpURLConnection) url.openConnection();
+                c.setConnectTimeout(5000);
+                c.setReadTimeout(10000);
+                c.setDoOutput(true);
+                c.setRequestMethod("POST");
+                c.setRequestProperty("Content-Type", "text/plain; charset=utf-8");
+                byte[] body = text.getBytes(StandardCharsets.UTF_8);
+                c.setFixedLengthStreamingMode(body.length);
+                try (OutputStream out = c.getOutputStream()) {
+                    out.write(body);
+                }
+                int code = c.getResponseCode();
+                if (code == 200) return null;
+                reason = "HTTP " + code;
+                if (code == 403 || code == 409) return reason;  // wrong session or already received: no retry
+            } catch (Exception e) {
+                reason = e.getClass().getSimpleName() + ": " + e.getMessage();
+            } finally {
+                if (c != null) c.disconnect();
+            }
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException ie) {
+                return reason;
+            }
+        }
+        return reason;
     }
 
     private boolean granted(String permission) {

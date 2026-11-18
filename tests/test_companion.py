@@ -45,10 +45,15 @@ class ProtocolTests(unittest.TestCase):
                     "frames", "mean_luma", "std_luma", "events", "present"):
             self.assertIn(f'"{key}"', java)
 
-    def test_app_stores_nothing(self):
+    def test_app_stores_no_images_or_recordings(self):
         java = Path(JAVA).read_text(encoding="utf-8")
-        for forbidden in ("FileOutputStream", "openFileOutput", "MediaStore", "compressToJpeg", "MediaRecorder.setOutputFile"):
+        for forbidden in ("openFileOutput", "compressToJpeg", "MediaRecorder.setOutputFile", "image/", "audio/",
+                          "MediaStore.Images", "MediaStore.Audio", "MediaStore.Video"):
             self.assertNotIn(forbidden, java)
+        # the only file it writes is the text of its own result lines (for use without USB debugging)
+        self.assertEqual(re.findall(r'MIME_TYPE, "([^"]+)"', java), ["text/plain"])
+        self.assertEqual(java.count("out.write(data)"), 2)
+        self.assertIn("byte[] data = text.getBytes(StandardCharsets.UTF_8);", java)
 
     def test_parse_lines_keeps_only_this_run(self):
         text = "\n".join([
@@ -155,7 +160,7 @@ class FlowTests(unittest.TestCase):
 
     RESTRICTED = (1, "", "adb: failed to install x.apk: Failure [INSTALL_FAILED_USER_RESTRICTED: Install canceled by user]")
     INSTALLED = "\n".join(["Packages:", "  Package [com.androiddoctor.companion] (abc):",
-                           "    versionCode=1 minSdk=24 targetSdk=34", "    versionName=1.0", ""])
+                           "    versionCode=2 minSdk=24 targetSdk=34", "    versionName=2.0", ""])
 
     def test_refused_install_continues_with_the_installed_app_and_says_so(self):
         # Xiaomi: "Install via USB" off, but the app was installed by hand (file manager)
@@ -166,14 +171,14 @@ class FlowTests(unittest.TestCase):
         self.assertTrue(run.ok)
         self.assertIsNone(run.error)
         self.assertEqual(run.notice.key, "companion.using_installed")
-        self.assertEqual(run.notice.args["version"], "1.0")
+        self.assertEqual(run.notice.args["version"], "2.0")
         self.assertIn("INSTALL_FAILED_USER_RESTRICTED", run.notice.args["reason"])
         checks = comp.judge(run, SPEC)
         self.assertEqual([c.status for c in checks], [Status.PASS])
-        self.assertIn("installed app 1.0", checks[0].evidence[0].source)       # every result says which app made it
+        self.assertIn("installed app 2.0", checks[0].evidence[0].source)       # every result says which app made it
 
     def test_installed_app_of_another_version_is_used_and_flagged(self):
-        other = self.INSTALLED.replace("versionCode=1 ", "versionCode=7 ").replace("versionName=1.0", "versionName=0.9")
+        other = self.INSTALLED.replace("versionCode=2 ", "versionCode=7 ").replace("versionName=2.0", "versionName=0.9")
         phone = FakePhone(['ADP|{"type":"done","run":"RUN"}'], install_replies=[self.RESTRICTED, self.RESTRICTED],
                           package_dump=other)
         run = comp.run_companion(phone, "S1", sleep=lambda s: None)

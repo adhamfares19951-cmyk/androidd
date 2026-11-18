@@ -3,6 +3,9 @@
   Android Doctor Pro companion: measures on the phone what ADB cannot read without root and writes
   the raw readings to logcat (tag AndroidDoctorCompanion). It stores no images or recordings.
   Started by the desktop program with: am start -n com.androiddoctor.companion/.DiagActivity
+  Without USB debugging: opened from its icon or from the desktop program's Wi-Fi page
+  (adpcompanion://run?...); it then also saves the lines in Download/AndroidDoctor and sends them to
+  the computer on the local network (INTERNET + cleartext HTTP to a private address only).
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.androiddoctor.companion">
@@ -11,6 +14,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -18,12 +22,25 @@
     <application
         android:label="ADP Companion"
         android:allowBackup="false"
-        android:hasFragileUserData="false">
+        android:hasFragileUserData="false"
+        android:usesCleartextTraffic="true">
         <!-- exported so `adb shell am start` can launch it; it only reports measurements -->
         <activity
             android:name=".DiagActivity"
             android:exported="true"
             android:screenOrientation="portrait"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- the desktop program's Wi-Fi page; nothing runs until the person taps Start -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="adpcompanion" android:host="run" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

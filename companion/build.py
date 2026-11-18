@@ -21,8 +21,8 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PACKAGE = "com.androiddoctor.companion"
-VERSION_CODE = 1
-VERSION_NAME = "1.0"
+VERSION_CODE = 2
+VERSION_NAME = "2.0"
 MIN_SDK = 24
 TARGET_SDK = 35
 PLATFORM = "android-35"

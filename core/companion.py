@@ -4,6 +4,7 @@ Companion app on the phone (companion/): measures what ADB cannot read without r
 Flow: install the APK (`adb install -r -g`; a copy signed with another key is used, never uninstalled) -> grant camera and
 microphone -> `am start` the test screen with a unique run id -> read this run's lines
 (`ADP|{json}`, tag AndroidDoctorCompanion) from logcat until "done" or the timeout.
+Without USB debugging the same lines arrive over Wi-Fi or in a saved file: core/companion_lan.py.
 
 The app only sends raw readings. Everything is judged here, with the raw line as evidence:
 - battery capacity: Android's charge counter (uAh) / charge level gives the present full capacity
@@ -30,7 +31,7 @@ PACKAGE = "com.androiddoctor.companion"
 ACTIVITY = f"{PACKAGE}/.DiagActivity"
 LOG_TAG = "AndroidDoctorCompanion"
 LINE_PREFIX = "ADP|"
-APP_VERSION_CODE = 1                 # companion/build.py VERSION_CODE of the APK shipped with this program
+APP_VERSION_CODE = 2                 # companion/build.py VERSION_CODE of the APK shipped with this program
 
 # Thresholds (documented in the module docstring and README)
 MIN_LEVEL_FOR_CAPACITY = 50          # % charge needed for a capacity estimate
@@ -75,6 +76,20 @@ def parse_lines(text: str, run_id: str) -> List[Dict[str, Any]]:
             msg["_raw"] = line[i:]
             out.append(msg)
     return out
+
+
+def apply_messages(run: "CompanionRun", messages: List[Dict[str, Any]]) -> None:
+    """Puts one run's parsed messages (parse_lines) into the run: start, results by test, done.
+    Shared by the ADB flow (logcat) and the flows without USB debugging (Wi-Fi, saved file)."""
+    for msg in messages:
+        kind = msg.get("type")
+        if kind == "start":
+            run.start = msg
+        elif kind == "result" and msg.get("test"):
+            run.results[msg["test"]] = msg
+            run.raw_lines[msg["test"]] = msg["_raw"]
+        elif kind == "done":
+            run.ok = True
 
 
 def _install_failure_line(text: str) -> str:
@@ -161,15 +176,7 @@ def run_companion(bridge, serial: str, tests: str = "all", timeout: float = 120.
     deadline = time.monotonic() + timeout
     while True:
         _, log, _ = bridge.shell(f"logcat -d -v raw -s {LOG_TAG}:I", serial=serial, timeout=20)
-        for msg in parse_lines(log, run.run_id):
-            kind = msg.get("type")
-            if kind == "start":
-                run.start = msg
-            elif kind == "result" and msg.get("test"):
-                run.results[msg["test"]] = msg
-                run.raw_lines[msg["test"]] = msg["_raw"]
-            elif kind == "done":
-                run.ok = True
+        apply_messages(run, parse_lines(log, run.run_id))
         if run.ok or time.monotonic() >= deadline:
             break
         sleep(poll_seconds)

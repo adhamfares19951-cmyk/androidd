@@ -224,8 +224,14 @@ def build_parser():
     parser.add_argument("--uart-list", action="store_true", help="list serial ports (USB-UART adapters)")
     parser.add_argument("--uart-capture", type=str, metavar="PORT", default=None,
                         help="capture a phone's boot log from PORT (read only), save it, then analyse it")
+    parser.add_argument("--companion-wifi", action="store_true",
+                        help="companion app without USB debugging: show a QR code, wait for the results over Wi-Fi "
+                             "(--seconds, default 600 here)")
+    parser.add_argument("--companion-file", type=str, metavar="FILE", default=None,
+                        help="judge a result file the companion app saved in Download/AndroidDoctor")
     parser.add_argument("--baud", type=int, default=115200, help="baud rate for --uart-capture (default 115200)")
-    parser.add_argument("--seconds", type=int, default=60, help="how long --uart-capture records (default 60)")
+    parser.add_argument("--seconds", type=int, default=None,
+                        help="how long --uart-capture records (default 60) or --companion-wifi waits (default 600)")
     return parser
 
 
@@ -274,6 +280,8 @@ def run_uart_command(args) -> int:
             print(t("cli.uart_port_line", lang, device=p.device, description=p.description, adapter=p.adapter or "-"))
         return EXIT_OK
 
+    if args.seconds is None:
+        args.seconds = 60
     print(t("cli.uart_wiring", lang))
     cap = uc.UartCapture(args.uart_capture, baud=args.baud, on_text=lambda s: print(s, end="", flush=True))
     try:
@@ -297,6 +305,57 @@ def run_uart_command(args) -> int:
         print(t("cli.uart_nothing", lang))
         return EXIT_OK
     print("\n".join(format_log_analysis(log_analyzer.analyze_file(result.path), lang)))
+    return EXIT_OK
+
+
+def _print_companion(run, lang: str) -> None:
+    from core import companion
+    from core.companion_lan import device_label, reported_model
+    from core.model_db import default_db
+    from ui.i18n import t, render
+    spec = default_db().lookup(reported_model(run)) if reported_model(run) else None
+    print(t("cli.companion_phone", lang, device=device_label(run) or "-"))
+    for c in companion.judge(run, spec):
+        print(f"[{c.status}] {t(c.check_id, lang)}")
+        if c.detail is not None:
+            print(f"    {render(c.detail, lang)}")
+        for cause in c.possible_causes:
+            print(f"    - {t('common.possible_cause', lang)}: {render(cause, lang)}")
+
+
+def run_companion_without_adb(args) -> int:
+    """--companion-wifi / --companion-file FILE. Exit: 0 results judged, 1 nothing arrived in time,
+    4 the server could not start or the file could not be read."""
+    from core.companion_lan import CompanionWifiSession, load_result_file, qr_text
+    from ui.i18n import t, render, set_current_language
+    lang = args.lang
+    set_current_language(lang)
+    if args.companion_file:
+        run = load_result_file(args.companion_file)
+        if not run.results and run.error is not None:
+            print(render(run.error, lang))
+            return EXIT_INTERNAL
+        _print_companion(run, lang)
+        return EXIT_OK
+    session = CompanionWifiSession(lang=lang)
+    try:
+        session.start()
+    except Exception as e:
+        print(t("ui.companion_wifi_failed", lang, error=str(e)))
+        return EXIT_INTERNAL
+    seconds = args.seconds or 600
+    try:
+        qr = qr_text(session.url())
+        if qr:
+            print(qr)
+        print(t("cli.companion_wifi_open", lang, url=session.url(), seconds=seconds))
+        run = session.wait(seconds)
+    finally:
+        session.stop()
+    if not session.received.is_set():
+        print(render(run.error, lang))
+        return EXIT_NO_DEVICE
+    _print_companion(run, lang)
     return EXIT_OK
 
 
@@ -375,6 +434,9 @@ def _main() -> int:
 
     if args.analyze_log:
         return run_log_analysis(args.analyze_log, args.lang)
+
+    if args.companion_wifi or args.companion_file:
+        return run_companion_without_adb(args)
 
     if args.uart_list or args.uart_capture:
         return run_uart_command(args)

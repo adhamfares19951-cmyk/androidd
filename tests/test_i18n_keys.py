@@ -96,6 +96,7 @@ class TestKeysUsedInCode(unittest.TestCase):
         from core import jedec
         from core.board_diag import MotherboardDiagnostics
         from ui.verifier_page import _STRINGS as verifier_strings
+        from core.companion_lan import _PAGE_KEYS
         families = {
             "camera.facing.": ["Front", "Back", "External", "UNKNOWN"],
             "keys.state.": ["PASS", "DOWN_NO_UP", "NOT_PRESSED", "UNKNOWN"],
@@ -110,6 +111,7 @@ class TestKeysUsedInCode(unittest.TestCase):
             "display.effect.": ["supports", "against", "info"],
             "board_area.": ["storage", "power", "peripherals", "modem", "soc_ram", "thermal", "firmware", "display"],
             "verifier.": list(verifier_strings),
+            "companion_page.": list(_PAGE_KEYS),
         }
         unknown = sorted(set(self.dynamic) - set(families))
         self.assertEqual(unknown, [], "dynamic key prefix without an enumerated test family")
