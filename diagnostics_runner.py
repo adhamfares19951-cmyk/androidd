@@ -143,6 +143,19 @@ def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[
             return comp.judge(run, spec)
         companion_checks = stage("companion", run_companion_stage) or []
 
+    # layered (guided) diagnosis: narrows a found fault toward the part / flex / board, or names the manual
+    # step that would. Non-interactive here (a headless run cannot swap parts), so it shows the first step.
+    from core import layered_diag
+    fast_charge = stage("charging_read", lambda: MotherboardDiagnostics(bridge, db).diagnose_fast_charge(target_serial))
+    layered = layered_diag.run_layered(
+        fingerprint=(hw.fingerprint if hw is not None else None),
+        battery=(bdiag.pmic if bdiag is not None else None),
+        charging=fast_charge, answers={})
+    if any(r.status != layered_diag.NOT_APPLICABLE for r in layered):
+        from ui.ui_helpers import format_layered
+        for line in format_layered(layered, lang):
+            emit(line)
+
     sec = stage("security", lambda: MalwareHunter(bridge, db).audit_security(target_serial))
     if sec is not None:
         emit(render(sec.summary, lang))
@@ -168,6 +181,7 @@ def diagnose_device(bridge, target: Dict[str, Any], lang: str, get_db: Callable[
             hw_audit=hw.to_dict() if hw is not None else {},
             sec_scan=sec.to_dict() if sec is not None else {},
             extra_checks=[c.to_dict() for c in stage_checks + companion_checks],
+            layered=[r.to_dict() for r in layered] if layered else None,
             display_check=display.to_dict() if display is not None else None,
             parts_check=parts.to_dict() if parts is not None else None,
             signing_key_path=signing_key,

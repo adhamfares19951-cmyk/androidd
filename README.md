@@ -59,6 +59,16 @@ Checks a saved log file (a UART capture of a phone that does not boot, `dmesg`, 
 - The chip maker (Qualcomm, MediaTek, Unisoc, HiSilicon Kirin, Samsung Exynos) is named only when the log's own words point clearly to one maker (at least twice the hits of the next), with the line that did.
 - ANSI colour codes and carriage returns are removed, any encoding is read (undecodable bytes are replaced), and for files over 20 MB only the end is read.
 
+### Guided (Layered) Diagnosis (`core/layered_diag.py`)
+Turns a single evidence-backed symptom into a part-versus-flex-versus-board conclusion instead of a flat list of readings. The logic is pure (no ADB, fully tested in `tests/test_layered_diag.py`); it reads what the other checks already found (fingerprint, touch, battery, charger input, matched kernel-log rules) and walks a short decision tree. Where the evidence alone cannot separate two parts, it asks the technician one manual step — swap this flex, fit a known-good port, try another charger — then re-reads to decide, and records every branch it took as a `trail` so the report shows *why* it reached the conclusion. Covered areas:
+- **Fingerprint**: not-responding → isolates sensor flex vs. sensor vs. board.
+- **Touch**: controller not answering (for example a Silead `Chip ID` read error) → touch panel / flex vs. board.
+- **Battery temperature**: an impossible reading (`<= -10°C` or `>= 65°C`) points at the NTC or gauge; a battery swap confirms the cell vs. the board sensor line.
+- **Battery health**: a `FAIL` health verdict → confirm the cell with a known-good battery before condemning the board.
+- **Charging**: a port short or liquid in the log → clean/dry first (dirt vs. port flex); a dead port with no input → cable → known-good port → charger IC, each step ruling one out.
+
+Every conclusion is `UNKNOWN`-status evidence with a stated confidence (`high` / `medium`), never a definitive electrical verdict — software still cannot prove a board fault on its own. GUI: Motherboard tab, "Guided Diagnosis" (`ui/tabs/board_diag.py`); the behaviour on a step it cannot resolve from evidence is to ask the manual step and continue. In a non-interactive full run (`diagnostics_runner.py`) the evidence-only branches run and the result is written into the report (`ui/report_exporter.py`).
+
 ### Live UART Capture (`core/uart_capture.py`)
 Records the boot log of a phone that does not start, through a USB-to-serial adapter on the phone's UART pads, then analyses it like a saved log. GUI: Motherboard tab, "Live UART capture" card (port, baud, Start / Stop and analyse; the analysis appears in the offline log card). CLI: `python main.py --uart-list` and `python main.py --uart-capture COM3 [--baud 115200] [--seconds 60]` (exit `0` done, `4` the port could not be opened).
 - **Read only:** the program never writes to the port. Connect only GND and the adapter's RX to the phone's TX; leave the adapter's TX unconnected. Many phones use **1.8 V** on these pads: a 3.3 V adapter can damage them and may not read them, so use an adapter or level shifter for that voltage (the window shows this warning).

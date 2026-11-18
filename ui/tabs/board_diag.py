@@ -31,7 +31,7 @@ from ui.theme import (
 from core.board_diag import StressTestSnapshot
 
 logger = logging.getLogger("MainWindow")
-from ui.ui_helpers import _tri_key, bootrom_pill_status, _fmt, format_evidence_for_display, format_log_analysis
+from ui.ui_helpers import _tri_key, bootrom_pill_status, _fmt, format_evidence_for_display, format_log_analysis, format_layered
 
 
 class BoardDiagTabMixin:
@@ -73,6 +73,7 @@ class BoardDiagTabMixin:
             (self._L(self._tr("btn_run_root_forensics")), self.run_root_forensics_async, "purple"),
             (self._L(self._tr("btn_backup_efs_raw")), self.run_efs_backup_async, "success"),
             (self._L(self._tr("btn_analyze_log")), self.run_log_analysis_async, "cyan"),
+            (self._L(self._tr("btn_guided_diag")), self.run_guided_diagnosis_async, "primary"),
         ]
         _, b_btns = pack_button_grid(
             wrap, board_specs, cols=3, is_rtl=L["is_rtl"], pady=(0, 12), height=38
@@ -93,6 +94,7 @@ class BoardDiagTabMixin:
             self.btn_run_root_forensics,
             self.btn_backup_efs_row,
             self.btn_analyze_log,
+            self.btn_guided_diag,
         ) = b_btns
 
         # Live Hardware Telemetry Strip (1.5s Polling)
@@ -210,6 +212,13 @@ class BoardDiagTabMixin:
         )
 
         # Offline log analysis card (a saved UART / dmesg / last_kmsg / logcat file; no phone needed)
+        self.guided_card = make_card(
+            wrap, self._L(self._tr("card_guided_diag")), ACCENT_BLUE, L
+        )[0]
+        self.guided_text = make_console_box(
+            self.guided_card, 150, L, self._L(self._tr("ui.guided_hint"))
+        )
+
         self.logscan_card, badge = make_card(
             wrap, self._L(self._tr("card_logscan")), ACCENT_CYAN, L, show_badge=True
         )
@@ -392,6 +401,97 @@ class BoardDiagTabMixin:
 
         threading.Thread(target=task, daemon=True).start()
 
+    # ------------------------------------------------------------------ guided (layered) diagnosis
+    def _layered_collect(self, serial):
+        """The source objects the layered diagnosis reads, reusing results already on the app when present
+        so a part is not read twice. Returns (sources dict, log_rule_ids)."""
+        fp = getattr(self, "last_fingerprint", None)
+        if fp is None:
+            fp = self.hardware_tester.diagnose_fingerprint(serial)
+            self.last_fingerprint = fp
+        battery = self.board_diag.analyze_pmic(serial)
+        charging = self.board_diag.diagnose_fast_charge(serial)
+        log = getattr(self, "last_log_analysis", None)
+        log_ids = [m.rule_id for m in getattr(log, "matches", [])] if log is not None else []
+        return {"fingerprint": fp, "battery": battery, "charging": charging}, log_ids
+
+    def _layered_run(self, sources, log_ids, ask):
+        """Walk the layered diagnosis, asking `ask(step)->answer_key` for each manual step (None cancels).
+        `ask` is injected so the logic is testable apart from the dialog. Returns the final result list."""
+        from core import layered_diag
+        answers = {}
+        for _ in range(24):      # bounded: every answer resolves one step
+            results = layered_diag.run_layered(log_rule_ids=log_ids, answers=answers, **sources)
+            pending = next((r for r in results if r.status == layered_diag.NEEDS_MANUAL), None)
+            if pending is None:
+                return results
+            answer = ask(pending.manual_step)
+            if answer is None:       # the technician closed the dialog: stop where we are
+                return results
+            answers[pending.manual_step.step_id] = answer
+        return results
+
+    def _ask_manual_step(self, step):
+        """Modal dialog for one manual step; returns the chosen answer key, or None if closed. UI thread only."""
+        lang = self.current_lang
+        from ui.i18n import render
+        from ui.theme import TEXT_PRIMARY, ACCENT_BLUE
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(self._tr("card_guided_diag"))
+        dialog.geometry("520x300")
+        dialog.grab_set()
+        chosen = {"key": None}
+        ctk.CTkLabel(dialog, text=self._tr("cli.layered_manual"), font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color=ACCENT_BLUE).pack(padx=20, pady=(18, 6))
+        ctk.CTkLabel(dialog, text=render(step.instruction, lang), wraplength=470, justify="left",
+                     text_color=TEXT_PRIMARY).pack(padx=20, pady=6)
+
+        def choose(key):
+            chosen["key"] = key
+            dialog.destroy()
+        for key, label in step.options:
+            ctk.CTkButton(dialog, text=render(label, lang), command=lambda k=key: choose(k)).pack(padx=20, pady=4, fill="x")
+        dialog.protocol("WM_DELETE_WINDOW", lambda: choose(None))
+        self.wait_window(dialog)
+        return chosen["key"]
+
+    def run_guided_diagnosis_async(self):
+        serial = self.current_serial.get()
+        if not serial:
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
+            return
+        self._ensure_tab("board_diag")
+        self._set_box(self.guided_text, self._tr("ui.guided_running"))
+        lang = self.current_lang
+
+        def task():
+            sources, log_ids = self._layered_collect(serial)
+
+            # the ask() has to run on the UI thread and block the worker until the technician answers
+            def ask(step):
+                box = {"key": None}
+                done = threading.Event()
+
+                def show():
+                    box["key"] = self._ask_manual_step(step)
+                    done.set()
+                self.after(0, show)
+                done.wait()
+                return box["key"]
+
+            results = self._layered_run(sources, log_ids, ask)
+            self.last_layered = results
+            lines = format_layered(results, lang)
+
+            def upd():
+                self._ensure_tab("board_diag")
+                self._set_box(self.guided_text, "\n".join(lines))
+            self.after(0, upd)
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def run_log_analysis_async(self):
+        """Pick a saved log file and check it against the fault signatures (no phone, no root)."""
     def run_log_analysis_async(self):
         """Pick a saved log file and check it against the fault signatures (no phone, no root)."""
         path = filedialog.askopenfilename(

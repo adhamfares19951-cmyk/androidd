@@ -81,6 +81,32 @@ def format_display_check(r: Any, lang: str) -> List[str]:
     return out
 
 
+def format_layered(results: Any, lang: str) -> List[str]:
+    """Lines for the layered diagnosis (core.layered_diag), CLI and GUI alike. A pending manual step is
+    shown with its options; a conclusion is shown with its confidence and the reasoning trail."""
+    from ui.i18n import t, render
+    from core.layered_diag import CONCLUDED, NEEDS_MANUAL, INSUFFICIENT
+    out = [t("cli.layered_header", lang)]
+    shown = [r for r in results if getattr(r, "status", "") in (CONCLUDED, NEEDS_MANUAL, INSUFFICIENT)]
+    if not shown:
+        out.append(t("layered.not_applicable", lang))
+        return out
+    for r in shown:
+        out.append("")
+        out.append(f"[{t('layered.area.' + r.area, lang)}]")
+        for step in r.trail:
+            out.append(f"  - {render(step, lang)}")
+        if r.status == CONCLUDED:
+            out.append(f"  => {render(r.conclusion, lang)} ({t('cli.layered_confidence.' + r.confidence, lang)})")
+        elif r.status == NEEDS_MANUAL:
+            out.append(f"  >> {t('cli.layered_manual', lang)}: {render(r.manual_step.instruction, lang)}")
+            for key, label in r.manual_step.options:
+                out.append(f"       [{key}] {render(label, lang)}")
+        else:
+            out.append(f"  -- {render(r.diagnosis, lang)}")
+    return out
+
+
 def format_parts_check(r: Any, lang: str) -> List[str]:
     """Lines shown for the parts indicators (core.parts_check), in the CLI and the GUI alike."""
     from ui.i18n import t, render

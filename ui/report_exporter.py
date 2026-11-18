@@ -96,6 +96,7 @@ class DiagnosticReportExporter:
         extra_checks: Optional[List[Dict[str, Any]]] = None,
         display_check: Optional[Dict[str, Any]] = None,
         parts_check: Optional[Dict[str, Any]] = None,
+        layered: Optional[List[Dict[str, Any]]] = None,
         log_analysis: Optional[Dict[str, Any]] = None,
         signing_key_path: Optional[str] = None,
         technician_name: str = "",
@@ -445,6 +446,26 @@ class DiagnosticReportExporter:
                 evidence(parts_check.get("evidence")),
             ]))
 
+        # ---------------- guided (layered) diagnosis: narrows a found fault; never counted in the overall -------
+        layered_card = ""
+        shown = [r for r in (layered or []) if r.get("status") in ("CONCLUDED", "NEEDS_MANUAL", "INSUFFICIENT")]
+        if shown:
+            blocks = []
+            for r in shown:
+                trail = "".join(f"<li>{esc(x)}</li>" for x in r.get("trail", []))
+                head = f'<div class="note"><strong>{tr("layered.area." + r["area"])}</strong></div>'
+                body = f"<ul>{trail}</ul>" if trail else ""
+                if r["status"] == "CONCLUDED":
+                    body += f'<div class="note">&rArr; {esc(r.get("conclusion"))} ({tr("cli.layered_confidence." + r.get("confidence", "medium"))})</div>'
+                elif r["status"] == "NEEDS_MANUAL" and r.get("manual_step"):
+                    opts = "".join(f"<li>{esc(o.get("label"))}</li>" for o in r["manual_step"].get("options", []))
+                    body += (f'<div class="note">&raquo; {tr("cli.layered_manual")}: {esc(r["manual_step"].get("instruction"))}</div>'
+                             f"<ul>{opts}</ul>")
+                else:
+                    body += f'<div class="note">{esc(r.get("diagnosis"))}</div>'
+                blocks.append(head + body)
+            layered_card = card(tr("diagnosis.layered"), "".join(blocks))
+
         # ---------------- offline log analysis (the file may be from another phone: not counted) ----------------
         log_card = ""
         if log_analysis:
@@ -530,6 +551,7 @@ class DiagnosticReportExporter:
 {root_card}
 {display_card}
 {parts_card}
+{layered_card}
 {log_card}
 <div class="footer">
   <div>{tr("report.technician")}: <strong>{html.escape(technician_name or "-")}</strong></div>
