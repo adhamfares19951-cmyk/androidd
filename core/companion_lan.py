@@ -144,6 +144,18 @@ def reported_device(run: CompanionRun) -> str:
     return str((run.start or {}).get("device") or "")
 
 
+class _CompanionHTTPServer(ThreadingHTTPServer):
+    # On Windows SO_REUSEADDR (the HTTPServer default) lets a second server take a port already in use, so two
+    # sessions could share one port and the phone could reach the wrong one. Reuse is off and Windows is asked
+    # for an exclusive bind, so a taken port raises OSError and start() moves on to the next port.
+    allow_reuse_address = False
+
+    def server_bind(self):
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 class CompanionWifiSession:
     """One Wi-Fi session: one token, one run id, results accepted once. Start, show url(), wait()."""
 
@@ -161,7 +173,7 @@ class CompanionWifiSession:
         self.run: Optional[CompanionRun] = None
         self.received = threading.Event()
         self.on_event: Optional[Callable[[str, dict], None]] = None   # ("page"|"apk"|"result"|"rejected", info)
-        self._server: Optional[ThreadingHTTPServer] = None
+        self._server: Optional[_CompanionHTTPServer] = None
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
 
@@ -187,7 +199,7 @@ class CompanionWifiSession:
         last_error: Optional[OSError] = None
         for p in range(self._wanted_port, self._wanted_port + PORT_TRIES):
             try:
-                self._server = ThreadingHTTPServer(("0.0.0.0", p), _make_handler(session))
+                self._server = _CompanionHTTPServer(("0.0.0.0", p), _make_handler(session))
                 self.port = self._server.server_address[1]
                 break
             except OSError as e:
@@ -305,6 +317,17 @@ def _make_handler(session: CompanionWifiSession):
             u = urlparse(self.path)
             if u.path != "/result" or not self._token_ok(parse_qs(u.query)):
                 session._notify("rejected", {"peer": self.client_address[0], "path": u.path})
+                # Read the body first: Windows resets a connection closed with unread data, and the sender then
+                # sees "connection aborted" instead of this 403. A body over the limit is not read: close instead.
+                try:
+                    pending = int(self.headers.get("Content-Length") or 0)
+                except ValueError:
+                    pending = -1
+                if 0 < pending <= MAX_BODY:
+                    self.rfile.read(pending)
+                elif pending != 0:
+                    self.close_connection = True
+                    return self._send(403, b"forbidden", extra={"Connection": "close"})
                 return self._send(403, b"forbidden")
             try:
                 length = int(self.headers.get("Content-Length") or 0)

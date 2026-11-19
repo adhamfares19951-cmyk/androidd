@@ -100,6 +100,14 @@ class WifiSessionTests(unittest.TestCase):
             self.get(f"/{lan.APK_NAME}?k={self.s.token}")
         self.assertEqual(cm.exception.code, 404)
 
+    def test_rejected_result_is_a_clean_403_not_a_reset(self):
+        # Windows resets a connection closed with unread data: the 403 reply was lost about 1 run in 10
+        # ("connection aborted", WinError 10053). A large body makes that close to certain on the old code.
+        body = "x" * (512 * 1024)
+        for _ in range(5):
+            self.assertEqual(self.post(body, token="x" * 16), 403)
+        self.assertFalse(self.s.received.is_set())
+
     def test_results_are_accepted_once_with_the_token_and_judged_like_adb(self):
         body = lines(self.s.run_id, START, AUDIO)
         self.assertEqual(self.post(body, token="x" * 16), 403)
