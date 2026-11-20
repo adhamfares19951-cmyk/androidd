@@ -1505,5 +1505,8 @@
   "wipe.enc.unknown": "The device did not report its encryption state; cryptographic erasure cannot be certified.",
   "wipe.reset.not_confirmed": "Factory reset not started - confirmation is required first.",
   "wipe.reset.broadcast_sent": "Factory reset command sent to the device.",
-  "wipe.reset.confirm_on_device": "Opened the factory-reset screen; confirm it on the phone, then re-check to issue the certificate."
+  "wipe.reset.confirm_on_device": "Opened the factory-reset screen; confirm it on the phone, then re-check to issue the certificate.",
+  "charge_curve.no_data": "No usable battery readings were captured; the charging curve is unavailable.",
+  "charge_curve.captured": "Captured {n} samples; peak {peak} W.",
+  "charge_curve.captured_hot": "Captured {n} samples; peak {peak} W, battery reached {tmax} C while charging."
 }

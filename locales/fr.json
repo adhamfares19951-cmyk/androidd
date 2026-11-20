@@ -1505,5 +1505,8 @@
   "wipe.enc.unknown": "L'appareil n'a pas indiqué son état de chiffrement ; l'effacement cryptographique ne peut pas être garanti.",
   "wipe.reset.not_confirmed": "Réinitialisation non lancée - une confirmation est requise d'abord.",
   "wipe.reset.broadcast_sent": "Commande de réinitialisation envoyée à l'appareil.",
-  "wipe.reset.confirm_on_device": "Écran de réinitialisation ouvert ; confirmez-le sur le téléphone, puis revérifiez pour émettre le certificat."
+  "wipe.reset.confirm_on_device": "Écran de réinitialisation ouvert ; confirmez-le sur le téléphone, puis revérifiez pour émettre le certificat.",
+  "charge_curve.no_data": "Aucune lecture de batterie exploitable ; la courbe de charge est indisponible.",
+  "charge_curve.captured": "{n} échantillons capturés ; pic {peak} W.",
+  "charge_curve.captured_hot": "{n} échantillons capturés ; pic {peak} W, la batterie a atteint {tmax} C pendant la charge."
 }
