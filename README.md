@@ -100,6 +100,16 @@ Finds the board schematic, boardview, datasheet or pinout for the connected phon
 - **On-demand fetch**: an explicit, never-automatic download into the cache. When the index publishes a `sha256`, the download is verified against it — a mismatch is the one `FAIL` this module asserts (tampered or corrupt) and the file is discarded. Written atomically via a temp file so a half-download never looks cached.
 
 
+### Live Charging Curve (`core/charging_curve.py`)
+Samples voltage, current, power and temperature once per interval over a capture window (default 60 s), by reusing the evidence-backed battery snapshot (`analyze_pmic`) - so it inherits the same sysfs/dumpsys reads and their honesty: an unread value is `None`, never invented, and a partial sample is still kept.
+- `power_w` is `V x I` from the reading (`None` if either is missing). The curve summarises peak/min power, temperature start/end/rise and max, and flags `hot_while_charging` (battery at or above 45 C while charging) as a note - not an invented `FAIL`. With no usable reading at all it is `UNKNOWN`, never a fabricated line. `to_rows()` returns plain rows for a chart or CSV.
+- It passes no battery health verdict - that stays the fuel-gauge check's job; this only records what the charger is doing second by second. `ChargingCurveCapture` takes an injectable clock/sleep/sampler, so the capture is driven deterministically in tests without waiting.
+
+### IMEI Validation & Blacklist Lookup (`core/imei_check.py`)
+The lawful, dealer-facing side of IMEI - checking a used phone before buying it, never changing it.
+- **Local, offline, free**: validates the IMEI's length and Luhn check digit, catching a mistyped or invalid IMEI with no network and no cost.
+- **Blacklist lookup, BYOK**: the technician supplies their own API endpoint and key (a DHRU Fusion / SickW-style account); nothing ships with the program. Only a real service response yields a verdict - a clear "clean" is `PASS`, a clear lost/stolen/blacklisted is `FAIL`, and an ambiguous or failed response is `UNKNOWN`, never assumed clean. The raw response is always kept as evidence. `read_imei` is a best-effort device read that returns `None` (for manual entry) rather than a fake value when Android withholds it.
+
 ### Data Erasure Certificate (`core/data_wipe.py`)
 A signed, honest proof that a phone was securely wiped before resale - valuable to used-device dealers, who are otherwise liable for the previous owner's data. It never claims more than the device confirms.
 - **Encryption assessment**: reads `ro.crypto.state` / `ro.crypto.type`. On modern Android userdata is encrypted (File-Based Encryption, or older Full-Disk), so a factory reset discards the key and the data becomes cryptographically unrecoverable - the real erasure mechanism. The certificate asserts `CRYPTO_ERASURE` **only** when encryption is confirmed (`PASS`); a device that reports it is not encrypted is `FAIL` (reset gives no cryptographic guarantee), and a device that does not report its state is `UNKNOWN` - never assumed safe.

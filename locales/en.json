@@ -1508,5 +1508,13 @@
   "wipe.reset.confirm_on_device": "Opened the factory-reset screen; confirm it on the phone, then re-check to issue the certificate.",
   "charge_curve.no_data": "No usable battery readings were captured; the charging curve is unavailable.",
   "charge_curve.captured": "Captured {n} samples; peak {peak} W.",
-  "charge_curve.captured_hot": "Captured {n} samples; peak {peak} W, battery reached {tmax} C while charging."
+  "charge_curve.captured_hot": "Captured {n} samples; peak {peak} W, battery reached {tmax} C while charging.",
+  "imei.bad_length": "Not a valid IMEI: expected 15 digits, got {n}.",
+  "imei.bad_checksum": "IMEI failed its checksum (Luhn) - likely mistyped.",
+  "imei.format_ok": "IMEI format and checksum are valid.",
+  "imei.no_service": "IMEI format is valid; no blacklist service is configured, so lost/stolen status is unknown.",
+  "imei.lookup_failed": "Blacklist lookup failed: {error}",
+  "imei.lookup_unclear": "The blacklist service response was unclear; status unknown - read the raw response.",
+  "imei.blacklisted": "This IMEI is reported blacklisted (lost/stolen or blocked).",
+  "imei.clean": "The blacklist service reports this IMEI as clean."
 }

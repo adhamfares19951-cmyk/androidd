@@ -1508,5 +1508,13 @@
   "wipe.reset.confirm_on_device": "Écran de réinitialisation ouvert ; confirmez-le sur le téléphone, puis revérifiez pour émettre le certificat.",
   "charge_curve.no_data": "Aucune lecture de batterie exploitable ; la courbe de charge est indisponible.",
   "charge_curve.captured": "{n} échantillons capturés ; pic {peak} W.",
-  "charge_curve.captured_hot": "{n} échantillons capturés ; pic {peak} W, la batterie a atteint {tmax} C pendant la charge."
+  "charge_curve.captured_hot": "{n} échantillons capturés ; pic {peak} W, la batterie a atteint {tmax} C pendant la charge.",
+  "imei.bad_length": "IMEI invalide : 15 chiffres attendus, {n} reçus.",
+  "imei.bad_checksum": "L'IMEI a échoué à sa somme de contrôle (Luhn) - probablement une faute de saisie.",
+  "imei.format_ok": "Le format et la somme de contrôle de l'IMEI sont valides.",
+  "imei.no_service": "Format IMEI valide ; aucun service de liste noire configuré, le statut perdu/volé est inconnu.",
+  "imei.lookup_failed": "Échec de la consultation de la liste noire : {error}",
+  "imei.lookup_unclear": "La réponse du service était ambiguë ; statut inconnu - lisez la réponse brute.",
+  "imei.blacklisted": "Cet IMEI est signalé en liste noire (perdu/volé ou bloqué).",
+  "imei.clean": "Le service indique que cet IMEI est sain."
 }
