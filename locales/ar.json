@@ -1499,5 +1499,11 @@
   "schematic.fetch_failed": "تعذّر جلب {component}: {error}",
   "schematic.sha_mismatch": "{component}: التحميل لا يطابق البصمة المنشورة (المتوقع {want}... والناتج {got}...) — أُهمل.",
   "schematic.cache_failed": "تعذّر حفظ {component} في الكاش: {error}",
-  "schematic.fetched": "تم جلب {component} ({type}) وتخزينه."
+  "schematic.fetched": "تم جلب {component} ({type}) وتخزينه.",
+  "wipe.enc.confirmed": "تشفير بيانات المستخدم مُفعّل ({type})؛ إعادة الضبط تُتلف المفتاح وتمحو البيانات نهائيًا.",
+  "wipe.enc.absent": "الجهاز يُبلّغ أن بيانات المستخدم غير مشفّرة؛ إعادة الضبط لا تضمن استحالة استرجاع البيانات.",
+  "wipe.enc.unknown": "الجهاز لم يُبلّغ عن حالة التشفير؛ لا يمكن اعتماد المسح التشفيري.",
+  "wipe.reset.not_confirmed": "لم تبدأ إعادة الضبط — مطلوب التأكيد أولًا.",
+  "wipe.reset.broadcast_sent": "تم إرسال أمر إعادة الضبط إلى الجهاز.",
+  "wipe.reset.confirm_on_device": "فُتحت شاشة إعادة الضبط؛ أكّدها على الهاتف ثم أعد الفحص لإصدار الشهادة."
 }

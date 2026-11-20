@@ -1499,5 +1499,11 @@
   "schematic.fetch_failed": "Could not fetch {component}: {error}",
   "schematic.sha_mismatch": "{component}: the download did not match its published checksum (expected {want}..., got {got}...) - discarded.",
   "schematic.cache_failed": "Could not save {component} to the cache: {error}",
-  "schematic.fetched": "{component} {type} fetched and cached."
+  "schematic.fetched": "{component} {type} fetched and cached.",
+  "wipe.enc.confirmed": "Userdata encryption is active ({type}); a factory reset destroys the key and erases the data for good.",
+  "wipe.enc.absent": "The device reports userdata is NOT encrypted; a factory reset does not guarantee the data is unrecoverable.",
+  "wipe.enc.unknown": "The device did not report its encryption state; cryptographic erasure cannot be certified.",
+  "wipe.reset.not_confirmed": "Factory reset not started - confirmation is required first.",
+  "wipe.reset.broadcast_sent": "Factory reset command sent to the device.",
+  "wipe.reset.confirm_on_device": "Opened the factory-reset screen; confirm it on the phone, then re-check to issue the certificate."
 }
