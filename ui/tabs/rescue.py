@@ -146,6 +146,9 @@ class RescueTabMixin:
             pady=(0, 12),
         )
 
+        # Status line for mirror / OTG / virtual-pad actions, so failures are never silent.
+        self.mirror_log_text = make_console_box(self.vpad_card, 70, L)
+
         # 3. Wireless ADB Card
         self.wireless_card, _ = make_card(wrap, self._L(self._tr("card_wireless_adb")), ACCENT_GREEN, L)
 
@@ -422,20 +425,41 @@ class RescueTabMixin:
             apk_card, 110, L, self._L(self._tr("ui.batch_install_multiple_apk_files_r"))
         )
 
+    def _report_mirror(self, ok, msg):
+        """Show the real scrcpy result (or error) under the virtual-pad, on the UI thread."""
+        text = self._m(msg)   # render on the worker thread; the UI callback just prints it
+        self.after(0, lambda: self._append_box(self.mirror_log_text, f"{text}\n"))
+
     def _launch_scrcpy(self):
         serial = self.current_serial.get()
         turn_off = self.mirror_off_var.get()
-        threading.Thread(target=lambda: self.rescue_center.launch_screen_mirror(serial, turn_screen_off=turn_off), daemon=True).start()
+        self._set_box(self.mirror_log_text, self._tr("ui.starting_screen_mirror"))
+
+        def task():
+            ok, msg = self.rescue_center.launch_screen_mirror(serial, turn_screen_off=turn_off)
+            self._report_mirror(ok, msg)
+        threading.Thread(target=task, daemon=True).start()
 
     def _stop_scrcpy(self):
-        threading.Thread(target=self.rescue_center.stop_screen_mirror, daemon=True).start()
+        def task():
+            ok, msg = self.rescue_center.stop_screen_mirror()
+            self._report_mirror(ok, msg)
+        threading.Thread(target=task, daemon=True).start()
 
     def _launch_scrcpy_otg(self):
         serial = self.current_serial.get()
-        is_ar = self.current_lang == "ar"
-        threading.Thread(target=lambda: self.rescue_center.launch_otg_mode(serial), daemon=True).start()
-        if hasattr(self, "wireless_log_text"):
-            self._append_box(self.wireless_log_text, self._tr("ui.otg_usb_hid_mouse_keyboard_mode"))
+        # Neutral "starting" line; the real success/failure is printed when the call returns,
+        # so we never claim OTG launched before launch_otg_mode has actually said so.
+        self._set_box(self.mirror_log_text, self._tr("ui.starting_otg"))
+
+        def task():
+            ok, msg = self.rescue_center.launch_otg_mode(serial)
+            self._report_mirror(ok, msg)
+        threading.Thread(target=task, daemon=True).start()
+
+    def _report_vpad(self, ok):
+        text = self._tr("ui.vpad_sent" if ok else "ui.vpad_send_failed")
+        self.after(0, lambda: self._append_box(self.mirror_log_text, f"{text}\n"))
 
     def _send_virtual_pin(self):
         serial = self.current_serial.get()
@@ -443,18 +467,23 @@ class RescueTabMixin:
         if not pin:
             return
         def task():
-            self.rescue_center.send_text(pin, serial)
+            ok = self.rescue_center.send_text(pin, serial)
             time.sleep(0.2)
-            self.rescue_center.send_keyevent(66, serial)
+            ok = self.rescue_center.send_keyevent(66, serial) and ok
+            self._report_vpad(ok)
         threading.Thread(target=task, daemon=True).start()
 
     def _send_virtual_swipe(self):
         serial = self.current_serial.get()
-        threading.Thread(target=lambda: self.rescue_center.send_swipe(500, 1600, 500, 400, 300, serial), daemon=True).start()
+        def task():
+            self._report_vpad(self.rescue_center.send_swipe(500, 1600, 500, 400, 300, serial))
+        threading.Thread(target=task, daemon=True).start()
 
     def _send_virtual_key(self, key_code: int):
         serial = self.current_serial.get()
-        threading.Thread(target=lambda: self.rescue_center.send_keyevent(key_code, serial), daemon=True).start()
+        def task():
+            self._report_vpad(self.rescue_center.send_keyevent(key_code, serial))
+        threading.Thread(target=task, daemon=True).start()
 
     def _enable_wireless_adb(self):
         serial = self.current_serial.get()

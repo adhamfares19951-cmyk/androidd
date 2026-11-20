@@ -53,7 +53,9 @@ class RescueCenter:
         turn_screen_off: bool = True,
         stay_awake: bool = True,
         max_size: int = 1024,
-        max_fps: int = 60
+        max_fps: int = 60,
+        keyboard: str = "uhid",
+        mouse: str = "uhid",
     ) -> Tuple[bool, str]:
         with self._proc_lock:
             if self._scrcpy_process is not None and self._scrcpy_process.poll() is None:
@@ -69,6 +71,12 @@ class RescueCenter:
                 cmd.append("--turn-screen-off")
             if stay_awake:
                 cmd.append("--stay-awake")
+            # uhid simulates a kernel-level USB keyboard/mouse, so clicks and the unlock PIN
+            # still reach phones (Xiaomi/MIUI) that block scrcpy's default INJECT_EVENTS input.
+            if keyboard:
+                cmd.append(f"--keyboard={keyboard}")
+            if mouse:
+                cmd.append(f"--mouse={mouse}")
             if max_size:
                 cmd.extend(["--max-size", str(max_size)])
             if max_fps:
@@ -101,6 +109,10 @@ class RescueCenter:
         with self._proc_lock:
             if not os.path.exists(self.scrcpy_path):
                 return False, M("scrcpy.not_found", path=self.scrcpy_path)
+
+            # OTG grabs the USB device directly, so a mirror session still holding it must be
+            # torn down first - otherwise the old process leaks and OTG fails to claim the port.
+            self._terminate_scrcpy_locked()
 
             cmd = [self.scrcpy_path, "--otg"]
             if serial:
@@ -143,6 +155,20 @@ class RescueCenter:
     def get_fastboot_variables(self, serial: Optional[str] = None) -> FastbootVariables:
         """Alias for read_fastboot_variables."""
         return self.read_fastboot_variables(serial)
+
+    def _terminate_scrcpy_locked(self) -> None:
+        """Tear down the tracked scrcpy process. Caller must hold self._proc_lock."""
+        proc = self._scrcpy_process
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=3)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        self._scrcpy_process = None
 
     def stop_screen_mirror(self) -> Tuple[bool, str]:
         with self._proc_lock:
