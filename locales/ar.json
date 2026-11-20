@@ -1490,5 +1490,14 @@
   "ui.guided_hint": "اضغط 'تشخيص موجّه'. يقرأ نتائج البصمة والبطارية والشحن، ولما لا يقدر يفرّق بين القطعة وفلاتتها يطلب منك تركيب قطعة سليمة وإعادة الفحص، ثم يضيّق العطل.",
   "ui.guided_running": "جارٍ التشخيص الموجّه... اتبع الخطوات على الشاشة.",
   "cli.stage.layered": "التشخيص الموجّه (مؤشرات)",
-  "cli.stage.charging_read": "قراءات دخل الشحن"
+  "cli.stage.charging_read": "قراءات دخل الشحن",
+  "schematic.found": "{component} ({type}) متوفّر ({origin}).",
+  "schematic.on_demand": "{component} ({type}): غير موجود على القرص، لكن يمكن جلبه عند الطلب.",
+  "schematic.missing": "{component} ({type}): غير متوفّر (لا ملف محلي ولا مصدر).",
+  "schematic.no_source": "{component}: لا يوجد رابط مصدر للجلب منه.",
+  "schematic.no_file": "{component}: لا يوجد اسم ملف للحفظ باسمه.",
+  "schematic.fetch_failed": "تعذّر جلب {component}: {error}",
+  "schematic.sha_mismatch": "{component}: التحميل لا يطابق البصمة المنشورة (المتوقع {want}... والناتج {got}...) — أُهمل.",
+  "schematic.cache_failed": "تعذّر حفظ {component} في الكاش: {error}",
+  "schematic.fetched": "تم جلب {component} ({type}) وتخزينه."
 }

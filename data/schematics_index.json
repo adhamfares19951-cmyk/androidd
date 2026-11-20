@@ -1,0 +1,5 @@
+{
+  "schema": 1,
+  "_doc": "Index of board schematics, boardviews, datasheets and pinouts, keyed to phone models/codenames and to IC part numbers. It is a POINTER catalogue only: it never contains the documents themselves. The technician owns the documents and controls the 'source' URLs. Add your own entries here or, preferably, in the technician index at %LOCALAPPDATA%\\AndroidDoctorPro\\schematics_index.json (read after this file). Each document: id (unique), doc_type (schematic|boardview|datasheet|pinout), component (IC part number or board name), models (list of ro.product.model), codenames (list of ro.product.device), manufacturer (optional), file (path relative to a local schematics folder / the cache), source (optional URL to fetch on demand), sha256 (optional, checked after a fetch), notes (optional). Nothing is guessed: a model with no matching entry simply has none.",
+  "documents": []
+}

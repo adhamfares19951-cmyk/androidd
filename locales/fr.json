@@ -1490,5 +1490,14 @@
   "ui.guided_hint": "Cliquez sur « Diagnostic guidé ». Il lit les résultats d'empreinte, batterie et charge et, quand il ne peut pas distinguer la pièce de sa nappe, vous demande de poser une pièce en bon état et de relancer, puis cerne le défaut.",
   "ui.guided_running": "Diagnostic guidé en cours... suivez les étapes à l'écran.",
   "cli.stage.layered": "Diagnostic guidé (indicateurs)",
-  "cli.stage.charging_read": "Lectures d'entrée de charge"
+  "cli.stage.charging_read": "Lectures d'entrée de charge",
+  "schematic.found": "{component} {type} est disponible ({origin}).",
+  "schematic.on_demand": "{component} {type} : absent du disque, mais récupérable à la demande.",
+  "schematic.missing": "{component} {type} : indisponible (aucun fichier local ni source).",
+  "schematic.no_source": "{component} : aucune URL source pour la récupération.",
+  "schematic.no_file": "{component} : aucun nom de fichier pour l'enregistrement.",
+  "schematic.fetch_failed": "Impossible de récupérer {component} : {error}",
+  "schematic.sha_mismatch": "{component} : le téléchargement ne correspond pas à l'empreinte publiée (attendu {want}..., obtenu {got}...) - rejeté.",
+  "schematic.cache_failed": "Impossible d'enregistrer {component} dans le cache : {error}",
+  "schematic.fetched": "{component} {type} récupéré et mis en cache."
 }

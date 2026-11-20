@@ -1490,5 +1490,14 @@
   "ui.guided_hint": "Click 'Guided Diagnosis'. It reads the fingerprint, battery and charging results and, when it cannot tell the part from its flex, asks you to fit a known-good part and re-run, then narrows the fault.",
   "ui.guided_running": "Running guided diagnosis... follow the on-screen steps.",
   "cli.stage.layered": "Guided diagnosis (indicators)",
-  "cli.stage.charging_read": "Charging input readings"
+  "cli.stage.charging_read": "Charging input readings",
+  "schematic.found": "{component} {type} is available ({origin}).",
+  "schematic.on_demand": "{component} {type}: not on disk, but it can be fetched on demand.",
+  "schematic.missing": "{component} {type}: not available (no local file and no source).",
+  "schematic.no_source": "{component}: no source URL to fetch from.",
+  "schematic.no_file": "{component}: no file name to save as.",
+  "schematic.fetch_failed": "Could not fetch {component}: {error}",
+  "schematic.sha_mismatch": "{component}: the download did not match its published checksum (expected {want}..., got {got}...) - discarded.",
+  "schematic.cache_failed": "Could not save {component} to the cache: {error}",
+  "schematic.fetched": "{component} {type} fetched and cached."
 }
