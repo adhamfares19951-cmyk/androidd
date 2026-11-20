@@ -307,3 +307,91 @@ class SigningDbEvidenceTests(unittest.TestCase):
         txt = format_evidence_for_display([Evidence(source="cat x", raw_excerpt="1", exit_code=0)], lang="en")
         self.assertIn("[exit 0]", txt)
         self.assertNotIn("[exit", format_evidence_for_display([{"source": "s", "raw_excerpt": "1"}], lang="en"))
+
+
+class _EFSPhone(FakeBridge):
+    """Rooted phone for the (older) board_diag EFS backup path: dd + run_adb pull,
+    with a real /sys partition size so a short dump can be caught."""
+
+    def __init__(self, dd_ok=True, pull_ok=True, pull_bytes=1024, sectors=2):
+        routes = {
+            "magisk -v": (0, "Magisk v26", ""),
+            "ls -d /dev/block/bootdevice/by-name": (0, "/dev/block/bootdevice/by-name", ""),
+            "ls -la /dev/block/bootdevice/by-name": (
+                0,
+                "lrwxrwxrwx 1 root root 16 2026 efs -> /dev/block/mmcblk0p1\n"
+                "lrwxrwxrwx 1 root root 16 2026 modemst1 -> /dev/block/mmcblk0p2", ""),
+            "readlink -f /dev/block/bootdevice/by-name/efs": (0, "/dev/block/mmcblk0p1", ""),
+            "readlink -f /dev/block/bootdevice/by-name/modemst1": (0, "/dev/block/mmcblk0p2", ""),
+            "cat /sys/class/block/mmcblk0p1/size": (0, str(sectors), ""),
+            "cat /sys/class/block/mmcblk0p2/size": (0, str(sectors), ""),
+            "dd if=": (0 if dd_ok else 1, "", ""),
+        }
+        super().__init__(routes, default=(0, "", ""), root=True)
+        self.pull_ok, self.pull_bytes = pull_ok, pull_bytes
+
+    def run_adb(self, args, serial=None, timeout=30):
+        if args and args[0] == "pull":
+            if self.pull_ok:
+                with open(args[2], "wb") as f:
+                    f.write(b"\x00" * self.pull_bytes)
+                return (0, "", "")
+            return (1, "", "error")
+        return (1, "", "")
+
+
+class EFSBackupVerificationTests(unittest.TestCase):
+    """The board_diag EFS backup must never report success for a short/failed dump."""
+
+    def _run(self, phone):
+        from core.board_diag import MotherboardDiagnostics
+        with tempfile.TemporaryDirectory() as d:
+            res = MotherboardDiagnostics(phone, db=None).backup_efs_nvram_partitions("S1", dest_dir=d)
+            files = sorted(f for f in os.listdir(d) if f.endswith(".img"))
+            return res, files
+
+    def test_complete_dump_succeeds_and_is_verified(self):
+        res, files = self._run(_EFSPhone())
+        self.assertTrue(res.success)
+        self.assertEqual(sorted(res.backed_up_partitions), ["efs", "modemst1"])
+        self.assertEqual(res.failed_partitions, [])
+        self.assertEqual(files, ["efs.img", "modemst1.img"])
+
+    def test_short_dump_is_rejected_and_file_removed(self):
+        res, files = self._run(_EFSPhone(pull_bytes=512))   # 512 != real 1024
+        self.assertFalse(res.success)
+        self.assertEqual(res.backed_up_partitions, [])
+        self.assertEqual(sorted(res.failed_partitions), ["efs", "modemst1"])
+        self.assertEqual(files, [])   # the truncated copies were deleted, not left to be trusted
+
+    def test_failed_dd_is_not_counted(self):
+        res, _ = self._run(_EFSPhone(dd_ok=False))
+        self.assertFalse(res.success)
+        self.assertEqual(res.backed_up_partitions, [])
+        self.assertEqual(sorted(res.failed_partitions), ["efs", "modemst1"])
+
+    def test_failed_pull_is_not_counted(self):
+        res, _ = self._run(_EFSPhone(pull_ok=False))
+        self.assertFalse(res.success)
+        self.assertEqual(res.backed_up_partitions, [])
+        self.assertEqual(sorted(res.failed_partitions), ["efs", "modemst1"])
+
+
+class CliDoesNotLoadGuiTests(unittest.TestCase):
+    """--cli must not drag in tkinter/customtkinter via the ui package initializer."""
+
+    def test_cli_imports_stay_gui_free(self):
+        import subprocess, sys
+        code = (
+            "import sys\n"
+            "from ui.i18n import t, set_current_language\n"
+            "from ui import ui_helpers, report_exporter, verifier_page\n"
+            "assert 'customtkinter' not in sys.modules, 'customtkinter loaded'\n"
+            "assert 'ui.main_window' not in sys.modules, 'main_window loaded'\n"
+            "import ui\n"
+            "assert ui.DiagnosticReportExporter is not None\n"
+        )
+        # A fresh interpreter, so modules imported by the test runner don't mask the result.
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                           cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.assertEqual(r.returncode, 0, r.stderr)

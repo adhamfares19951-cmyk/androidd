@@ -437,6 +437,7 @@ class EFSBackupResult:
     serial: str = ""
     success: bool = False
     backed_up_partitions: List[str] = field(default_factory=list)
+    failed_partitions: List[str] = field(default_factory=list)
     backup_folder: str = ""
     total_bytes: int = 0
     hashes: Dict[str, str] = field(default_factory=dict)
@@ -1734,8 +1735,10 @@ class MotherboardDiagnostics:
             progress_callback(M("efs.progress.found", count=len(discovered_targets), names=", ".join(discovered_targets)))
 
         backed_up = []
+        failed = []
         total_size = 0
         hashes = {}
+        sizes = {}
 
         for part in discovered_targets:
             remote_node = f"{found_by_name}/{part}"
@@ -1745,43 +1748,115 @@ class MotherboardDiagnostics:
             if progress_callback:
                 progress_callback(M("efs.progress.dumping", part=part))
 
-            code_dd, out_dd, err_dd = self.bridge.shell(
+            # Real size of the block device, so a short or truncated dump is caught.
+            expected = self._partition_size_bytes(serial, remote_node)
+
+            # A stale local file must never be mistaken for a fresh, complete dump.
+            if os.path.exists(local_file):
+                try:
+                    os.remove(local_file)
+                except OSError:
+                    pass
+
+            code_dd, _, _ = self.bridge.shell(
                 f"dd if={remote_node} of={remote_tmp} bs=4096 2>/dev/null",
                 serial=serial, timeout=30, root=True
             )
-            self.bridge.shell(f"chmod 644 {remote_tmp}", serial=serial, timeout=5, root=True)
+            if code_dd != 0:
+                self.bridge.shell(f"rm -f {remote_tmp}", serial=serial, timeout=5, root=True)
+                failed.append(part)
+                if progress_callback:
+                    progress_callback(M("efs.progress.failed", part=part, reason=M("efs.fail.dd")))
+                continue
 
-            code_pull, out_pull, _ = self.bridge.run_adb(["pull", remote_tmp, local_file], serial=serial, timeout=45)
+            self.bridge.shell(f"chmod 644 {remote_tmp}", serial=serial, timeout=5, root=True)
+            code_pull, _, _ = self.bridge.run_adb(["pull", remote_tmp, local_file], serial=serial, timeout=45)
             self.bridge.shell(f"rm -f {remote_tmp}", serial=serial, timeout=5, root=True)
 
-            if os.path.exists(local_file) and os.path.getsize(local_file) > 0:
-                f_size = os.path.getsize(local_file)
-                total_size += f_size
-                backed_up.append(part)
-
-                hasher = hashlib.sha256()
-                with open(local_file, "rb") as bf:
-                    for chunk in iter(lambda: bf.read(65536), b""):
-                        hasher.update(chunk)
-                hashes[part] = hasher.hexdigest()
-
+            if code_pull != 0 or not os.path.exists(local_file):
+                failed.append(part)
                 if progress_callback:
-                    progress_callback(M("efs.progress.pulled", part=part, kb=round(f_size / 1024, 1), sha=hashes[part][:12]))
+                    progress_callback(M("efs.progress.failed", part=part, reason=M("efs.fail.pull")))
+                continue
+
+            f_size = os.path.getsize(local_file)
+            if f_size == 0:
+                try:
+                    os.remove(local_file)
+                except OSError:
+                    pass
+                failed.append(part)
+                if progress_callback:
+                    progress_callback(M("efs.progress.failed", part=part, reason=M("efs.fail.empty")))
+                continue
+
+            # When the real partition size is known, the dump must match it exactly.
+            if expected is not None and f_size != expected:
+                try:
+                    os.remove(local_file)
+                except OSError:
+                    pass
+                failed.append(part)
+                if progress_callback:
+                    progress_callback(M("efs.progress.failed", part=part,
+                                        reason=M("efs.fail.size", got=f_size, want=expected)))
+                continue
+
+            total_size += f_size
+            backed_up.append(part)
+            sizes[part] = {"bytes": f_size, "expected_bytes": expected, "verified": expected is not None}
+
+            hasher = hashlib.sha256()
+            with open(local_file, "rb") as bf:
+                for chunk in iter(lambda: bf.read(65536), b""):
+                    hasher.update(chunk)
+            hashes[part] = hasher.hexdigest()
+
+            if progress_callback:
+                progress_callback(M("efs.progress.pulled", part=part, kb=round(f_size / 1024, 1), sha=hashes[part][:12]))
 
         manifest_path = os.path.join(dest_dir, "manifest.json")
         manifest_data = {
             "device_serial": serial,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "backed_up_partitions": backed_up,
+            "failed_partitions": failed,
             "total_bytes": total_size,
+            "sizes": sizes,
             "hashes": hashes
         }
         with open(manifest_path, "w", encoding="utf-8") as mf:
             json.dump(manifest_data, mf, indent=2)
 
-        result.success = len(backed_up) > 0
+        # A radio-partition backup is only trustworthy if every partition came over whole;
+        # a partial backup that looks like success is exactly what bricks a phone later.
+        result.success = len(backed_up) > 0 and not failed
         result.backed_up_partitions = backed_up
+        result.failed_partitions = failed
         result.total_bytes = total_size
         result.hashes = hashes
-        result.message = M("efs.done", count=len(backed_up), mb=round(total_size / (1024 * 1024), 2))
+        if failed:
+            result.message = M("efs.done_partial", ok=len(backed_up), failed=", ".join(failed))
+        else:
+            result.message = M("efs.done", count=len(backed_up), mb=round(total_size / (1024 * 1024), 2))
         return result
+
+    def _partition_size_bytes(self, serial: str, remote_node: str) -> Optional[int]:
+        """Real size in bytes of the block device behind a by-name symlink, or None if it
+        cannot be read. /sys/class/block/<dev>/size is counted in 512-byte sectors."""
+        code, link, _ = self.bridge.shell(f"readlink -f {remote_node}", serial=serial, timeout=5, root=True)
+        if code != 0 or not link.strip():
+            return None
+        dev = os.path.basename(link.strip())
+        if not dev:
+            return None
+        code_s, out_s, _ = self.bridge.shell(f"cat /sys/class/block/{dev}/size", serial=serial, timeout=5, root=True)
+        if code_s != 0 or not out_s.strip():
+            return None
+        try:
+            sectors = int(out_s.strip().split()[0])
+        except (ValueError, IndexError):
+            return None
+        if sectors <= 0:
+            return None
+        return sectors * 512

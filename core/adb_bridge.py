@@ -1,5 +1,6 @@
 import os
 import sys
+import shlex
 import subprocess
 import threading
 import logging
@@ -84,6 +85,19 @@ def parse_shell_v2_stream(data: bytes) -> Tuple[bytes, bytes, Optional[int]]:
 
 
 _SU_RC_MARKER = "__ADP_SU_RC:"
+
+
+def _su_denied_or_missing(res: Tuple[Optional[int], str, str]) -> bool:
+    """True when the su wrapper failed because root was denied or su is absent, as opposed
+    to the command running as root and exiting non-zero for its own reason. Only the former
+    justifies silently re-running the command without root."""
+    code, out, err = res
+    if code == 127:                         # the outer shell could not find `su`
+        return True
+    text = f"{out}\n{err}".lower()
+    needles = ("su: not found", "su: inaccessible", "su: permission denied", "su: invalid",
+               "permission denied", "access denied", "operation not permitted", "not allowed")
+    return any(n in text for n in needles)
 
 
 def _strip_su_rc_marker(res: Tuple[Optional[int], str, str]) -> Tuple[Optional[int], str, str]:
@@ -316,11 +330,17 @@ class ADBBridge:
         re-run without root so the caller sees the real (usually permission) error.
         """
         if root:
-            escaped_cmd = command.replace('"', '\\"')
+            # shlex.quote passes the whole command to su as a single safe token, so the
+            # outer shell cannot be tricked by $, backticks, \, or quotes in the command.
             # The marker echoes su's exit status so it is known even without shell_v2.
-            wrapped_cmd = f'su -c "{escaped_cmd}"; echo "{_SU_RC_MARKER}$?"'
+            wrapped_cmd = f'su -c {shlex.quote(command)}; echo "{_SU_RC_MARKER}$?"'
             res = _strip_su_rc_marker(self._shell_once(wrapped_cmd, serial, timeout, use_socket))
             if res[0] == 0:
+                return res
+            # Only retry unprivileged when su itself was denied or missing; a command that
+            # really ran as root and failed must surface that error, never be re-run without
+            # root (which could repeat a destructive write with the wrong permissions).
+            if not _su_denied_or_missing(res):
                 return res
         return self._shell_once(command, serial, timeout, use_socket)
 

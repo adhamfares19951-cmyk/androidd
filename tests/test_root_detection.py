@@ -2,6 +2,7 @@
 
 The transport is replaced at `_shell_once`, so these tests never touch adb or a device.
 """
+import shlex
 import unittest
 from unittest.mock import patch
 
@@ -92,9 +93,43 @@ class RootShellWrapTests(unittest.TestCase):
 
         with patch.object(bridge, "_shell_once", side_effect=fake):
             code, out, err = bridge.shell("dmesg", serial="S", root=True)
-        self.assertEqual(calls, ['su -c "dmesg"; echo "' + _SU_RC_MARKER + '$?"', "dmesg"])
+        self.assertEqual(calls, ['su -c dmesg; echo "' + _SU_RC_MARKER + '$?"', "dmesg"])
         self.assertEqual(code, 1)
         self.assertIn("Permission denied", err)
+
+    def test_command_is_single_quoted_so_the_outer_shell_cannot_be_injected(self):
+        bridge = _bridge()
+        seen = []
+
+        def fake(command, serial, timeout, use_socket):
+            seen.append(command)
+            return 0, f"{_SU_RC_MARKER}0\n", ""
+
+        payload = 'ls "a"; reboot; echo $HOME `id`'
+        with patch.object(bridge, "_shell_once", side_effect=fake):
+            bridge.shell(payload, serial="S", root=True)
+        # The whole command reaches su as one quoted token: the outer shell never sees a
+        # bare ;, $, or backtick, so the injected `reboot` cannot run at that layer.
+        self.assertTrue(seen[0].startswith("su -c " + shlex.quote(payload) + "; echo "))
+        self.assertIn("'", shlex.quote(payload))        # it really was quoted, not passed raw
+
+    def test_root_command_failure_is_not_retried_without_root(self):
+        # su granted root and the command ran, but it exited non-zero for its own reason
+        # (missing file) - it must NOT be silently re-run unprivileged.
+        bridge = _bridge()
+        calls = []
+
+        def fake(command, serial, timeout, use_socket):
+            calls.append(command)
+            if command.startswith("su -c"):
+                return 0, f"{_SU_RC_MARKER}1\n", "cat: /x: No such file or directory"
+            return 0, "SHOULD NOT RUN", ""
+
+        with patch.object(bridge, "_shell_once", side_effect=fake):
+            code, out, err = bridge.shell("cat /x", serial="S", root=True)
+        self.assertEqual(len(calls), 1)                 # no unprivileged retry
+        self.assertEqual(code, 1)
+        self.assertIn("No such file", err)
 
     def test_nonzero_su_status_overrides_zero_transport_code(self):
         # `cmd; echo marker` always exits 0 on shell_v2, so the marker must decide.
