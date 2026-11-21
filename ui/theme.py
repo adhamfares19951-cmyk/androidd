@@ -113,6 +113,9 @@ def get_layout(lang: str) -> dict[str, Any]:
     return LAYOUT["ar"] if _rtl(lang) else LAYOUT["en"]
 
 
+_ISOLATE_TO_EMBEDDING = {0x2066: 0x202A, 0x2067: 0x202B, 0x2068: 0x202A, 0x2069: 0x202C}   # LRI/RLI/FSI/PDI
+
+
 def rtl_wrap(text: str, lang: str) -> str:
     """Wrap each non-empty line in RLE/PDF markers when displaying Arabic in Tk 8.6.
 
@@ -121,6 +124,9 @@ def rtl_wrap(text: str, lang: str) -> str:
     """
     if not text or not _rtl(lang):
         return text
+    # Tk draws the Unicode 6.3 isolates (LRI, RLI, FSI, PDI) as boxes. The Arabic texts use them for the HTML
+    # report; on screen they become the embeddings Tk supports, so numbers and dates still stay left-to-right.
+    text = str(text).translate(_ISOLATE_TO_EMBEDDING)
     out_lines: list[str] = []
     for line in str(text).splitlines():
         if line and not line.startswith("\u202b"):

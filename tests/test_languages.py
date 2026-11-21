@@ -40,6 +40,22 @@ class MetadataTests(unittest.TestCase):
             self.assertEqual(i18n.language_name("fa"), "Lang-fa")
         self.assertFalse(get_layout("unknown-language")["is_rtl"])  # missing language: left to right
 
+    def test_tk_text_has_no_isolate_marks(self):
+        # Tk draws the Unicode 6.3 isolates (LRI..PDI) as boxes. The Arabic texts use them for the HTML report;
+        # on screen they become the embeddings Tk supports (LRE / PDF), so numbers still stay left-to-right.
+        LRI, PDI, LRE, PDF = chr(0x2066), chr(0x2069), chr(0x202A), chr(0x202C)
+        line = "x " + LRI + "SM-A525F" + PDI + " y"
+        shown = rtl_wrap(line, "ar")
+        for mark in range(0x2066, 0x206A):
+            self.assertNotIn(chr(mark), shown)
+        self.assertIn(LRE + "SM-A525F" + PDF, shown)
+        self.assertEqual(rtl_wrap(line, "en"), line)        # left-to-right text is not touched
+
+    def test_every_arabic_text_shows_without_isolate_marks(self):
+        for key, text in i18n.STRINGS["ar"].items():
+            shown = rtl_wrap(text, "ar")
+            self.assertFalse(any(0x2066 <= ord(c) <= 0x2069 for c in shown), key)
+
     def test_report_and_verifier_page_direction(self):
         from ui.report_exporter import DiagnosticReportExporter
         with tempfile.TemporaryDirectory() as d, _with_languages(("fa", "rtl"), ("xx", "ltr")):
