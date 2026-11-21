@@ -130,5 +130,88 @@ class SchematicsTests(unittest.TestCase):
         self.assertTrue(cr.evidence)
 
 
+class AddUserDocumentTests(unittest.TestCase):
+    """The bundled index is empty: a technician's own files are the only documents, so adding one must work
+    and must never break what is already in the technician's index."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = self.tmp.name
+        self.index = os.path.join(self.d, "user_index.json")
+        self.local = os.path.join(self.d, "schematics")
+        self.src = os.path.join(self.d, "Downloads", "A52 board.pdf")
+        os.makedirs(os.path.dirname(self.src))
+        with open(self.src, "wb") as f:
+            f.write(b"%PDF-1.4 board")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def add(self, **kw):
+        from core.schematics_db import add_user_document
+        args = dict(src_path=self.src, doc_type="schematic", component="A52 main board", models=["SM-A525F"],
+                    index_path=self.index, local_dir=self.local)
+        args.update(kw)
+        return add_user_document(**args)
+
+    def db(self):
+        return SchematicsDatabase(index_paths=[self.index], local_dirs=[self.local], cache_dir=os.path.join(self.d, "c"))
+
+    def test_added_file_is_found_for_the_phone_as_a_real_local_file(self):
+        doc, msg = self.add()
+        self.assertIsNotNone(doc, msg)
+        self.assertEqual(msg.key, "schematic.added")
+        res = self.db().find(model="SM-A525F")
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0].status, Status.PASS)
+        self.assertEqual(res[0].origin, SRC_LOCAL)
+        with open(res[0].path, "rb") as f:
+            self.assertEqual(f.read(), b"%PDF-1.4 board")                 # a copy: the original stays where it was
+        self.assertTrue(os.path.isfile(self.src))
+        with open(self.index, encoding="utf-8") as f:
+            entry = json.load(f)["documents"][0]
+        self.assertEqual(entry["sha256"], hashlib.sha256(b"%PDF-1.4 board").hexdigest())
+
+    def test_existing_entries_are_kept_and_names_never_overwrite(self):
+        self.add()
+        other = os.path.join(self.d, "other", "A52 board.pdf")             # same name, different content
+        os.makedirs(os.path.dirname(other))
+        with open(other, "wb") as f:
+            f.write(b"%PDF-1.4 another")
+        doc2, _ = self.add(src_path=other, doc_type="boardview")
+        with open(self.index, encoding="utf-8") as f:
+            docs = json.load(f)["documents"]
+        self.assertEqual(len(docs), 2)
+        self.assertEqual(len({d["id"] for d in docs}), 2)
+        self.assertNotEqual(docs[0]["file"], docs[1]["file"])
+        res = {r.doc.doc_type: r for r in self.db().find(model="SM-A525F")}
+        with open(res["schematic"].path, "rb") as f:
+            self.assertEqual(f.read(), b"%PDF-1.4 board")                 # the first file was not replaced
+
+    def test_a_datasheet_needs_no_phone(self):
+        doc, _ = self.add(doc_type="datasheet", component="PM8150", models=[])
+        self.assertIsNotNone(doc)
+        self.assertEqual([r.status for r in self.db().find(component="PM8150")], [Status.PASS])
+
+    def test_bad_input_is_refused_and_nothing_is_written(self):
+        for kw, key in ((dict(doc_type="photo"), "schematic.add_bad_type"),
+                        (dict(component="  "), "schematic.add_no_component"),
+                        (dict(src_path=os.path.join(self.d, "missing.pdf")), "schematic.add_no_file")):
+            doc, msg = self.add(**kw)
+            self.assertIsNone(doc)
+            self.assertEqual(msg.key, key)
+        self.assertFalse(os.path.exists(self.index))
+        self.assertFalse(os.path.exists(self.local))
+
+    def test_a_broken_index_file_is_not_overwritten(self):
+        with open(self.index, "w", encoding="utf-8") as f:
+            f.write("{ not json")
+        doc, msg = self.add()
+        self.assertIsNone(doc)
+        self.assertEqual(msg.key, "schematic.add_index_unreadable")
+        with open(self.index, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "{ not json")                       # the technician's file is left as it was
+
+
 if __name__ == "__main__":
     unittest.main()

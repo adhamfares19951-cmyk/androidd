@@ -292,3 +292,100 @@ class SchematicsDatabase:
         return SchematicResult(Status.PASS, SRC_CACHE, doc=doc, path=dest,
                                detail=M("schematic.fetched", component=doc.component, type=doc.doc_type),
                                evidence=ev)
+
+
+# ---------------------------------------------------------------- the technician's own documents
+def user_index_path() -> str:
+    return os.path.join(user_data_dir(), "schematics_index.json")
+
+
+def user_schematics_dir() -> str:
+    """The first local folder searched (SchematicsDatabase's default local_dirs[0])."""
+    return os.path.join(user_data_dir(), "schematics")
+
+
+def _file_sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def add_user_document(src_path: str, doc_type: str, component: str, models=(), codenames=(),
+                      manufacturer: str = "", notes: str = "", index_path: Optional[str] = None,
+                      local_dir: Optional[str] = None):
+    """Copy a technician's file into their schematics folder and add it to their own index.
+    Returns (SchematicDoc, Msg) on success, (None, Msg) when refused. The original file is left in place, an
+    existing file is never overwritten (another name is chosen), and an index that cannot be read is left as it
+    is instead of being replaced."""
+    import shutil
+    index_path = index_path or user_index_path()
+    local_dir = local_dir or user_schematics_dir()
+    doc_type = (doc_type or "").strip().lower()
+    component = (component or "").strip()
+    if doc_type not in DOC_TYPES:
+        return None, M("schematic.add_bad_type", type=doc_type or "-")
+    if not component:
+        return None, M("schematic.add_no_component")
+    if not src_path or not os.path.isfile(src_path):
+        return None, M("schematic.add_no_file", path=src_path or "-")
+
+    data: Dict[str, Any] = {"schema": 1, "documents": []}
+    if os.path.exists(index_path):
+        try:
+            with open(index_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict) or not isinstance(data.get("documents", []), list):
+                raise ValueError("not an index object")
+        except (OSError, ValueError) as e:
+            return None, M("schematic.add_index_unreadable", path=index_path, error=str(e))
+    documents = data.setdefault("documents", [])
+
+    try:
+        digest = _file_sha256(src_path)
+        os.makedirs(local_dir, exist_ok=True)
+        stem, ext = os.path.splitext(os.path.basename(src_path))
+        name, n = stem + ext, 1
+        while True:
+            dest = os.path.join(local_dir, name)
+            if not os.path.exists(dest):
+                shutil.copy2(src_path, dest)
+                break
+            if _file_sha256(dest) == digest:        # the same file is already there: reuse it
+                break
+            n += 1
+            name = f"{stem}-{n}{ext}"
+    except OSError as e:
+        return None, M("schematic.add_failed", error=str(e))
+
+    used = {str(d.get("id")) for d in documents if isinstance(d, dict)}
+    base_id = "user-" + "".join(c if c.isalnum() else "-" for c in (component + "-" + doc_type).lower()).strip("-")
+    doc_id, k = base_id, 1
+    while doc_id in used:
+        k += 1
+        doc_id = f"{base_id}-{k}"
+    entry = {"id": doc_id, "doc_type": doc_type, "component": component,
+             "models": [m.strip() for m in models if str(m).strip()],
+             "codenames": [c.strip() for c in codenames if str(c).strip()],
+             "manufacturer": (manufacturer or "").strip().lower(), "file": name, "sha256": digest,
+             "notes": (notes or "").strip()}
+    documents.append(entry)
+    tmp = ""
+    try:
+        os.makedirs(os.path.dirname(index_path) or ".", exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(index_path) or ".", suffix=".part")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, index_path)
+    except OSError as e:
+        if tmp and os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+        return None, M("schematic.add_failed", error=str(e))
+    doc = SchematicDoc(id=doc_id, doc_type=doc_type, component=component, models=tuple(entry["models"]),
+                       codenames=tuple(entry["codenames"]), manufacturer=entry["manufacturer"], file=name,
+                       sha256=digest, notes=entry["notes"])
+    return doc, M("schematic.added", component=component, type=doc_type, file=name)

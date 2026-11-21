@@ -219,6 +219,9 @@ class BoardDiagTabMixin:
             self.guided_card, 150, L, self._L(self._tr("ui.guided_hint"))
         )
 
+        # Schematics / boardview / datasheet / pinout for this phone (ui/tabs/schematics.py)
+        self._build_schematics_card(wrap)
+
         self.logscan_card, badge = make_card(
             wrap, self._L(self._tr("card_logscan")), ACCENT_CYAN, L, show_badge=True
         )

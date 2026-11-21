@@ -116,6 +116,8 @@ class TestKeysUsedInCode(unittest.TestCase):
             "parts.matched_by.": ["model", "codename"],
             "layered.area.": ["fingerprint", "touch", "battery_temp", "battery_health", "charging"],
             "cli.layered_confidence.": ["high", "medium"],
+            "schem.type.": ["schematic", "boardview", "datasheet", "pinout"],
+            "schem.origin.": ["local", "cache", "on_demand", "missing"],
         }
         unknown = sorted(set(self.dynamic) - set(families))
         self.assertEqual(unknown, [], "dynamic key prefix without an enumerated test family")
