@@ -221,6 +221,8 @@ class BoardDiagTabMixin:
 
         # Schematics / boardview / datasheet / pinout for this phone (ui/tabs/schematics.py)
         self._build_schematics_card(wrap)
+        # Diode-mode notebook: the technician's own readings, reference board vs this board (ui/tabs/diode_notes.py)
+        self._build_diode_card(wrap)
 
         self.logscan_card, badge = make_card(
             wrap, self._L(self._tr("card_logscan")), ACCENT_CYAN, L, show_badge=True
