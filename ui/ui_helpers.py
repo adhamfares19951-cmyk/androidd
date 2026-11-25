@@ -117,6 +117,45 @@ def format_parts_check(r: Any, lang: str) -> List[str]:
     return out
 
 
+def format_network_diag(r: Any, lang: str) -> List[str]:
+    """Lines shown for the Network & SIM diagnosis (core.network_diag), CLI and GUI alike."""
+    from ui.i18n import t, render
+    out = [
+        t("cli.network_header", lang),
+        t("ui.verified_status", lang, status=str(getattr(r, "status", "UNKNOWN"))),
+        t("ui.sim_1_state", lang, sim1_state=getattr(r, "sim_state", "") or "-"),
+    ]
+    sim_states = getattr(r, "sim_states", []) or []
+    if len(sim_states) > 1:
+        out.append(t("ui.sim_2_state", lang, sim2_state=sim_states[1]))
+    bb = getattr(r, "baseband_version", None)
+    out.append(t("ui.baseband_version", lang, baseband_version=bb or "-"))
+    imei = getattr(r, "imei", None)
+    out.append(t("ui.imei_number", lang, imei=imei or "-"))
+    sig_level = getattr(r, "signal_level", None)
+    sig_dbm = getattr(r, "signal_dbm", None)
+    if sig_level is not None or sig_dbm is not None:
+        sig_str = f"Level {sig_level}" if sig_level is not None else ""
+        if sig_dbm is not None:
+            sig_str = f"{sig_str} ({sig_dbm} dBm)".strip()
+        out.append(t("ui.signal_strength", lang, signal_strength=sig_str))
+    reg = getattr(r, "registration_state", "")
+    if reg:
+        out.append(t("ui.network_registration", lang, reg_state=reg))
+    diag = getattr(r, "diagnosis", None)
+    if diag:
+        out.append(t("ui.diagnosis_2", lang, diagnosis=render(diag, lang)))
+    for cause in (getattr(r, "possible_causes", None) or []):
+        out.append(f"  • {t('ui.possible_cause', lang)}: {render(cause, lang)}")
+    step = getattr(r, "manual_step", None)
+    if step:
+        out.append("")
+        out.append(f">> {render(step.instruction, lang)}")
+        for opt_key, opt_label in step.options:
+            out.append(f"   [{opt_key}] {render(opt_label, lang)}")
+    return out
+
+
 def format_evidence_for_display(evidence_items: Any, is_ar: bool = True, lang: Any = None) -> str:
     """Renders a list of Evidence objects with source and excerpt formatted separately for UI display."""
     if not evidence_items:

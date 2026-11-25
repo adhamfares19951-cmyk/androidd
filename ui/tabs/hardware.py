@@ -19,9 +19,18 @@ from ui.theme import (
     make_hero_header,
     make_card,
     make_console_box,
+    make_button,
     pack_button_grid,
 )
-from ui.ui_helpers import _tri_key, _feature_key, _flinger_key, format_evidence_for_display, format_display_check, format_parts_check
+from ui.ui_helpers import (
+    _tri_key,
+    _feature_key,
+    _flinger_key,
+    format_evidence_for_display,
+    format_display_check,
+    format_parts_check,
+    format_network_diag,
+)
 
 logger = logging.getLogger("MainWindow")
 
@@ -51,6 +60,7 @@ class HardwareTabMixin:
         # Responsive 3x3 Button Grid (Zero clipping on all widths)
         hw_specs = [
             (self._L(self._tr("btn_audit_hw")), self.run_hardware_audit_async, "primary"),
+            (self._L(self._tr("btn_run_network_diag")), self.run_network_diag_async, "cyan"),
             (self._L(self._tr("ui.test_physical_keys_live")), self.run_buttons_test_async, "secondary"),
             (self._L(self._tr("btn_storage_bench")), self.run_storage_benchmark_async, "purple"),
             (self._L(self._tr("btn_test_vib")), self._trigger_vibration, "secondary"),
@@ -68,6 +78,7 @@ class HardwareTabMixin:
         )
         (
             self.btn_audit_hw,
+            self.btn_network_diag,
             self.btn_test_keys,
             self.btn_storage_bench,
             self.btn_test_vib,
@@ -110,6 +121,47 @@ class HardwareTabMixin:
         self.display_check_card, _ = make_card(wrap, self._L(self._tr("card_display_check")), ACCENT_CYAN, L)
         self.display_check_text = make_console_box(
             self.display_check_card, 160, L, self._L(self._tr("ui.display_hint"))
+        )
+
+        # Network & Cellular Diagnostics (core.network_diag: Modem/EFS, SIM reader, RF/antenna)
+        self.network_diag_card, badge = make_card(
+            wrap, self._L(self._tr("card_network_diag")), ACCENT_CYAN, L, show_badge=True
+        )
+        self.status_pills["network"] = badge
+
+        net_ctrl = ctk.CTkFrame(self.network_diag_card, fg_color="transparent")
+        net_ctrl.pack(fill="x", padx=14, pady=(0, 6))
+
+        self.btn_network_card_run = make_button(
+            net_ctrl,
+            self._L(self._tr("btn_run_network_diag")),
+            self.run_network_diag_async,
+            variant="cyan",
+            height=32,
+        )
+        self.btn_network_card_run.pack(side=L["lead"], padx=(0, 6))
+
+        # Interactive manual-step frame (hidden until SIM absent requires testing with known-good card)
+        self.net_manual_frame = ctk.CTkFrame(net_ctrl, fg_color="transparent")
+        self.btn_sim_inserted = make_button(
+            self.net_manual_frame,
+            self._L(self._tr("btn_sim_inserted")),
+            lambda: self.run_network_diag_async(answers={"known_good_sim": "inserted"}),
+            variant="success",
+            height=30,
+        )
+        self.btn_sim_inserted.pack(side=L["lead"], padx=4)
+        self.btn_sim_skip = make_button(
+            self.net_manual_frame,
+            self._L(self._tr("btn_sim_skip")),
+            lambda: self.run_network_diag_async(answers={"known_good_sim": "skip"}),
+            variant="secondary",
+            height=30,
+        )
+        self.btn_sim_skip.pack(side=L["lead"], padx=4)
+
+        self.network_diag_text = make_console_box(
+            self.network_diag_card, 160, L, self._L(self._tr("ui.network_hint"))
         )
 
         # Content Grid 1: Sensors & Cameras
@@ -452,6 +504,44 @@ class HardwareTabMixin:
             def upd():
                 self._ensure_tab("hardware_tester")
                 self._set_box(self.display_check_text, "\n".join(lines))
+            self.after(0, upd)
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def run_network_diag_async(self, answers=None):
+        """Cellular network & SIM diagnostics (core.network_diag)."""
+        serial = self.current_serial.get()
+        if not serial:
+            messagebox.showwarning(self._tr("ui.notice"), self._tr("ui.select_an_authorized_phone_first"))
+            return
+        self._ensure_tab("hardware_tester")
+        self._set_box(self.network_diag_text, self._tr("ui.network_running"))
+        lang = self.current_lang
+        L = self._layout()
+
+        def task():
+            from core.network_diag import NetworkDiagnostics
+            result = NetworkDiagnostics(self.bridge).diagnose(serial=serial, answers=answers)
+            self.last_network_diag = result
+            lines = format_network_diag(result, lang)
+            if result.evidence:
+                lines.append("")
+                lines.append(format_evidence_for_display(result.evidence, lang=lang))
+
+            def upd():
+                self._ensure_tab("hardware_tester")
+                self._set_box(self.network_diag_text, "\n".join(lines))
+                if hasattr(self, "_set_pill"):
+                    self._set_pill("network", str(result.status))
+                    self._set_pill("sim", str(result.status))
+                if hasattr(self, "sim_text"):
+                    self._set_box(self.sim_text, "\n".join(lines))
+                if hasattr(self, "net_manual_frame"):
+                    if result.manual_step is not None:
+                        self.net_manual_frame.pack(side=L["lead"], padx=6)
+                    else:
+                        self.net_manual_frame.pack_forget()
+
             self.after(0, upd)
 
         threading.Thread(target=task, daemon=True).start()

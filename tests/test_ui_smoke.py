@@ -58,7 +58,7 @@ class TestMainWindowSmoke(unittest.TestCase):
             "thermal", "panic", "blackbox", "root_forensics",
             "sensors", "cameras", "fp", "keys", "sim", "backlight",
             "wifi", "bt", "chips", "storage", "audio_codec", "panel_info",
-            "user_ca", "maint",
+            "user_ca", "maint", "network",
         }
 
         db_factory = lambda *a, **kw: DatabaseManager(db_path=self._db_path)
