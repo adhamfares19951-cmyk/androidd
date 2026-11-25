@@ -119,7 +119,8 @@ class ChargingCurveCapture:
         )
 
     def capture(self, serial: str, duration_s: float = 60.0, interval_s: float = 1.0,
-                progress: Optional[Callable[[ChargingSample], None]] = None) -> ChargingCurve:
+                progress: Optional[Callable[[ChargingSample], None]] = None,
+                should_stop: Optional[Callable[[], bool]] = None) -> ChargingCurve:
         """Sample once per interval until duration elapses. interval_s is clamped to a
         sane floor so a bad argument can never spin. Always takes at least one sample."""
         interval_s = max(0.1, interval_s)
@@ -131,7 +132,7 @@ class ChargingCurveCapture:
             samples.append(s)
             if progress:
                 progress(s)
-            if elapsed >= duration_s:
+            if elapsed >= duration_s or (should_stop and should_stop()):
                 break
             self._sleep(interval_s)
         return ChargingCurve(samples, duration_s)

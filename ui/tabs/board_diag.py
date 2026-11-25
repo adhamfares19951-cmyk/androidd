@@ -166,6 +166,9 @@ class BoardDiagTabMixin:
             self._L(self._tr("ui.click_diagnose_fast_charge_protocol_to")),
         )
 
+        # Live Charging Curve Card
+        self._build_charging_curve_card(wrap)
+
         # NAND Flash Wear & Speed Benchmark Card
         self.nand_card, badge = make_card(
             wrap, self._L(self._tr("card_nand_wear")), ACCENT_PURPLE, L, show_badge=True

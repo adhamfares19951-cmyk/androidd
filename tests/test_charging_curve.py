@@ -75,6 +75,20 @@ class ChargingCurveTests(unittest.TestCase):
                           _PMIC(4000, 1000, 35, charging=True)], duration=1, interval=1)
         self.assertAlmostEqual(curve.temp_rise_c, 5.0)
 
+    def test_should_stop_early(self):
+        ft = _FakeTime()
+        samples_taken = []
+        def sampler(serial):
+            return _PMIC(4000, 1000, 30, charging=True)
+
+        cap = ChargingCurveCapture(diag=None, sampler=sampler, sleep=ft.sleep, clock=ft.clock)
+        # Stop after 2 samples even if duration is 100s
+        curve = cap.capture("S", duration_s=100.0, interval_s=1.0,
+                            progress=lambda s: samples_taken.append(s),
+                            should_stop=lambda: len(samples_taken) >= 2)
+        self.assertEqual(len(curve.samples), 2)
+        self.assertEqual(curve.status, Status.PASS)
+
 
 if __name__ == "__main__":
     unittest.main()
