@@ -103,6 +103,7 @@ from ui.tabs.rescue import RescueTabMixin
 from ui.tabs.reports import ReportsTabMixin
 from ui.tabs.schematics import SchematicsMixin
 from ui.tabs.diode_notes import DiodeNotesMixin
+from ui.tabs.data_wipe import DataWipeMixin
 
 logger = logging.getLogger("MainWindow")
 ctk.set_appearance_mode("Dark")
@@ -110,7 +111,7 @@ ctk.set_default_color_theme("blue")
 ctk.ThemeManager.theme["CTkFont"]["family"] = "Segoe UI"
 
 
-class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, SecurityTabMixin, OptimizerTabMixin, RescueTabMixin, ReportsTabMixin, SchematicsMixin, DiodeNotesMixin, ctk.CTk):
+class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, SecurityTabMixin, OptimizerTabMixin, RescueTabMixin, ReportsTabMixin, SchematicsMixin, DiodeNotesMixin, DataWipeMixin, ctk.CTk):
     UI_QUEUE_POLL_MS = 30
 
     def __init__(self, lang: str = "ar"):

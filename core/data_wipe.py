@@ -166,8 +166,117 @@ def build_certificate(assessment: WipeAssessment, method: str = "factory_reset",
     )
 
 
+def _generate_qr_svg(text: str) -> str:
+    """Generate inline SVG for QR code if qrcode library is available."""
+    try:
+        import qrcode
+        import qrcode.image.svg
+        import re
+        img = qrcode.make(text, image_factory=qrcode.image.svg.SvgPathImage, box_size=8)
+        svg = img.to_string(encoding="unicode")
+        if "<?xml" in svg:
+            svg = svg.split("?>", 1)[-1].strip()
+        svg = re.sub(r'width="[^"]+"', 'width="120"', svg, count=1)
+        svg = re.sub(r'height="[^"]+"', 'height="120"', svg, count=1)
+        return svg
+    except Exception:
+        return ""
+
+
+def generate_wipe_certificate_html(cert: WipeCertificate, qr_text: Optional[str] = None,
+                                    signed: bool = False, key_id: str = "") -> str:
+    """Generate a self-contained, printable HTML erasure certificate with optional QR code."""
+    qr_svg = _generate_qr_svg(qr_text) if qr_text else ""
+    is_crypto = cert.verdict == VERDICT_CRYPTO
+    status_bg = "#059669" if is_crypto else "#d97706"
+    status_title = "CRYPTOGRAPHIC DATA ERASURE VERIFIED" if is_crypto else "RESET COMPLETED (UNVERIFIED CRYPTO)"
+    status_desc = (
+        "Userdata encryption (FBE/FDE) active prior to reset. Factory reset destroyed cryptographic keys, "
+        "rendering all previous user data permanently unrecoverable."
+        if is_crypto else
+        "Factory reset executed. Cryptographic key destruction could not be formally certified from device properties."
+    )
+    sig_html = f"<span style='color:#059669; font-weight:bold;'>Signed (Ed25519 Key ID: {key_id})</span>" if signed else "<span style='color:#6b7280;'>Not Digitally Signed</span>"
+    post_wipe_badge = "<span style='color:#059669; font-weight:bold;'>VERIFIED (Setup Wizard Active)</span>" if cert.post_wipe_verified else "<span style='color:#d97706;'>PENDING / UNVERIFIED</span>"
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Data Erasure Certificate - {cert.cert_id}</title>
+<style>
+  @page {{ size: A4; margin: 20mm; }}
+  body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }}
+  .cert-container {{ max-width: 800px; margin: 0 auto; background: #1e293b; border: 2px solid #334155; border-radius: 12px; padding: 32px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }}
+  .header {{ display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #334155; padding-bottom: 20px; }}
+  .title {{ font-size: 22px; font-weight: 800; color: #38bdf8; letter-spacing: 0.5px; margin: 0; }}
+  .subtitle {{ font-size: 13px; color: #94a3b8; margin-top: 4px; }}
+  .cert-id {{ font-family: monospace; font-size: 15px; font-weight: bold; background: #0f172a; padding: 6px 12px; border-radius: 6px; border: 1px solid #475569; }}
+  .verdict-banner {{ margin: 24px 0; background: {status_bg}; color: #ffffff; padding: 16px 20px; border-radius: 8px; text-align: center; }}
+  .verdict-banner h2 {{ margin: 0 0 6px 0; font-size: 18px; letter-spacing: 1px; }}
+  .verdict-banner p {{ margin: 0; font-size: 13px; opacity: 0.95; }}
+  table {{ width: 100%; border-collapse: collapse; margin: 16px 0; }}
+  th, td {{ padding: 10px 14px; text-align: left; font-size: 13px; border-bottom: 1px solid #334155; }}
+  th {{ background: #0f172a; color: #94a3b8; width: 30%; }}
+  td {{ color: #e2e8f0; }}
+  .footer {{ display: flex; justify-content: space-between; align-items: center; margin-top: 24px; padding-top: 20px; border-top: 1px solid #334155; }}
+  .qr-box {{ background: #ffffff; padding: 6px; border-radius: 8px; display: inline-block; }}
+  @media print {{
+    body {{ background: #ffffff !important; color: #000000 !important; padding: 0 !important; }}
+    .cert-container {{ border: 1px solid #000000 !important; background: #ffffff !important; box-shadow: none !important; }}
+    th {{ background: #f1f5f9 !important; color: #334155 !important; }}
+    td {{ color: #000000 !important; }}
+    .verdict-banner {{ print-color-adjust: exact; -webkit-print-color-adjust: exact; }}
+    .cert-id {{ background: #f8fafc !important; color: #000000 !important; }}
+    .subtitle {{ color: #475569 !important; }}
+  }}
+</style>
+</head>
+<body>
+<div class="cert-container">
+  <div class="header">
+    <div>
+      <h1 class="title">ANDROID DOCTOR PRO</h1>
+      <div class="subtitle">CERTIFICATE OF SECURE DATA ERASURE & COMPLIANCE</div>
+    </div>
+    <div class="cert-id">{cert.cert_id}</div>
+  </div>
+
+  <div class="verdict-banner">
+    <h2>{status_title}</h2>
+    <p>{status_desc}</p>
+  </div>
+
+  <table>
+    <tr><th>Device Brand & Model</th><td>{cert.device.get('brand', '')} {cert.device.get('model', '')}</td></tr>
+    <tr><th>Serial Number</th><td><code>{cert.device.get('serial', '')}</code></td></tr>
+    <tr><th>Android Version & Build</th><td>Android {cert.device.get('android_version', '-')} (Build: {cert.device.get('build_id', '-')})</td></tr>
+    <tr><th>Userdata Encryption Type</th><td>{cert.crypto_type}</td></tr>
+    <tr><th>Erasure Method</th><td>{cert.method}</td></tr>
+    <tr><th>Post-Wipe State</th><td>{post_wipe_badge}</td></tr>
+    <tr><th>Technician / Operator</th><td>{cert.operator or '-'}</td></tr>
+    <tr><th>Facility / Shop</th><td>{cert.shop or '-'}</td></tr>
+    <tr><th>Date & Timestamp</th><td>{cert.timestamp}</td></tr>
+    <tr><th>Additional Notes</th><td>{cert.notes or 'None'}</td></tr>
+  </table>
+
+  <div class="footer">
+    <div>
+      <div style="font-size:13px; margin-bottom:4px;"><strong>Digital Verification:</strong> {sig_html}</div>
+      <div style="font-size:11px; color:#94a3b8;">Tamper-evident audit record verified by Android Doctor Pro.</div>
+    </div>
+    <div class="qr-box">
+      {qr_svg if qr_svg else '<div style="color:#000; font-size:10px; width:100px; text-align:center;">' + (qr_text or cert.cert_id) + '</div>'}
+    </div>
+  </div>
+</div>
+</body>
+</html>
+"""
+
+
 def write_certificate(cert: WipeCertificate, out_dir: str, signing_key=None) -> Dict[str, Any]:
-    """Write the certificate JSON and, when a signing key is given, a detached Ed25519
+    """Write the certificate JSON, HTML view, and, when a signing key is given, a detached Ed25519
     signature and a verifiable QR summary. Returns the paths and the QR text."""
     import json
     os.makedirs(out_dir, exist_ok=True)
@@ -175,9 +284,10 @@ def write_certificate(cert: WipeCertificate, out_dir: str, signing_key=None) -> 
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(cert.to_payload(), f, indent=2, ensure_ascii=False)
 
-    result: Dict[str, Any] = {"json_path": json_path, "sig_path": None, "qr_text": None, "signed": False}
+    result: Dict[str, Any] = {"json_path": json_path, "html_path": None, "sig_path": None, "qr_text": None, "signed": False}
+    key_id = ""
     if signing_key is not None:
-        from core.report_signing import sign_file, make_signed_summary
+        from core.report_signing import sign_file, make_signed_summary, key_id_from_public
         result["sig_path"] = sign_file(json_path, signing_key)
         result["qr_text"] = make_signed_summary(signing_key, {
             "ref": cert.cert_id,
@@ -187,6 +297,14 @@ def write_certificate(cert: WipeCertificate, out_dir: str, signing_key=None) -> 
             "date": cert.timestamp,
         })
         result["signed"] = True
+        key_id = key_id_from_public(signing_key.public_key())
+
+    html_path = os.path.join(out_dir, cert.cert_id + ".html")
+    html_content = generate_wipe_certificate_html(cert, qr_text=result["qr_text"], signed=result["signed"], key_id=key_id)
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+    result["html_path"] = html_path
+
     return result
 
 

@@ -126,6 +126,10 @@ class ReportsTabMixin:
         self.btn_batch_scan.pack(side="top", anchor=L["anchor"], padx=16, pady=(0, 10))
         self.batch_text = make_console_box(batch_card, 120, L)
 
+        # Certified Data Erasure (core.data_wipe: assess -> reset -> verify -> signed certificate)
+        if hasattr(self, "_build_data_wipe_card"):
+            self._build_data_wipe_card(wrap)
+
         # Past Reports List
         reports_list_card, _ = make_card(
             wrap, self._L(self._tr("card_past_reports")), ACCENT_CYAN, L, pady=(0, 0)
