@@ -164,6 +164,9 @@ class HardwareTabMixin:
             self.network_diag_card, 160, L, self._L(self._tr("ui.network_hint"))
         )
 
+        # IMEI Validation & BYOK Blacklist Card
+        self._build_imei_check_card(wrap)
+
         # Content Grid 1: Sensors & Cameras
         hw_grid = ctk.CTkFrame(wrap, fg_color="transparent")
         hw_grid.pack(fill="both", expand=True, pady=(0, 12))

@@ -166,6 +166,14 @@ class DatabaseManager:
                     );
                 """)
 
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS app_settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+
                 conn.commit()
             except Exception as e:
                 logger.error(f"Failed to initialize database tables: {e}")
@@ -641,6 +649,43 @@ class DatabaseManager:
                             d["samples"] = []
                     results.append(d)
                 return results
+            finally:
+                conn.close()
+
+    def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        """Read a key-value setting from app_settings table."""
+        with self._db_lock:
+            conn = self._get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT value FROM app_settings WHERE key = ?;", (key,))
+                row = cursor.fetchone()
+                return row["value"] if row else default
+            except Exception as e:
+                logger.error(f"Failed to read setting '{key}': {e}")
+                return default
+            finally:
+                conn.close()
+
+    def set_setting(self, key: str, value: str) -> bool:
+        """Write a key-value setting to app_settings table."""
+        with self._db_lock:
+            conn = self._get_connection()
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO app_settings (key, value, updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = CURRENT_TIMESTAMP;
+                """, (key, value))
+                conn.commit()
+                return True
+            except Exception as e:
+                logger.error(f"Failed to save setting '{key}': {e}")
+                conn.rollback()
+                return False
             finally:
                 conn.close()
 
