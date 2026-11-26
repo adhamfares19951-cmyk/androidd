@@ -43,3 +43,10 @@ skills-lock.json
 /companion/build/
 .parts_cache/
 .kernel_cache/
+
+# Local scratch / generated artifacts (never committed)
+*.patch
+audit_output.txt
+test_res.txt
+*.docx
+*.pdf
