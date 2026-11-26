@@ -121,6 +121,7 @@ class TestKeysUsedInCode(unittest.TestCase):
             "diode.board.": ["reference", "test"],
             "diode.dir.": ["lower", "higher"],
             "diode.kind.": ["same", "both_open", "differs", "open_vs_value", "near_short", "only_reference", "only_test"],
+            "flash.mode.": ["sideload", "fastboot", "mtk", "odin"],
         }
         unknown = sorted(set(self.dynamic) - set(families))
         self.assertEqual(unknown, [], "dynamic key prefix without an enumerated test family")

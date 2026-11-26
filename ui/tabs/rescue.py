@@ -425,6 +425,9 @@ class RescueTabMixin:
             apk_card, 110, L, self._L(self._tr("ui.batch_install_multiple_apk_files_r"))
         )
 
+        # Official firmware flashing (ui/tabs/flashing.py): safety-valved, destructive, explicit confirm
+        self._build_flashing_card(wrap)
+
     def _report_mirror(self, ok, msg):
         """Show the real scrcpy result (or error) under the virtual-pad, on the UI thread."""
         text = self._m(msg)   # render on the worker thread; the UI callback just prints it
