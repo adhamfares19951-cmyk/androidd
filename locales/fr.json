@@ -1665,5 +1665,20 @@
   "ui.imei_byok_service_id": "ID de service (Optionnel) :",
   "ui.imei_byok_saved": "Paramètres BYOK enregistrés avec succès.",
   "ui.imei_byok_status_on": "Service BYOK : Configuré ({endpoint})",
-  "ui.imei_byok_status_off": "Service BYOK : Non configuré (Vérification locale uniquement)"
+  "ui.imei_byok_status_off": "Service BYOK : Non configuré (Vérification locale uniquement)",
+  "flash.operation": "Flash du firmware",
+  "flash.exec_error": "Échec de l'exécution de l'outil de flash : {error}",
+  "flash.safety.locked": "Refusé : le bootloader est verrouillé ; le flash fastboot requiert un bootloader déverrouillé.",
+  "flash.safety.unlock_unknown": "Refusé : impossible de confirmer l'état du bootloader via fastboot getvar.",
+  "flash.safety.model_mismatch": "Refusé : nom de code incompatible (attendu {expected}, reçu {actual}).",
+  "flash.safety.arb_violation": "Refusé : violation Anti-Rollback (appareil ARB={device} > paquet ARB={package}).",
+  "flash.safety.forbidden_arg": "Refusé : l'argument '{arg}' est bloqué par la politique de sécurité.",
+  "flash.no_images": "Aucune image ou partition de firmware n'a été spécifiée.",
+  "flash.partition_failed": "Échec du flash de la partition '{partition}' (code {code}).",
+  "flash.fastboot_ok": "Flash fastboot réussi pour {count} partition(s).",
+  "flash.tool_missing": "Outil autonome '{tool}' introuvable dans bin/ ({path}).",
+  "flash.tool_failed": "L'outil '{tool}' s'est terminé avec le code {code}.",
+  "flash.mtk_ok": "Téléchargement MediaTek scatter terminé.",
+  "flash.odin_bad_ext": "Paquet Samsung invalide '{path}' : .tar ou .tar.md5 attendu.",
+  "flash.odin_ok": "Flash Odin terminé pour : {slots}."
 }

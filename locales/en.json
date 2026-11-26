@@ -1665,5 +1665,20 @@
   "ui.imei_byok_service_id": "Service ID (Optional):",
   "ui.imei_byok_saved": "BYOK settings saved successfully.",
   "ui.imei_byok_status_on": "BYOK Service: Configured ({endpoint})",
-  "ui.imei_byok_status_off": "BYOK Service: Not configured (Local check only)"
+  "ui.imei_byok_status_off": "BYOK Service: Not configured (Local check only)",
+  "flash.operation": "Firmware Flashing",
+  "flash.exec_error": "Flashing tool execution failed: {error}",
+  "flash.safety.locked": "Refused: Bootloader is locked; fastboot flashing requires an unlocked bootloader.",
+  "flash.safety.unlock_unknown": "Refused: Could not confirm bootloader unlock state via fastboot getvar.",
+  "flash.safety.model_mismatch": "Refused: Device codename mismatch (expected {expected}, got {actual}).",
+  "flash.safety.arb_violation": "Refused: Anti-Rollback violation (device ARB={device} > package ARB={package}).",
+  "flash.safety.forbidden_arg": "Refused: Argument '{arg}' is blocked by policy.",
+  "flash.no_images": "No firmware images or partitions were specified.",
+  "flash.partition_failed": "Flashing partition '{partition}' failed with exit code {code}.",
+  "flash.fastboot_ok": "Fastboot flashed {count} partition(s) successfully.",
+  "flash.tool_missing": "Standalone tool '{tool}' was not found in bin/ ({path}).",
+  "flash.tool_failed": "Tool '{tool}' exited with code {code}.",
+  "flash.mtk_ok": "MediaTek scatter download completed.",
+  "flash.odin_bad_ext": "Invalid Samsung package '{path}': expected .tar or .tar.md5.",
+  "flash.odin_ok": "Odin flash completed for slot(s): {slots}."
 }

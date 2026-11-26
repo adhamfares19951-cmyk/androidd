@@ -1665,5 +1665,20 @@
   "ui.imei_byok_service_id": "معرّف الخدمة (Service ID - اختياري):",
   "ui.imei_byok_saved": "تم حفظ إعدادات BYOK بنجاح.",
   "ui.imei_byok_status_on": "خدمة BYOK: مفعّلة ({endpoint})",
-  "ui.imei_byok_status_off": "خدمة BYOK: غير معدة (التدقيق المحلي فقط)"
+  "ui.imei_byok_status_off": "خدمة BYOK: غير معدة (التدقيق المحلي فقط)",
+  "flash.operation": "تفليش الفيرموير الرسمي",
+  "flash.exec_error": "فشل تشغيل أداة التفليش: {error}",
+  "flash.safety.locked": "مرفوض: البوتلودر مقفول؛ التفليش عبر fastboot يتطلب بوتلودر مفتوحاً.",
+  "flash.safety.unlock_unknown": "مرفوض: تعذر التحقق من حالة فتح البوتلودر عبر fastboot getvar.",
+  "flash.safety.model_mismatch": "مرفوض: عدم تطابق طراز/اسم الجهاز (المتوقع {expected}، والمقروء {actual}).",
+  "flash.safety.arb_violation": "مرفوض: تعارض حماية الرجوع ARB (الجهاز {device} > الحزمة {package}).",
+  "flash.safety.forbidden_arg": "مرفوض: الخيار '{arg}' محظور حسب سياسة الأمان.",
+  "flash.no_images": "لم يتم تحديد أي ملفات أو أقسام للتفليش.",
+  "flash.partition_failed": "فشل تفليش القسم '{partition}' برمز خروج {code}.",
+  "flash.fastboot_ok": "تم تفليش {count} قسم عبر fastboot بنجاح.",
+  "flash.tool_missing": "الأداة المستقلة '{tool}' غير موجودة في bin/ ({path}).",
+  "flash.tool_failed": "فشلت الأداة '{tool}' برمز خروج {code}.",
+  "flash.mtk_ok": "اكتمل تفليش حزمة MediaTek الرسمية.",
+  "flash.odin_bad_ext": "حزمة سامسونج غير صالحة '{path}': المتوقع .tar أو .tar.md5.",
+  "flash.odin_ok": "اكتمل تفليش Odin للأقسام: {slots}."
 }
