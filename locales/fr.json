@@ -1695,7 +1695,6 @@
   "ui.flash_pick_folder": "Dossier des images de partition (.img)",
   "ui.flash_ft_ota": "Paquet OTA / recovery",
   "ui.flash_ft_scatter": "Fichier scatter MediaTek",
-  "ui.flash_ft_odin": "Paquet Samsung (.tar / .tar.md5)",
   "ui.flash_checking": "Lecture des variables de sécurité du bootloader...",
   "ui.flash_safety_head": "Vérification de sécurité Fastboot :",
   "ui.flash_safety_row": "  {k} : {v}",
@@ -1710,5 +1709,11 @@
   "ui.flash_error": "Erreur de flashage : {error}",
   "ui.flash_done": "Flashage terminé.",
   "ui.flash_unknown": "Non terminé (outil ou état inconnu).",
-  "ui.flash_partitions": "Partitions flashées : {names}"
+  "ui.flash_partitions": "Partitions flashées : {names}",
+  "ui.flash_hint_sideload": "Mettez le téléphone en recovery, puis Apply update from ADB (ou Connect with MiAssistant sur Xiaomi), et choisissez le .zip OTA/recovery d'origine. Fonctionne avec un bootloader verrouillé.",
+  "ui.flash_hint_fastboot": "Nécessite un bootloader déverrouillé. Choisissez le dossier des images de partition (.img) ; seules les partitions sûres sont flashées.",
+  "ui.flash_hint_mtk": "Nécessite SP Flash Tool ou mtkclient placé dans bin/. Choisissez le fichier scatter d'origine .txt (firmware d'origine uniquement).",
+  "ui.flash_hint_odin": "Nécessite odin4 placé dans bin/. Choisissez le dossier contenant les paquets Samsung (BL / AP / CP / CSC, .tar/.tar.md5).",
+  "ui.flash_pick_odin_folder": "Dossier contenant les paquets Samsung (BL / AP / CP / CSC)",
+  "ui.flash_no_odin_files": "Aucun paquet Samsung .tar/.tar.md5 trouvé dans ce dossier."
 }

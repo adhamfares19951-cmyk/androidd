@@ -47,6 +47,11 @@ class FlashingMixin:
         self.flash_mode.set(self._tr("flash.mode.sideload"))
         self.flash_mode.pack(side=L["lead"])
 
+        # One line of guidance that changes with the mode (what to pick, what each mode needs).
+        self.flash_mode_hint = ctk.CTkLabel(self.flash_card, text="", font=small, text_color=TEXT_SECONDARY,
+                                            wraplength=640, anchor=L["anchor"], justify=L["justify"])
+        self.flash_mode_hint.pack(fill="x", padx=16, pady=(0, 4))
+
         path_row = ctk.CTkFrame(self.flash_card, fg_color="transparent")
         path_row.pack(fill="x", padx=14, pady=(0, 6))
         self.flash_path_entry = ctk.CTkEntry(path_row, height=32,
@@ -84,6 +89,13 @@ class FlashingMixin:
         mode = self._flash_current_mode()
         try:
             self.flash_check_btn.configure(state="normal" if mode == "fastboot" else "disabled")
+            hints = {
+                "sideload": self._tr("ui.flash_hint_sideload"),
+                "fastboot": self._tr("ui.flash_hint_fastboot"),
+                "mtk": self._tr("ui.flash_hint_mtk"),
+                "odin": self._tr("ui.flash_hint_odin"),
+            }
+            self.flash_mode_hint.configure(text=self._L(hints.get(mode, "")))
         except Exception:
             pass
 
@@ -91,11 +103,13 @@ class FlashingMixin:
         mode = self._flash_current_mode()
         if mode == "fastboot":
             path = filedialog.askdirectory(title=self._tr("ui.flash_pick_folder"))
+        elif mode == "odin":
+            # Samsung firmware is several packages (BL/AP/CP/CSC); pick the folder that holds them.
+            path = filedialog.askdirectory(title=self._tr("ui.flash_pick_odin_folder"))
         else:
             types = {
                 "sideload": [(self._tr("ui.flash_ft_ota"), "*.zip")],
                 "mtk": [(self._tr("ui.flash_ft_scatter"), "*.txt")],
-                "odin": [(self._tr("ui.flash_ft_odin"), "*.tar *.tar.md5")],
             }[mode]
             path = filedialog.askopenfilename(title=self._tr("card_flashing"),
                                               filetypes=types + [(self._tr("ui.all_files"), "*.*")])
@@ -152,6 +166,8 @@ class FlashingMixin:
             return
 
         # Build the engine payload per mode, and a human summary for the confirmation.
+        images = {}
+        packages = {}
         if mode == "fastboot":
             images, skipped = self._flash_fastboot_images(path)
             if not images:
@@ -161,7 +177,11 @@ class FlashingMixin:
             if skipped:
                 self._append_box(self.flash_text, self._tr("ui.flash_skipped", names=", ".join(skipped)) + "\n")
         elif mode == "odin":
-            summary = os.path.basename(path)
+            packages = self._flash_odin_packages(path)
+            if not packages:
+                self._set_box(self.flash_text, self._tr("ui.flash_no_odin_files"))
+                return
+            summary = ", ".join(sorted(packages))        # the slots found, e.g. "AP, BL, CP, CSC"
         else:
             summary = os.path.basename(path)
 
@@ -184,7 +204,7 @@ class FlashingMixin:
                 elif mode == "mtk":
                     res = flasher.mtk_brom_flash(path)
                 else:
-                    res = flasher.odin_flash(self._flash_odin_packages(path))
+                    res = flasher.odin_flash(packages)
             except Exception as e:  # the worker must never crash the UI
                 self.after(0, lambda: self._set_box(self.flash_text, self._tr("ui.flash_error", error=str(e))))
                 return
@@ -192,10 +212,22 @@ class FlashingMixin:
         threading.Thread(target=task, daemon=True).start()
 
     def _flash_odin_packages(self, path: str):
-        """One picked .tar/.tar.md5 -> its Odin slot, guessed from the filename prefix (AP/BL/CP/CSC)."""
-        base = os.path.basename(path).upper()
-        slot = next((s for s in ODIN_SLOTS if base.startswith(s + "_") or base.startswith(s)), "AP")
-        return {slot: path}
+        """Map Samsung .tar/.tar.md5 packages to their Odin slots (BL/AP/CP/CSC) by filename prefix.
+        `path` is the folder that holds them, or a single package file. One package per slot (first wins)."""
+        if os.path.isdir(path):
+            files = [os.path.join(path, n) for n in sorted(os.listdir(path))
+                     if n.lower().endswith(".tar") or n.lower().endswith(".tar.md5")]
+        else:
+            files = [path]
+        packages = {}
+        # Longer slot names first so "CSC_..." is not swallowed by a bare "C" style prefix.
+        slots = sorted(ODIN_SLOTS, key=len, reverse=True)
+        for f in files:
+            base = os.path.basename(f).upper()
+            slot = next((s for s in slots if base.startswith(s + "_") or base.startswith(s)), None)
+            if slot and slot not in packages:
+                packages[slot] = f
+        return packages
 
     def _flash_show_result(self, res) -> None:
         self.last_flash_result = res

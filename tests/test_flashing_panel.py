@@ -165,14 +165,39 @@ class FlashingPanelTests(unittest.TestCase):
         self.assertEqual([c[0] for c in self.fake.calls], ["check"])   # only the read-only check ran
         self.assertIn(t("ui.flash_safety_ok", "en"), self.text())
 
-    def test_odin_guesses_slot_from_filename(self):
+    def test_odin_maps_a_folder_of_packages_to_slots(self):
+        folder = os.path.join(self.d.name, "sams")
+        os.makedirs(folder)
+        for n in ("AP_G998.tar.md5", "BL_G998.tar", "CP_G998.tar", "CSC_G998.tar", "readme.txt"):
+            open(os.path.join(folder, n), "wb").close()
+        self._set("odin", folder)
+        self.app._flash_run()
+        self.app.update()
+        self.assertEqual(self.fake.calls[0][0], "odin_flash")
+        self.assertEqual(sorted(self.fake.calls[0][1]), ["AP", "BL", "CP", "CSC"])   # the .txt is ignored
+
+    def test_odin_single_file_still_maps_by_prefix(self):
         ap = os.path.join(self.d.name, "AP_G998.tar.md5")
         open(ap, "wb").close()
         self._set("odin", ap)
         self.app._flash_run()
         self.app.update()
-        self.assertEqual(self.fake.calls[0][0], "odin_flash")
         self.assertIn("AP", self.fake.calls[0][1])
+
+    def test_odin_empty_folder_does_not_flash(self):
+        folder = os.path.join(self.d.name, "empty_sams")
+        os.makedirs(folder)
+        self._set("odin", folder)
+        self.app._flash_run()
+        self.app.update()
+        self.assertEqual(self.fake.calls, [])
+        self.assertIn(t("ui.flash_no_odin_files", "en"), self.text())
+
+    def test_mode_hint_changes_per_mode(self):
+        self._set("sideload", "")
+        self.assertIn(t("ui.flash_hint_sideload", "en"), self.app.flash_mode_hint.cget("text"))
+        self._set("odin", "")
+        self.assertIn(t("ui.flash_hint_odin", "en"), self.app.flash_mode_hint.cget("text"))
 
     def test_result_shows_flashed_partitions(self):
         folder = os.path.join(self.d.name, "fw2")

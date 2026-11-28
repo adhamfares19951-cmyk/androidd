@@ -1695,7 +1695,6 @@
   "ui.flash_pick_folder": "Folder of partition images (.img)",
   "ui.flash_ft_ota": "OTA / recovery package",
   "ui.flash_ft_scatter": "MediaTek scatter file",
-  "ui.flash_ft_odin": "Samsung package (.tar / .tar.md5)",
   "ui.flash_checking": "Reading bootloader safety variables...",
   "ui.flash_safety_head": "Fastboot safety check:",
   "ui.flash_safety_row": "  {k}: {v}",
@@ -1710,5 +1709,11 @@
   "ui.flash_error": "Flashing error: {error}",
   "ui.flash_done": "Flash completed.",
   "ui.flash_unknown": "Not completed (tool or state unknown).",
-  "ui.flash_partitions": "Partitions flashed: {names}"
+  "ui.flash_partitions": "Partitions flashed: {names}",
+  "ui.flash_hint_sideload": "Put the phone in recovery, then Apply update from ADB (or Connect with MiAssistant on Xiaomi), and pick the stock OTA/recovery .zip. Works on a locked bootloader.",
+  "ui.flash_hint_fastboot": "Needs an unlocked bootloader. Pick the folder of partition images (.img); only safe partitions are flashed.",
+  "ui.flash_hint_mtk": "Needs SP Flash Tool or mtkclient placed in bin/. Pick the stock scatter .txt (stock firmware only).",
+  "ui.flash_hint_odin": "Needs odin4 placed in bin/. Pick the folder with the Samsung packages (BL / AP / CP / CSC, .tar/.tar.md5).",
+  "ui.flash_pick_odin_folder": "Folder with the Samsung packages (BL / AP / CP / CSC)",
+  "ui.flash_no_odin_files": "No Samsung .tar/.tar.md5 packages were found in that folder."
 }
