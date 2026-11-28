@@ -132,6 +132,12 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
 
         # Initialize Subsystems
         self.db = DatabaseManager()
+        # Restore the saved appearance (dark by default) before any widget is built.
+        try:
+            _saved = self.db.get_setting("appearance_mode")
+            ctk.set_appearance_mode("Light" if _saved == "Light" else "Dark")
+        except Exception:
+            pass
         self.bridge = ADBBridge()
         self.profiler = DeviceProfiler(self.bridge)
         self.board_diag = MotherboardDiagnostics(self.bridge, self.db)
@@ -345,11 +351,26 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
         self.sidebar_spacer = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
         self.sidebar_spacer.grid(row=6, column=0, sticky="nsew")
 
+        bottom = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
+        bottom.grid(row=7, column=0, padx=14, pady=(0, 10), sticky="ew")
+
+        # Appearance toggle: dark / light (persisted in app_settings)
+        self._theme_labels = {self._tr("ui.theme_dark"): "Dark", self._tr("ui.theme_light"): "Light"}
+        self.theme_toggle = ctk.CTkSegmentedButton(
+            bottom, values=list(self._theme_labels), height=30,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+            command=lambda lbl: self.switch_appearance(self._theme_labels.get(lbl, "Dark")),
+        )
+        _cur = "Light" if ctk.get_appearance_mode() == "Light" else "Dark"
+        self.theme_toggle.set(next((k for k, v in self._theme_labels.items() if v == _cur),
+                                   list(self._theme_labels)[0]))
+        self.theme_toggle.pack(fill="x", pady=(0, 6))
+
         # Language switch: one segment per locale file (up to 3), a drop-down list beyond that
         self._languages = sorted(available_languages(), key=lambda c: (c not in ("ar", "en"), c))
-        lang_bar = ctk.CTkFrame(self.sidebar_frame, fg_color=BG_TILE, corner_radius=8,
+        lang_bar = ctk.CTkFrame(bottom, fg_color=BG_TILE, corner_radius=8,
                                 border_width=1, border_color=BORDER_SUBTLE)
-        lang_bar.grid(row=7, column=0, padx=14, pady=(0, 10), sticky="ew")
+        lang_bar.pack(fill="x")
         self.lang_buttons: dict[str, ctk.CTkButton] = {}
         self.lang_menu = None
         if len(self._languages) <= 3:
@@ -472,6 +493,27 @@ class AndroidDoctorApp(DashboardTabMixin, BoardDiagTabMixin, HardwareTabMixin, S
         except Exception:
             pass
         self.after(5000, self._auto_poll_devices)
+
+    def switch_appearance(self, mode: str):
+        """Switch dark/light: set the mode, persist it, and rebuild the open tabs so even raw
+        tk widgets (the charging-curve canvas) pick up the new colours."""
+        mode = "Light" if str(mode).lower().startswith("l") else "Dark"
+        if ctk.get_appearance_mode() == mode:
+            return
+        ctk.set_appearance_mode(mode)
+        try:
+            self.db.set_setting("appearance_mode", mode)
+        except Exception:
+            pass
+        self.configure(fg_color=BG_CANVAS)
+        active_tab = getattr(self, "_current_tab", "dashboard")
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+        self.tab_frames.clear()
+        self.status_pills.clear()
+        self.kpi_labels.clear()
+        self.select_tab(active_tab)
+        self.after(120, self._build_next_pending_tab)
 
     def switch_language(self, lang: str):
         if self.current_lang == lang:

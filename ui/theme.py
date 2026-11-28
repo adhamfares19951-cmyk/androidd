@@ -5,44 +5,52 @@ from __future__ import annotations
 from typing import Any, Callable, Iterable, Sequence
 import customtkinter as ctk
 
-# --- Palette: neutral greys, one accent, status colours only for status ---
-# Colour carries meaning here: blue = the main action / selection, green/red/amber = a check's
-# result, red buttons = destructive actions only. Everything else is neutral.
-BG_CANVAS = "#0f1012"
-BG_SIDEBAR = "#0b0c0e"
-BG_CARD = "#16171a"
-BG_CARD_ELEVATED = "#1d1f23"
-BG_TILE = "#131417"
-BG_TILE_ALT = "#191b1e"
-BG_CONSOLE = "#121316"
-BG_HERO = BG_CANVAS
-BG_INPUT = "#111215"
-BG_HOVER = "#22252a"
-BG_SELECTED = "#1f2937"
+# --- Palette: dark + light. Every colour is a (light, dark) pair; CustomTkinter picks the side that
+# matches ctk.get_appearance_mode(). Colour carries meaning: blue = main action / selection,
+# green/red/amber = a check's result, red buttons = destructive only. Everything else is neutral.
+#                     (light,       dark)
+BG_CANVAS        = ("#eef1f6", "#0b0d12")
+BG_SIDEBAR       = ("#ffffff", "#0c0e13")
+BG_CARD          = ("#ffffff", "#171a22")
+BG_CARD_ELEVATED = ("#f6f8fb", "#20242e")
+BG_TILE          = ("#eef1f6", "#14161d")
+BG_TILE_ALT      = ("#e7ebf2", "#1b1e26")
+BG_CONSOLE       = ("#f5f7fb", "#0e1014")
+BG_HERO          = BG_CANVAS
+BG_INPUT         = ("#ffffff", "#12141a")
+BG_HOVER         = ("#e8edf5", "#262b36")
+BG_SELECTED      = ("#e6effd", "#1f2937")
 
-BORDER_SUBTLE = "#24262b"
-BORDER_ACCENT = "#30333a"
-BORDER_CONSOLE = "#1f2125"
+BORDER_SUBTLE    = ("#e2e6ee", "#2b3140")
+BORDER_ACCENT    = ("#cdd4e0", "#3a4150")
+BORDER_CONSOLE   = ("#dfe4ed", "#242a36")
 
-TEXT_PRIMARY = "#ececee"
-TEXT_SECONDARY = "#a1a4ab"
-TEXT_MUTED = "#6c7079"
+TEXT_PRIMARY     = ("#1a1d24", "#f4f5f8")
+TEXT_SECONDARY   = ("#515867", "#b6bbc8")
+TEXT_MUTED       = ("#878e9c", "#7a8090")
 
-ACCENT_BLUE = "#4c8dff"
-ACCENT_BLUE_HOVER = "#3b7af0"
-ACCENT_GREEN = "#3fb950"
-ACCENT_GREEN_HOVER = "#2ea043"
-ACCENT_AMBER = "#d29922"
-ACCENT_AMBER_HOVER = "#bb8009"
-ACCENT_RED = "#f85149"
-ACCENT_RED_HOVER = "#da3633"
-# Former decorative accents: kept as names for existing callers, now neutral or the one accent.
-ACCENT_CYAN = ACCENT_BLUE
-ACCENT_CYAN_HOVER = ACCENT_BLUE_HOVER
-ACCENT_PURPLE = ACCENT_BLUE
-ACCENT_PURPLE_HOVER = ACCENT_BLUE_HOVER
-ACCENT_SLATE = BG_CARD_ELEVATED
+ACCENT_BLUE        = ("#2f6fed", "#5b93ff")
+ACCENT_BLUE_HOVER  = ("#255fd6", "#4a82f5")
+ACCENT_GREEN       = ("#1a9d47", "#45c565")
+ACCENT_GREEN_HOVER = ("#15833b", "#2ea043")
+ACCENT_AMBER       = ("#b9770d", "#e0a92e")
+ACCENT_AMBER_HOVER = ("#9c6409", "#c48f1f")
+ACCENT_RED         = ("#d92d20", "#f8665e")
+ACCENT_RED_HOVER   = ("#b8241a", "#e04b43")
+ACCENT_CYAN        = ("#0e97ab", "#24c3d6")
+ACCENT_CYAN_HOVER  = ("#0b8193", "#1aa7b8")
+ACCENT_PURPLE      = ("#7c54e8", "#a78bfa")
+ACCENT_PURPLE_HOVER= ("#6a43d6", "#9168f5")
+ACCENT_SLATE       = BG_CARD_ELEVATED
 ACCENT_SLATE_HOVER = BG_HOVER
+
+
+def resolve(color: Any) -> str:
+    """Pick the right side of a (light, dark) pair for the current appearance mode. For raw tk widgets
+    (e.g. a tk.Canvas) that cannot take a CustomTkinter colour tuple."""
+    if isinstance(color, (tuple, list)) and len(color) == 2:
+        return color[0] if ctk.get_appearance_mode() == "Light" else color[1]
+    return color
 
 FONT_FAMILY = "Segoe UI"
 FONT_MONO = "Consolas"            # ships with every Windows version
@@ -61,21 +69,21 @@ NAV_ICONS: dict[str, str] = {
 ICON_REFRESH = "\uE72C"
 
 # Palette lookup for status badge pills (background, text, border)
-STATUS_STYLES: dict[str, tuple[str, str, str]] = {
-    "PASS": ("#12261a", "#56d364", ACCENT_GREEN),
-    "FAIL": ("#2d1517", "#ff7b72", ACCENT_RED),
-    "UNKNOWN": ("#1f2125", "#a1a4ab", "#3a3d44"),
-    "NEEDS_ROOT": ("#2b2112", "#e3b341", ACCENT_AMBER),
+STATUS_STYLES: dict[str, tuple] = {
+    "PASS": (("#e4f6ea", "#12261a"), ("#1a7f37", "#56d364"), ACCENT_GREEN),
+    "FAIL": (("#fdeceb", "#2d1517"), ("#c4322a", "#ff7b72"), ACCENT_RED),
+    "UNKNOWN": (("#eef1f6", "#1f2125"), ("#6a7180", "#a1a4ab"), ("#d7dce6", "#3a3d44")),
+    "NEEDS_ROOT": (("#fbf0d8", "#2b2112"), ("#9a6a07", "#e3b341"), ACCENT_AMBER),
     "--": ("transparent", BG_CARD, BG_CARD),
 }
 
 # Semantic button variant styles: (fg_color, hover_color, border_color, border_width, text_color)
 _SECONDARY = (BG_CARD_ELEVATED, BG_HOVER, BORDER_ACCENT, 1, TEXT_PRIMARY)
-BUTTON_VARIANTS: dict[str, tuple[str, str, str, int, str]] = {
+BUTTON_VARIANTS: dict[str, tuple] = {
     "primary": (ACCENT_BLUE, ACCENT_BLUE_HOVER, ACCENT_BLUE, 0, "#ffffff"),
     "secondary": _SECONDARY,
     # Destructive only (erase, flash, uninstall...): quiet red, never a filled red block.
-    "danger": ("#2a1416", "#3a1a1d", "#5c2427", 1, "#ff7b72"),
+    "danger": (("#fdeceb", "#2a1416"), ("#fbdddb", "#3a1a1d"), ("#f3b8b3", "#5c2427"), 1, ("#c4322a", "#ff7b72")),
     "ghost": ("transparent", BG_HOVER, BG_CANVAS, 0, TEXT_SECONDARY),
     # Old decorative variants render as secondary: colour no longer says nothing.
     "success": _SECONDARY,
@@ -154,7 +162,7 @@ def make_hero_header(
     title_lbl = ctk.CTkLabel(
         body,
         text=title,
-        font=ctk.CTkFont(family=FONT_FAMILY, size=22, weight="bold"),
+        font=ctk.CTkFont(family=FONT_FAMILY, size=26, weight="bold"),
         text_color=TEXT_PRIMARY,
         anchor=layout["anchor"],
         justify=layout["justify"],
@@ -166,7 +174,7 @@ def make_hero_header(
         sub_lbl = ctk.CTkLabel(
             body,
             text=subtitle,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=13),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=15),
             text_color=TEXT_SECONDARY,
             anchor=layout["anchor"],
             justify=layout["justify"],
@@ -224,7 +232,7 @@ def make_card(
         parent,
         width=10,
         fg_color=BG_CARD,
-        corner_radius=12,
+        corner_radius=16,
         border_width=1,
         border_color=BORDER_SUBTLE,
     )
@@ -232,13 +240,19 @@ def make_card(
         card.pack(fill="x", pady=pady)
 
     hdr = ctk.CTkFrame(card, width=10, fg_color="transparent")
-    hdr.pack(fill="x", padx=16, pady=(14, 10))
+    hdr.pack(fill="x", padx=18, pady=(16, 12))
+
+    # A small colour dot before the title gives each card a point of life without colouring the whole surface.
+    dot = ctk.CTkFrame(hdr, width=10, height=10, corner_radius=5,
+                       fg_color=accent_color or ACCENT_BLUE)
+    dot.pack(side=layout["lead"], padx=(0, 10))
+    dot.pack_propagate(False)
 
     eff_wrap = title_wrap if title_wrap is not None else (640 if pack_card else 290)
     title_lbl = ctk.CTkLabel(
         hdr,
         text=title,
-        font=ctk.CTkFont(family=FONT_FAMILY, size=14, weight="bold"),
+        font=ctk.CTkFont(family=FONT_FAMILY, size=16, weight="bold"),
         text_color=TEXT_PRIMARY,
         anchor=layout["anchor"],
         justify=layout["justify"],
@@ -269,9 +283,9 @@ def make_console_box(
         fg_color=BG_CONSOLE,
         border_width=1,
         border_color=BORDER_CONSOLE,
-        corner_radius=8,
+        corner_radius=10,
         text_color=TEXT_SECONDARY,
-        font=ctk.CTkFont(family=FONT_FAMILY, size=12),
+        font=ctk.CTkFont(family=FONT_FAMILY, size=14),
         wrap="word",
         scrollbar_button_color=BORDER_ACCENT,
         scrollbar_button_hover_color=TEXT_MUTED,
@@ -316,7 +330,7 @@ def make_button(
     text: str,
     command: Callable[[], Any] | None,
     variant: str = "secondary",
-    height: int = 34,
+    height: int = 38,
     width: int | None = None,
     font_size: int = 12,
     bold: bool = True,
@@ -331,11 +345,11 @@ def make_button(
         "border_color": border,
         "border_width": bw,
         "text_color": tc,
-        "corner_radius": 7,
+        "corner_radius": 9,
         "height": height,
         "font": ctk.CTkFont(
             family=FONT_FAMILY,
-            size=max(font_size, 12),
+            size=max(font_size, 13),
             weight="bold" if (bold and variant == "primary") else "normal",
         ),
     }

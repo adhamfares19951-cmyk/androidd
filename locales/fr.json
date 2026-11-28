@@ -1715,5 +1715,7 @@
   "ui.flash_hint_mtk": "Nécessite SP Flash Tool ou mtkclient placé dans bin/. Choisissez le fichier scatter d'origine .txt (firmware d'origine uniquement).",
   "ui.flash_hint_odin": "Nécessite odin4 placé dans bin/. Choisissez le dossier contenant les paquets Samsung (BL / AP / CP / CSC, .tar/.tar.md5).",
   "ui.flash_pick_odin_folder": "Dossier contenant les paquets Samsung (BL / AP / CP / CSC)",
-  "ui.flash_no_odin_files": "Aucun paquet Samsung .tar/.tar.md5 trouvé dans ce dossier."
+  "ui.flash_no_odin_files": "Aucun paquet Samsung .tar/.tar.md5 trouvé dans ce dossier.",
+  "ui.theme_dark": "🌙 Sombre",
+  "ui.theme_light": "☀ Clair"
 }

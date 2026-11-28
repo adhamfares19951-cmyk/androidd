@@ -1715,5 +1715,7 @@
   "ui.flash_hint_mtk": "يحتاج SP Flash Tool أو mtkclient موضوعاً في bin/. اختر ملف scatter الرسمي .txt (فيرموير رسمي فقط).",
   "ui.flash_hint_odin": "يحتاج odin4 موضوعاً في bin/. اختر المجلد الذي يحوي حزم سامسونج (BL / AP / CP / CSC، بصيغة .tar/.tar.md5).",
   "ui.flash_pick_odin_folder": "المجلد الذي يحوي حزم سامسونج (BL / AP / CP / CSC)",
-  "ui.flash_no_odin_files": "لم يُعثر على حزم سامسونج .tar/.tar.md5 في ذلك المجلد."
+  "ui.flash_no_odin_files": "لم يُعثر على حزم سامسونج .tar/.tar.md5 في ذلك المجلد.",
+  "ui.theme_dark": "🌙 داكن",
+  "ui.theme_light": "☀ فاتح"
 }

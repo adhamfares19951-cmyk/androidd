@@ -19,6 +19,7 @@ import customtkinter as ctk
 from core.charging_curve import ChargingCurve, ChargingCurveCapture, ChargingSample
 from core.result import Status
 from ui.theme import (
+    resolve,
     ACCENT_AMBER,
     ACCENT_CYAN,
     ACCENT_GREEN,
@@ -138,7 +139,7 @@ class ChargingCurveMixin:
         self.cc_canvas = tk.Canvas(
             self.charging_curve_card,
             height=165,
-            bg="#0d1117",
+            bg=resolve(("#ffffff", "#0d1117")),
             bd=0,
             highlightthickness=1,
             highlightbackground="#30363d",
@@ -195,7 +196,7 @@ class ChargingCurveMixin:
         grid_steps = 4
         for i in range(grid_steps + 1):
             y = top + plot_h - (i / grid_steps) * plot_h
-            canvas.create_line(left, y, right, y, fill="#1e293b", dash=(3, 3))
+            canvas.create_line(left, y, right, y, fill=resolve(("#dfe4ed", "#1e293b")), dash=(3, 3))
 
             # Left Y-axis (Power in Watts)
             pw_val = (i / grid_steps) * max_p
@@ -223,13 +224,13 @@ class ChargingCurveMixin:
         time_steps = 4
         for i in range(time_steps + 1):
             x = left + (i / time_steps) * plot_w
-            canvas.create_line(x, top, x, bottom, fill="#1e293b", dash=(3, 3))
+            canvas.create_line(x, top, x, bottom, fill=resolve(("#dfe4ed", "#1e293b")), dash=(3, 3))
             t_val = (i / time_steps) * dur
             canvas.create_text(
                 x,
                 bottom + 10,
                 text=f"{t_val:.0f}s",
-                fill="#94a3b8",
+                fill=resolve(("#6a7180", "#94a3b8")),
                 anchor="n",
                 font=(FONT_FAMILY, 8),
             )
@@ -247,7 +248,7 @@ class ChargingCurveMixin:
                 left + plot_w / 2,
                 top + plot_h / 2,
                 text=self._tr("ui.charge_curve_hint"),
-                fill="#64748b",
+                fill=resolve(("#878e9c", "#64748b")),
                 font=(FONT_FAMILY, 10),
             )
             return

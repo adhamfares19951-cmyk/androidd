@@ -1715,5 +1715,7 @@
   "ui.flash_hint_mtk": "Needs SP Flash Tool or mtkclient placed in bin/. Pick the stock scatter .txt (stock firmware only).",
   "ui.flash_hint_odin": "Needs odin4 placed in bin/. Pick the folder with the Samsung packages (BL / AP / CP / CSC, .tar/.tar.md5).",
   "ui.flash_pick_odin_folder": "Folder with the Samsung packages (BL / AP / CP / CSC)",
-  "ui.flash_no_odin_files": "No Samsung .tar/.tar.md5 packages were found in that folder."
+  "ui.flash_no_odin_files": "No Samsung .tar/.tar.md5 packages were found in that folder.",
+  "ui.theme_dark": "🌙 Dark",
+  "ui.theme_light": "☀ Light"
 }
