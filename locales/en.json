@@ -1717,5 +1717,6 @@
   "ui.flash_pick_odin_folder": "Folder with the Samsung packages (BL / AP / CP / CSC)",
   "ui.flash_no_odin_files": "No Samsung .tar/.tar.md5 packages were found in that folder.",
   "ui.theme_dark": "🌙 Dark",
-  "ui.theme_light": "☀ Light"
+  "ui.theme_light": "☀ Light",
+  "ui.flash_check_fastboot_only": "Safety check is available in Fastboot mode only."
 }

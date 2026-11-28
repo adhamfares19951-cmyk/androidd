@@ -184,6 +184,16 @@ class FlashingPanelTests(unittest.TestCase):
         self.app.update()
         self.assertIn("AP", self.fake.calls[0][1])
 
+    def test_odin_ignores_lookalike_prefix(self):
+        # "APPLY.tar" begins with "AP" but is not the AP slot; it must not be mapped.
+        folder = os.path.join(self.d.name, "sams_lookalike")
+        os.makedirs(folder)
+        for n in ("APPLY.tar", "AP_G998.tar.md5"):
+            open(os.path.join(folder, n), "wb").close()
+        pkgs = self.app._flash_odin_packages(folder)
+        self.assertEqual(pkgs["AP"], os.path.join(folder, "AP_G998.tar.md5"))  # the real one wins
+        self.assertTrue(all("APPLY" not in p for p in pkgs.values()))          # the lookalike is out
+
     def test_odin_empty_folder_does_not_flash(self):
         folder = os.path.join(self.d.name, "empty_sams")
         os.makedirs(folder)
@@ -198,6 +208,14 @@ class FlashingPanelTests(unittest.TestCase):
         self.assertIn(t("ui.flash_hint_sideload", "en"), self.app.flash_mode_hint.cget("text"))
         self._set("odin", "")
         self.assertIn(t("ui.flash_hint_odin", "en"), self.app.flash_mode_hint.cget("text"))
+
+    def test_check_note_explains_fastboot_only(self):
+        self._set("sideload", "")
+        self.assertEqual(self.app.flash_check_note.cget("text"), t("ui.flash_check_fastboot_only", "en"))
+        self.assertEqual(str(self.app.flash_check_btn.cget("state")), "disabled")
+        self._set("fastboot", "")
+        self.assertEqual(self.app.flash_check_note.cget("text"), "")        # note clears in fastboot
+        self.assertEqual(str(self.app.flash_check_btn.cget("state")), "normal")
 
     def test_result_shows_flashed_partitions(self):
         folder = os.path.join(self.d.name, "fw2")

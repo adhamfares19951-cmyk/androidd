@@ -76,6 +76,10 @@ class FlashingMixin:
         self.flash_check_btn.pack(side=L["lead"], padx=(0, 6))
         make_button(btns, self._L(self._tr("btn_flash_run")), self._flash_run, variant="primary",
                     height=32).pack(side=L["lead"], padx=6)
+        # Why the safety check is greyed out outside fastboot (it reads fastboot getvar variables).
+        self.flash_check_note = ctk.CTkLabel(btns, text="", font=small, text_color=TEXT_SECONDARY,
+                                             anchor=L["anchor"], justify=L["justify"])
+        self.flash_check_note.pack(side=L["lead"], padx=(6, 0))
 
         self.flash_text = make_console_box(self.flash_card, 150, L, self._L(self._tr("ui.flash_hint")))
         self._flash_on_mode_change()
@@ -88,7 +92,10 @@ class FlashingMixin:
         # "Check safety" reads fastboot variables, so it only means something in fastboot mode.
         mode = self._flash_current_mode()
         try:
-            self.flash_check_btn.configure(state="normal" if mode == "fastboot" else "disabled")
+            is_fastboot = mode == "fastboot"
+            self.flash_check_btn.configure(state="normal" if is_fastboot else "disabled")
+            self.flash_check_note.configure(
+                text="" if is_fastboot else self._L(self._tr("ui.flash_check_fastboot_only")))
             hints = {
                 "sideload": self._tr("ui.flash_hint_sideload"),
                 "fastboot": self._tr("ui.flash_hint_fastboot"),
@@ -224,7 +231,10 @@ class FlashingMixin:
         slots = sorted(ODIN_SLOTS, key=len, reverse=True)
         for f in files:
             base = os.path.basename(f).upper()
-            slot = next((s for s in slots if base.startswith(s + "_") or base.startswith(s)), None)
+            # Real Odin packages are always "<SLOT>_<model>...": require the separator so a file
+            # like "APPLY.tar" is not mistaken for the AP slot. Bare "<SLOT>.tar" is also accepted.
+            slot = next((s for s in slots
+                         if base.startswith(s + "_") or base in (s + ".TAR", s + ".TAR.MD5")), None)
             if slot and slot not in packages:
                 packages[slot] = f
         return packages

@@ -1717,5 +1717,6 @@
   "ui.flash_pick_odin_folder": "المجلد الذي يحوي حزم سامسونج (BL / AP / CP / CSC)",
   "ui.flash_no_odin_files": "لم يُعثر على حزم سامسونج .tar/.tar.md5 في ذلك المجلد.",
   "ui.theme_dark": "🌙 داكن",
-  "ui.theme_light": "☀ فاتح"
+  "ui.theme_light": "☀ فاتح",
+  "ui.flash_check_fastboot_only": "فحص الأمان متاح بوضع Fastboot فقط."
 }
